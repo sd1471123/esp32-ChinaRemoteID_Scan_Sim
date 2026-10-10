@@ -1,0 +1,15 @@
+# ESP-IDF 构建产物
+build/
+sdkconfig.old
+dependencies.lock
+
+# 本地工具数据
+**/.workbuddy/
+.vscode/
+.idea/
+*.swp
+.DS_Store
+
+# Python
+__pycache__/
+*.pyc
