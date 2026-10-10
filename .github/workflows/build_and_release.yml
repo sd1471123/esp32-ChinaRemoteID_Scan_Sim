@@ -26,6 +26,8 @@ jobs:
 
     - name: Collect scanner firmware
       run: |
+        # ESP-IDF CI 容器以 root 写出 build/，runner 用户无权限，先改属主
+        sudo chown -R $(id -u):$(id -g) build
         mkdir -p dist/main_rx_esp32s3
         cp build/*.bin build/*.elf dist/main_rx_esp32s3/ 2>/dev/null || true
         cp -r build/bootloader build/partition_table dist/main_rx_esp32s3/
@@ -41,6 +43,7 @@ jobs:
 
     - name: Collect simulator firmware
       run: |
+        sudo chown -R $(id -u):$(id -g) build
         mkdir -p dist/main_tx_esp32s3
         cp build/*.bin build/*.elf dist/main_tx_esp32s3/ 2>/dev/null || true
         cp -r build/bootloader build/partition_table dist/main_tx_esp32s3/
