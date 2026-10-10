@@ -14,48 +14,83 @@ jobs:
 
     steps:
     - name: Checkout repository
-      uses: actions/checkout@v6  # ✅ 升级: v4 → v6 (支持 Node.js 24) [[1]]
-      with:
-        submodules: 'recursive'
+      uses: actions/checkout@v4
 
-    - name: Set up Python
-      uses: actions/setup-python@v6  # ✅ 升级: v5 → v6 (支持 Node.js 24) [[13]]
+    - name: Build Scanner (main_rx / esp32s3)
+      uses: espressif/esp-idf-ci-action@v1
       with:
-        python-version: '3.9'
+        esp_idf_version: v6.0.1
+        target: esp32s3
+        path: '.'
+        command: idf.py -DMAIN_DIR=main_rx build
 
-    - name: Install dependencies
+    - name: Collect scanner firmware
       run: |
-        pip install setuptools wheel
+        mkdir -p dist/main_rx_esp32s3
+        cp build/*.bin build/*.elf dist/main_rx_esp32s3/ 2>/dev/null || true
+        cp -r build/bootloader build/partition_table dist/main_rx_esp32s3/
+        rm -rf build
 
-    - name: ESP-IDF Build
-      uses: espressif/esp-idf-ci-action@v1  # ✅ 此 action 通过 Docker 运行，不受 Node 版本影响 [[22]]
+    - name: Build Simulator (main_tx / esp32s3)
+      uses: espressif/esp-idf-ci-action@v1
       with:
-        esp_idf_version: v5.2.1
-        target: esp32
-        path: 'main_rx'
-        command: idf.py build
+        esp_idf_version: v6.0.1
+        target: esp32s3
+        path: '.'
+        command: idf.py -DMAIN_DIR=main_tx build
+
+    - name: Collect simulator firmware
+      run: |
+        mkdir -p dist/main_tx_esp32s3
+        cp build/*.bin build/*.elf dist/main_tx_esp32s3/ 2>/dev/null || true
+        cp -r build/bootloader build/partition_table dist/main_tx_esp32s3/
+        # 打包成 zip 便于整体下载
+        cd dist && zip -r ../esp32-crid-softapfix-esp32s3.zip . && cd ..
+        # 汇总所有 .bin / .elf 供 Release 直接列出
+        mkdir -p release_files
+        find dist -type f \( -name '*.bin' -o -name '*.elf' \) -exec cp {} release_files/ \;
 
     - name: Upload Build Artifacts
-      uses: actions/upload-artifact@v4  # ✅ v4 已支持 Node 24，无需升级
+      uses: actions/upload-artifact@v4
       with:
-        name: esp32-firmware
+        name: esp32-crid-firmware
         path: |
-          build/*.bin
-          build/*.elf
-          build/bootloader/*.bin
-          build/partition_table/*.bin
+          release_files/
+          esp32-crid-softapfix-esp32s3.zip
 
-    # 自动发布 Release
+    # 自动发布 Release（仅 tag 触发）
     - name: Create Release
       if: startsWith(github.ref, 'refs/tags/v')
-      uses: softprops/action-gh-release@v2  # ✅ 建议使用最新版
+      uses: softprops/action-gh-release@v2
       with:
         files: |
-          build/*.bin
-          build/bootloader/*.bin
-          build/partition_table/*.bin
+          release_files/*.bin
+          release_files/*.elf
+          esp32-crid-softapfix-esp32s3.zip
         tag_name: ${{ github.ref_name }}
-        release_name: Release ${{ github.ref_name }}
+        name: Release ${{ github.ref_name }}
+        body: |
+          ESP32 C-RID 远程识别固件（ESP32-S3）
+
+          ## 固件文件说明
+          - `main_rx_esp32s3/`：接收器（Scanner）固件
+          - `main_tx_esp32s3/`：发射器（Simulator）固件
+          - `*.bin`：烧录分区镜像，`bootloader/` 为引导程序，`partition_table/` 为分区表
+          - `esp32-crid-softapfix-esp32s3.zip`：全部产物打包
+
+          ## 烧录（使用 ESP-IDF 环境）
+          ```bash
+          # 发射器
+          esptool.py --chip esp32s3 --baud 460800 write_flash \
+            0x0 bootloader/bootloader.bin \
+            0x8000 partition_table/partition-table.bin \
+            0x10000 main_tx_esp32s3/remoteid_scanner.bin
+
+          # 接收器：将 0x10000 处的镜像换成 main_rx 的即可
+          ```
+          也可使用 [espressif flash download tool](https://www.espressif.com/en/support/download/other-tools) 图形界面烧录。
+
+          本 Release 由 CI 自动构建于 ${{ github.ref_name }}，基于 [luolitao/esp32-crid](https://github.com/luolitao/esp32-crid) 修改，修改内容见仓库 README。
         draft: false
         prerelease: false
       env:
