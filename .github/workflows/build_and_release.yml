@@ -53,9 +53,9 @@ jobs:
         cp -r build/bootloader build/partition_table dist/main_tx_esp32s3/
         # 打包成 zip 便于整体下载
         cd dist && zip -r ../esp32-crid-softapfix-esp32s3.zip . && cd ..
-        # 汇总所有 .bin / .elf 供 Release 直接列出
+        # 汇总所有 .bin / .elf 供 Release 直接列出（排除 CMake 编译器探测临时文件）
         mkdir -p release_files
-        find dist -type f \( -name '*.bin' -o -name '*.elf' \) -exec cp {} release_files/ \;
+        find dist -type f \( -name '*.bin' -o -name '*.elf' \) ! -name 'CMakeDetermine*' -exec cp {} release_files/ \;
 
     - name: Upload Build Artifacts
       uses: actions/upload-artifact@v4
