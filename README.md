@@ -13,6 +13,7 @@
 3. **修复重复帧过滤问题**：原 Beacon 帧 802.11 序列号恒为 0 且 `en_sys_seq=false`，接收端会按 802.11 协议将后续帧视为重传丢弃；现已修复。
 4. **关闭 Wi-Fi 省电**：初始化时增加 `esp_wifi_set_ps(WIFI_PS_NONE)`。
 5. **softAP vendor IE 更新**：修复 IDF 不允许直接覆盖已设置 IE 槽位的问题（先清除再设置）。
+6. **网页配置（新增）**：手机连接设备热点后，浏览器访问 `http://192.168.4.1` 即可在线修改无人机 UAS ID / 机型名称 / 操作员 ID、GPS 基准坐标、高度、速度、运行状态、巡游参数，以及热点 SSID / 信道 / 广播间隔。保存即时生效并写入 NVS 断电保持，无需重新编译烧录。
 
 > 注意：本模拟器广播的是虚构 ID，仅用于测试与开发验证，请勿在机场等敏感区域当真实无人机信号广播。
 
@@ -20,6 +21,14 @@
 
 - **接收器 (Scanner)**：Wi-Fi 混杂模式抓包，使用 OpenDroneID 库多协议解析 ASTM F3411-22a / ASD-STAN prEN 4709-002 / GB 42590-2023 / GB 46750-2023 标准的 Remote ID 信号。所有输出以 JSON 格式通过串口输出，每行一条完整的 JSON 对象。支持双端口输出：UAV 数据走 UART1（GPIO17），调试信息走 USB CDC。
 - **发射器 (Simulator)**：模拟无人机广播 Beacon 帧（巡游路径），Vendor IE 包含 Message Counter + Packed 消息。
+- **网页配置**：发射器为可连接热点（DHCP），手机浏览器访问 `http://192.168.4.1` 在线修改全部仿真参数，配置持久化于 NVS。
+
+### 网页配置使用方法
+
+1. 烧录发射器固件后，手机连接热点 `ESP32-CRID-XXXX`；
+2. 浏览器打开 `http://192.168.4.1`；
+3. 修改 UAS ID、基准坐标、高度、速度、巡游参数等，点击"保存并应用"即时生效；
+4. 修改 SSID / 信道 / 广播间隔后，需重新连接热点。
 
 ## 构建
 
@@ -47,6 +56,7 @@ idf.py build
 ├── main_tx/                      # 发射器
 │   ├── crid-sim.c                # 主入口（softAP + 厂商 IE 广播任务）
 │   ├── crid_wifi.c/h             # softAP 初始化 / 厂商 IE 注入（保留 raw 帧发送）
+│   ├── crid_web.c/h              # 内置网页配置服务器（http://192.168.4.1）
 │   ├── crid_messages.c/h         # 消息编码（Message Counter + Packed + 厂商 IE 构建）
 │   ├── crid_config.c/h           # 配置管理（坐标/速度/ID 等）
 │   └── crid_patrol.c/h           # 巡游路径模拟

@@ -1,7 +1,9 @@
 #ifndef CRID_CONFIG_H
 #define CRID_CONFIG_H
 
+#include "esp_err.h"
 #include <stdint.h>
+#include <stdbool.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -110,6 +112,7 @@ typedef struct {
     char ssid[CRID_SSID_MAX_LEN + 1];        // SSID
     uint8_t channel;                         // 通道
     uint8_t message_counter;                 // 消息计数器 (0-255, 循环)
+    uint16_t beacon_interval_ms;             // 广播间隔 (ms, 200-60000)
 
     // 巡游参数
     float base_latitude;                     // 基准纬度
@@ -126,6 +129,20 @@ typedef struct {
  * @param config 指向配置结构体的指针
  */
 void crid_config_init_default(cn_crid_config_t *config);
+
+/**
+ * @brief 将用户可编辑的配置保存到 NVS（断电保持）
+ * @param config 指向配置结构体的指针
+ * @return ESP_OK 成功
+ */
+esp_err_t crid_config_save_nvs(const cn_crid_config_t *config);
+
+/**
+ * @brief 从 NVS 加载已保存的配置（覆盖到 config 上，不存在的字段保持默认）
+ * @param config 指向配置结构体的指针
+ * @return true 加载到有效数据, false 无有效存储数据
+ */
+bool crid_config_load_nvs(cn_crid_config_t *config);
 
 /**
  * @brief 更新位置数据

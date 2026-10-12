@@ -18,6 +18,7 @@
 #include "crid_config.h"
 #include "crid_messages.h"
 #include "crid_wifi.h"
+#include "crid_web.h"
 #include "crid_patrol.h"
 
 static const char *TAG = "ESP32_CRID_STD";
@@ -41,15 +42,13 @@ static cn_crid_config_t g_config;
 static void crid_send_beacon_task(void *pvParameter) {
     ESP_LOGI(TAG, "Starting China C-RID beacon transmission (softAP vendor IE mode)...");
 
-    TickType_t xLastWake = xTaskGetTickCount();
-    TickType_t xLastWake10s = xLastWake;
-
-    const TickType_t xIntervalIe = pdMS_TO_TICKS(DEFAULT_BEACON_INTERVAL_MS);
+    TickType_t xLastWake10s = xTaskGetTickCount();
     const TickType_t xInterval10s = pdMS_TO_TICKS(PATROL_INTERVAL_SEC * 1000);
 
     for (;;) {
         // --- 定时：重建并更新 RID 厂商 IE（计数器 +1，softAP 硬件负责广播） ---
-        vTaskDelayUntil(&xLastWake, xIntervalIe);
+        // 广播间隔可由网页配置，每轮循环读取最新值
+        vTaskDelay(pdMS_TO_TICKS(g_config.beacon_interval_ms));
 
         uint16_t ie_len = crid_build_vendor_ie(&g_config, g_rid_ie, RID_IE_BUF_SIZE);
         if (ie_len > 0) {
@@ -90,11 +89,12 @@ void app_main(void) {
     // 3. 创建默认事件循环
     ESP_ERROR_CHECK(esp_event_loop_create_default());
 
-    // 4. 初始化 C-RID 配置
+    // 4. 初始化 C-RID 配置（默认值 + NVS 已保存的用户配置）
     crid_config_init_default(&g_config);
+    crid_config_load_nvs(&g_config);
 
-    // 5. 初始化 Wi-Fi（softAP 模式：真实 Beacon + 应答探测，稳定可见）
-    ret = crid_wifi_init_ap(g_config.channel, g_config.ssid);
+    // 5. 初始化 Wi-Fi（softAP 模式：真实 Beacon + 应答探测 + DHCP，稳定可见可连接）
+    ret = crid_wifi_init_ap(g_config.channel, g_config.ssid, g_config.beacon_interval_ms);
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "Wi-Fi init failed: %s", esp_err_to_name(ret));
         return;
@@ -115,6 +115,11 @@ void app_main(void) {
         return;
     }
 
+    // 8. 启动网页配置服务器（手机连接热点后访问 http://192.168.4.1）
+    if (crid_web_start(&g_config) != ESP_OK) {
+        ESP_LOGE(TAG, "Web config server failed to start!");
+    }
+
     ESP_LOGI(TAG, "Transmitter started successfully!");
     ESP_LOGI(TAG, "  UAS ID (Model): %s", g_config.uas_id);
     ESP_LOGI(TAG, "  Drone Name: %s", g_config.drone_name);
@@ -123,6 +128,7 @@ void app_main(void) {
              g_config.mac_address[0], g_config.mac_address[1], g_config.mac_address[2],
              g_config.mac_address[3], g_config.mac_address[4], g_config.mac_address[5]);
     ESP_LOGI(TAG, "  Position: %.6f, %.6f", g_config.latitude, g_config.longitude);
-    ESP_LOGI(TAG, "  Channel: %u, Interval: %ums", g_config.channel, DEFAULT_BEACON_INTERVAL_MS);
+    ESP_LOGI(TAG, "  Channel: %u, Interval: %ums", g_config.channel, g_config.beacon_interval_ms);
+    ESP_LOGI(TAG, "  Web config: http://192.168.4.1");
     ESP_LOGI(TAG, "  OUI: FA:0B:BC, Vendor Type: 0x0D (GB42590-2023)");
 }

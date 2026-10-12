@@ -5,6 +5,7 @@ idf_component_register(
         crid_messages.c
         crid_wifi.c
         crid_patrol.c
+        crid_web.c
     INCLUDE_DIRS "."
     REQUIRES
         esp_wifi
@@ -12,6 +13,8 @@ idf_component_register(
         esp_common
         esp_netif
         esp_event
+        esp_http_server
+        json
     PRIV_REQUIRES soc)
 
 target_link_libraries(${COMPONENT_LIB} m)
