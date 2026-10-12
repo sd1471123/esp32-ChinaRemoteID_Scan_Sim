@@ -42,13 +42,29 @@
 
 ```bash
 # 接收器（默认）
-idf.py set-target esp32s3 -DMAIN_DIR=main_rx
+idf.py -DMAIN_DIR=main_rx set-target esp32s3
 idf.py build
 
 # 发射器
-idf.py set-target esp32s3 -DMAIN_DIR=main_tx
+idf.py -DMAIN_DIR=main_tx set-target esp32s3
 idf.py build
 ```
+
+> 注意：`set-target` 会清空 build 目录重新配置。切换 main_rx / main_tx 时务必重新执行 `set-target`（带上 `-DMAIN_DIR`），不能只跑 `idf.py build`。
+
+## 烧录与监视
+
+编译完成后，将开发板通过 USB 连接电脑（Windows 下串口通常为 `COM3`，按实际设备管理器里的端口号修改）：
+
+```bash
+# 烧录并打开串口监视器（Ctrl+] 退出监视器）
+idf.py -p COM3 flash monitor
+
+# 发射器烧录后：手机连接热点 ESP32-CRID-XXXX，浏览器访问 http://192.168.4.1 配置
+# 接收器烧录后：串口输出 JSON 格式的 Remote ID 解析结果，可用 tools/ 上位机查看
+```
+
+也可以分开执行：`idf.py -p COM3 flash` 只烧录，`idf.py -p COM3 monitor` 只开监视器。
 
 ## 项目结构
 
