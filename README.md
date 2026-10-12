@@ -4,6 +4,12 @@
 
 > 本仓库基于 [luolitao/esp32-crid](https://github.com/luolitao/esp32-crid) 修改，感谢原作者的开源工作。
 
+## 界面预览
+
+v2.0 发射器配置页面（手机实拍，连接设备热点后访问 `http://192.168.4.1`）：
+
+<p align="center"><img src="docs/webui_v2_screenshot.jpg" width="360" alt="v2.0 网页配置界面截图"></p>
+
 ## 本仓库的修改（相对上游）
 
 发射器（main_tx）修复了"RID 信号在手机上出现几秒后消失、几分钟后又出现"的问题，并增强了接收稳定性：
