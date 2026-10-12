@@ -1,6 +1,7 @@
 #include "crid_wifi.h"
 #include "esp_wifi.h"
 #include "esp_log.h"
+#include "esp_netif.h"
 #include <string.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -53,7 +54,7 @@ esp_err_t crid_wifi_init(uint8_t channel) {
     return ESP_OK;
 }
 
-esp_err_t crid_wifi_init_ap(uint8_t channel, const char *ssid) {
+esp_err_t crid_wifi_init_ap(uint8_t channel, const char *ssid, uint16_t beacon_interval_ms) {
     esp_err_t ret;
 
     wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
@@ -71,6 +72,13 @@ esp_err_t crid_wifi_init_ap(uint8_t channel, const char *ssid) {
         return ret;
     }
 
+    // 创建 AP netif（含 DHCP 服务），手机连接后才能获取 192.168.4.x 地址
+    esp_netif_t *netif_ap = esp_netif_create_default_wifi_ap();
+    if (netif_ap == NULL) {
+        ESP_LOGE(TAG, "esp_netif_create_default_wifi_ap failed");
+        return ESP_FAIL;
+    }
+
     wifi_config_t ap_config = { 0 };
     size_t ssid_len = strlen(ssid);
     if (ssid_len > sizeof(ap_config.ap.ssid)) ssid_len = sizeof(ap_config.ap.ssid);
@@ -80,8 +88,8 @@ esp_err_t crid_wifi_init_ap(uint8_t channel, const char *ssid) {
     ap_config.ap.authmode = WIFI_AUTH_OPEN;
     ap_config.ap.max_connection = 4;
     ap_config.ap.ssid_hidden = 0;
-    // Beacon 间隔与 RID 帧更新周期(1000ms)一致，保证每帧携带最新计数器
-    ap_config.ap.beacon_interval = 1000;
+    // Beacon 间隔与 RID 帧更新周期一致，保证每帧携带最新计数器
+    ap_config.ap.beacon_interval = beacon_interval_ms;
 
     ret = esp_wifi_set_config(WIFI_IF_AP, &ap_config);
     if (ret != ESP_OK) {
@@ -96,8 +104,31 @@ esp_err_t crid_wifi_init_ap(uint8_t channel, const char *ssid) {
     }
 
     ESP_LOGI(TAG, "Wi-Fi AP initialized: ssid=%s, channel=%u, beacon=%ums",
-             ssid, channel, ap_config.ap.beacon_interval);
+             ssid, channel, beacon_interval_ms);
     return ESP_OK;
+}
+
+esp_err_t crid_wifi_update_ap(const char *ssid, uint8_t channel, uint16_t beacon_interval_ms) {
+    wifi_config_t ap_config = { 0 };
+    esp_err_t ret = esp_wifi_get_config(WIFI_IF_AP, &ap_config);
+    if (ret != ESP_OK) {
+        return ret;
+    }
+
+    size_t ssid_len = strlen(ssid);
+    if (ssid_len > sizeof(ap_config.ap.ssid)) ssid_len = sizeof(ap_config.ap.ssid);
+    memset(ap_config.ap.ssid, 0, sizeof(ap_config.ap.ssid));
+    memcpy(ap_config.ap.ssid, ssid, ssid_len);
+    ap_config.ap.ssid_len = (uint8_t)ssid_len;
+    ap_config.ap.channel = channel;
+    ap_config.ap.beacon_interval = beacon_interval_ms;
+
+    ret = esp_wifi_set_config(WIFI_IF_AP, &ap_config);
+    if (ret == ESP_OK) {
+        ESP_LOGI(TAG, "Wi-Fi AP config updated: ssid=%s, channel=%u, beacon=%ums",
+                 ssid, channel, beacon_interval_ms);
+    }
+    return ret;
 }
 
 esp_err_t crid_wifi_set_rid_ie(const uint8_t *ie, uint16_t len) {
