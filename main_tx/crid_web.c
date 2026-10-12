@@ -18,11 +18,16 @@ static cn_crid_config_t *s_config = NULL;
 
 // ================================================================
 // 内置网页（全部使用单引号，避免 C 字符串转义）
+// 地图双模式：手机有蜂窝数据时加载 Leaflet+OSM 在线地图选点；
+// CDN 不可达时自动降级为内置离线网格拾取器（以当前基准点为中心）。
 // ================================================================
 static const char PAGE_HTML[] =
 "<!DOCTYPE html><html lang='zh'><head><meta charset='utf-8'>"
 "<meta name='viewport' content='width=device-width,initial-scale=1'>"
-"<title>C-RID 发射器配置</title><style>"
+"<title>C-RID 发射器配置</title>"
+"<link rel='stylesheet' href='https://unpkg.com/leaflet@1.9.4/dist/leaflet.css'/>"
+"<script src='https://unpkg.com/leaflet@1.9.4/dist/leaflet.js' onerror='window._mapfail=1'></script>"
+"<style>"
 "body{font-family:sans-serif;margin:12px;background:#f5f6f7;color:#222}"
 "h2{margin:8px 0}h3{margin:4px 0;font-size:15px}"
 ".card{background:#fff;border-radius:8px;padding:12px;margin-bottom:12px;"
@@ -34,6 +39,9 @@ static const char PAGE_HTML[] =
 "background:#0a7d43;color:#fff;font-size:16px}"
 "#msg{margin-top:10px;font-size:14px;min-height:18px}"
 ".g{display:grid;grid-template-columns:1fr 1fr;gap:0 10px}"
+"#map{height:320px;border-radius:8px}"
+"#hint{font-size:12px;color:#888;margin-top:6px}"
+"#liveinfo{font-size:12px;color:#1565c0;margin-top:6px;min-height:14px}"
 "</style></head><body>"
 "<h2>C-RID 发射器配置</h2>"
 "<div class='card'><h3>身份信息</h3>"
@@ -56,6 +64,18 @@ static const char PAGE_HTML[] =
 "<option value='2'>空中</option><option value='3'>紧急</option>"
 "<option value='4'>识别故障</option></select></div>"
 "</div></div>"
+"<div class='card'><h3>地图选点</h3>"
+"<div id='map'></div>"
+"<div id='gridbox' style='display:none'>"
+"<canvas id='grid' width='320' height='320' style='width:100%;border-radius:8px;touch-action:manipulation'></canvas>"
+"<label>比例尺 (米/像素)</label><select id='mpp'>"
+"<option value='5'>5</option><option value='20' selected>20</option>"
+"<option value='100'>100</option><option value='500'>500</option></select>"
+"</div>"
+"<div id='liveinfo'></div>"
+"<div id='hint'>点击地图（或拖动标记）设置基准位置，绿圈为巡游范围，蓝点为实时广播位置。"
+"在线地图需手机保持移动数据；无网络时自动切换为离线网格模式（中心为当前基准点）。</div>"
+"</div>"
 "<div class='card'><h3>巡游参数</h3><div class='g'>"
 "<div><label>巡游速度系数</label><input id='patrol_speed' type='number' step='0.01'></div>"
 "<div><label>纬度半径 (度)</label><input id='patrol_radius_lat' type='number' step='0.00001'></div>"
@@ -71,16 +91,80 @@ static const char PAGE_HTML[] =
 "'status','patrol_speed','patrol_radius_lat','patrol_radius_lon'];"
 "function msg(t,ok){const m=document.getElementById('msg');m.textContent=t;"
 "m.style.color=ok?'#0a7d43':'#c0392b';}"
+"function fld(k){return document.getElementById(k);}"
+"function baseLL(){const la=parseFloat(fld('base_latitude').value)||0;"
+"const lo=parseFloat(fld('base_longitude').value)||0;return [la,lo];}"
+"function pickLL(la,lo){fld('base_latitude').value=la.toFixed(7);"
+"fld('base_longitude').value=lo.toFixed(7);}"
 "async function load(){try{const r=await fetch('/api/config');const j=await r.json();"
-"F.forEach(k=>{if(j[k]!==undefined&&j[k]!==null)document.getElementById(k).value=j[k]});}"
+"F.forEach(k=>{if(j[k]!==undefined&&j[k]!==null)fld(k).value=j[k];});"
+"initMap();}"
 "catch(e){msg('加载失败: '+e,false);}}"
-"async function save(){const d={};F.forEach(k=>d[k]=document.getElementById(k).value);"
+"async function save(){const d={};F.forEach(k=>d[k]=fld(k).value);"
 "try{const r=await fetch('/api/config',{method:'POST',"
 "headers:{'Content-Type':'application/json'},body:JSON.stringify(d)});"
 "const j=await r.json();"
-"if(j.ok){msg('已保存并应用 ✓'+(j.restarted?' (热点参数已更新，如 SSID/信道变化请重新连接)':''),true);}"
+"if(j.ok){msg('已保存并应用 ✓'+(j.restarted?' (热点参数已更新，如 SSID/信道变化请重新连接)':''),true);"
+"if(circle){map.removeLayer(circle);circle=null;}drawCircle();}"
 "else{msg('保存失败: '+(j.err||''),false);}}"
 "catch(e){msg('保存失败: '+e,false);}}"
+// ---- 在线地图（Leaflet）与离线网格双模式 ----
+"let map=null,marker=null,live=null,circle=null;"
+"let gbase=[0,0],gpick=null;"
+"function drawCircle(){if(!map)return;if(circle){map.removeLayer(circle);circle=null;}"
+"const r=(parseFloat(fld('patrol_radius_lat').value)||0)*111320;"
+"if(r>0&&marker){circle=L.circle(marker.getLatLng(),{radius:r,color:'#0a7d43',"
+"weight:1,fillOpacity:.05}).addTo(map);}}"
+"function initMap(){const c=baseLL();"
+"if(typeof L!=='undefined'&&!window._mapfail){"
+"map=L.map('map').setView(c,15);"
+"L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',"
+"{maxZoom:19,attribution:'&copy; OpenStreetMap'}).addTo(map);"
+"marker=L.marker(c,{draggable:true}).addTo(map);"
+"marker.on('dragend',function(e){const p=marker.getLatLng();pickLL(p.lat,p.lng);drawCircle();});"
+"map.on('click',function(e){marker.setLatLng(e.latlng);"
+"pickLL(e.latlng.lat,e.latlng.lng);drawCircle();});"
+"live=L.circleMarker(c,{radius:6,color:'#1565c0',fillColor:'#1565c0',"
+"fillOpacity:.9}).addTo(map);"
+"drawCircle();}"
+"else{document.getElementById('map').style.display='none';"
+"document.getElementById('gridbox').style.display='block';"
+"gbase=c;drawGrid();"
+"document.getElementById('mpp').onchange=function(){drawGrid();};"
+"const cv=document.getElementById('grid');"
+"cv.addEventListener('click',function(e){"
+"const rc=cv.getBoundingClientRect();const s=320/rc.width;"
+"const x=(e.clientX-rc.left)*s,y=(e.clientY-rc.top)*s;"
+"const mpp=parseFloat(fld('mpp').value);"
+"const dx=(x-160)*mpp,dy=(160-y)*mpp;"
+"const la=gbase[0]+dy/111320;"
+"const lo=gbase[1]+dx/(111320*Math.cos(gbase[0]*Math.PI/180));"
+"pickLL(la,lo);gpick=[la,lo];drawGrid();});}}"
+"function drawGrid(){const cv=document.getElementById('grid');"
+"if(!cv)return;"
+"const x=cv.getContext('2d');"
+"x.fillStyle='#fafafa';x.fillRect(0,0,320,320);"
+"x.strokeStyle='#e2e2e2';"
+"for(let i=0;i<=320;i+=40){x.beginPath();x.moveTo(i,0);x.lineTo(i,320);x.stroke();"
+"x.beginPath();x.moveTo(0,i);x.lineTo(320,i);x.stroke();}"
+"x.strokeStyle='#999';x.beginPath();x.moveTo(160,0);x.lineTo(160,320);"
+"x.moveTo(0,160);x.lineTo(320,160);x.stroke();"
+"x.fillStyle='#555';x.font='11px sans-serif';"
+"x.fillText(fld('mpp').value+'米/像素',8,312);"
+"x.fillStyle='#0a7d43';x.beginPath();x.arc(160,160,6,0,6.3);x.fill();"
+"x.fillStyle='#0a7d43';x.fillText('中心=基准点',170,164);"
+"if(gpick){const mpp=parseFloat(fld('mpp').value);"
+"const px=160+(gpick[1]-gbase[1])*111320*Math.cos(gbase[0]*Math.PI/180)/mpp;"
+"const py=160-(gpick[0]-gbase[0])*111320/mpp;"
+"x.fillStyle='#c0392b';x.beginPath();x.arc(px,py,6,0,6.3);x.fill();}}"
+// ---- 实时广播位置轮询 ----
+"async function poll(){try{const r=await fetch('/api/status');const j=await r.json();"
+"const t='实时广播位置: '+j.latitude.toFixed(6)+', '+j.longitude.toFixed(6)+"
+"'  高度 '+j.altitude_msl.toFixed(1)+'m  航向 '+j.heading.toFixed(0)+'°';"
+"document.getElementById('liveinfo').textContent=t;"
+"if(live){live.setLatLng([j.latitude,j.longitude]);}}"
+"catch(e){}}"
+"setInterval(poll,2000);"
 "load();"
 "</script></body></html>";
 
@@ -253,6 +337,28 @@ static esp_err_t handler_post_config(httpd_req_t *req) {
     return ESP_OK;
 }
 
+// 实时广播位置（供网页地图显示蓝点，每 2 秒被前端轮询）
+static esp_err_t handler_status(httpd_req_t *req) {
+    cn_crid_config_t *cfg = s_config;
+    cJSON *j = cJSON_CreateObject();
+    if (j == NULL) {
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "oom");
+        return ESP_FAIL;
+    }
+    cJSON_AddNumberToObject(j, "latitude", cfg->latitude);
+    cJSON_AddNumberToObject(j, "longitude", cfg->longitude);
+    cJSON_AddNumberToObject(j, "altitude_msl", cfg->altitude_msl);
+    cJSON_AddNumberToObject(j, "heading", cfg->heading);
+    cJSON_AddNumberToObject(j, "speed", cfg->speed_horizontal);
+
+    const char *s = cJSON_PrintUnformatted(j);
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_sendstr(req, s);
+    cJSON_free((void *)s);
+    cJSON_Delete(j);
+    return ESP_OK;
+}
+
 // 浏览器会自动请求站点图标，返回 204 空响应避免 404 日志刷屏
 static esp_err_t handler_favicon(httpd_req_t *req) {
     httpd_resp_set_status(req, "204 No Content");
@@ -264,6 +370,7 @@ static const httpd_uri_t uris[] = {
     { .uri = "/",          .method = HTTP_GET,  .handler = handler_page,      .user_ctx = NULL },
     { .uri = "/api/config",.method = HTTP_GET,  .handler = handler_get_config,.user_ctx = NULL },
     { .uri = "/api/config",.method = HTTP_POST, .handler = handler_post_config,.user_ctx = NULL },
+    { .uri = "/api/status",.method = HTTP_GET,  .handler = handler_status,    .user_ctx = NULL },
     { .uri = "/favicon.ico",.method = HTTP_GET, .handler = handler_favicon,   .user_ctx = NULL },
 };
 
