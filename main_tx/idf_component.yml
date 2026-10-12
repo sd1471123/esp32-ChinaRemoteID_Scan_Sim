@@ -1,0 +1,4 @@
+## ESP-IDF v6.x moved the former built-in 'json' component to the
+## component manager; cJSON is now provided by espressif/cjson.
+dependencies:
+  espressif/cjson: "^1.7.16"

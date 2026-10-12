@@ -14,7 +14,7 @@ idf_component_register(
         esp_netif
         esp_event
         esp_http_server
-        json
+        cjson
     PRIV_REQUIRES soc)
 
 target_link_libraries(${COMPONENT_LIB} m)
