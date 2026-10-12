@@ -64,7 +64,16 @@ static const char PAGE_HTML[] =
 "<option value='2'>空中</option><option value='3'>紧急</option>"
 "<option value='4'>识别故障</option></select></div>"
 "</div></div>"
+"<div class='card'><h3>飞手位置</h3><div class='g'>"
+"<div><label>飞手纬度</label><input id='operator_latitude' type='number' step='0.0000001'></div>"
+"<div><label>飞手经度</label><input id='operator_longitude' type='number' step='0.0000001'></div>"
+"</div>"
+"<label>飞手海拔高度 m</label><input id='operator_altitude' type='number'>"
+"<p style='font-size:12px;color:#888;margin:4px 0 0'>修改飞手坐标后，无人机位置自动按默认相对偏移生成；单独修改无人机位置不影响飞手。</p></div>"
 "<div class='card'><h3>地图选点</h3>"
+"<div style='display:flex;gap:16px;font-size:13px;margin-bottom:6px'>"
+"<label style=\"margin:0\"><input type='radio' name='pt' value='op' checked> 选点对象：飞手</label>"
+"<label style=\"margin:0\"><input type='radio' name='pt' value='drone'> 无人机</label></div>"
 "<div id='map'></div>"
 "<div id='gridbox' style='display:none'>"
 "<canvas id='grid' width='320' height='320' style='width:100%;border-radius:8px;touch-action:manipulation'></canvas>"
@@ -73,8 +82,9 @@ static const char PAGE_HTML[] =
 "<option value='100'>100</option><option value='500'>500</option></select>"
 "</div>"
 "<div id='liveinfo'></div>"
-"<div id='hint'>点击地图（或拖动标记）设置基准位置，绿圈为巡游范围，蓝点为实时广播位置。"
-"在线地图需手机保持移动数据；无网络时自动切换为离线网格模式（中心为当前基准点）。</div>"
+"<div id='hint'>红点=飞手，绿点=无人机，蓝点=实时广播位置，绿圈=巡游范围。"
+"地图以飞手位置为中心：选点对象为"飞手"时点击/拖动会同步按默认偏移生成无人机位置；"
+"选"无人机"时只改无人机位置。在线地图需手机保持移动数据，无网络时自动切换离线网格。</div>"
 "</div>"
 "<div class='card'><h3>巡游参数</h3><div class='g'>"
 "<div><label>巡游速度系数</label><input id='patrol_speed' type='number' step='0.01'></div>"
@@ -91,20 +101,46 @@ static const char PAGE_HTML[] =
 "<script>"
 "const F=['uas_id','drone_name','operator_id','ssid','channel','beacon_interval_ms',"
 "'base_latitude','base_longitude','base_altitude_msl','altitude_agl','speed_horizontal',"
+"'operator_latitude','operator_longitude','operator_altitude',"
 "'status','patrol_speed','patrol_radius_lat','patrol_radius_lon'];"
 "function msg(t,ok){const m=document.getElementById('msg');m.textContent=t;"
 "m.style.color=ok?'#0a7d43':'#c0392b';}"
 "function fld(k){return document.getElementById(k);}"
 "function baseLL(){const la=parseFloat(fld('base_latitude').value)||0;"
 "const lo=parseFloat(fld('base_longitude').value)||0;return [la,lo];}"
+"function opLL(){const la=parseFloat(fld('operator_latitude').value)||0;"
+"const lo=parseFloat(fld('operator_longitude').value)||0;return [la,lo];}"
+// 无人机基准点相对飞手的默认偏移（度），取自 crid_config.c 出厂默认值之差
+"const D_OFF=[0.00287,0.00026];"
 "function pickLL(la,lo){fld('base_latitude').value=la.toFixed(7);"
 "fld('base_longitude').value=lo.toFixed(7);}"
+"function autoDrone(la,lo){pickLL(la+D_OFF[0],lo+D_OFF[1]);}"
+"function ptarget(){const r=document.querySelector('input[name=pt]:checked');"
+"return r?r.value:'op';}"
+"function syncMarkers(){const d=baseLL(),o=opLL();"
+"if(opMarker)opMarker.setLatLng(o);"
+"if(dMarker)dMarker.setLatLng(d);"
+"if(map&&opMarker)map.panTo(o);"
+"drawCircle();"
+"if(!map){gbase=o;gpick=null;drawGrid();}}"
+"function applyPick(t,la,lo){"
+"if(t==='op'){fld('operator_latitude').value=la.toFixed(7);"
+"fld('operator_longitude').value=lo.toFixed(7);autoDrone(la,lo);}"
+"else{pickLL(la,lo);}"
+"syncMarkers();}"
+// 手动编辑飞手坐标输入框时，实时自动生成无人机位置
+"function bindAuto(id){fld(id).addEventListener('input',function(){"
+"const la=parseFloat(fld('operator_latitude').value);"
+"const lo=parseFloat(fld('operator_longitude').value);"
+"if(!isNaN(la)&&!isNaN(lo)){autoDrone(la,lo);syncMarkers();}});}"
+"bindAuto('operator_latitude');bindAuto('operator_longitude');"
 "async function load(){try{const r=await fetch('/api/config');const j=await r.json();"
 "F.forEach(k=>{if(j[k]!==undefined&&j[k]!==null)fld(k).value=j[k];});"
 "initMap();}"
 "catch(e){msg('加载失败: '+e,false);}}"
 "const NUM=['channel','beacon_interval_ms','base_latitude','base_longitude',"
-"'base_altitude_msl','altitude_agl','speed_horizontal','status',"
+"'base_altitude_msl','operator_latitude','operator_longitude','operator_altitude',"
+"'altitude_agl','speed_horizontal','status',"
 "'patrol_speed','patrol_radius_lat','patrol_radius_lon'];"
 "async function save(){const d={};F.forEach(function(k){"
 "const v=fld(k).value;"
@@ -122,33 +158,36 @@ static const char PAGE_HTML[] =
 "await load();}else{msg('恢复失败',false);}}"
 "catch(e){msg('恢复失败: '+e,false);}}"
 // ---- 在线地图（Leaflet）与离线网格双模式 ----
-"let map=null,marker=null,live=null,circle=null,ginit=false;"
+"let map=null,opMarker=null,dMarker=null,live=null,circle=null,ginit=false;"
 "let gbase=[0,0],gpick=null;"
+"function dotIcon(c){return L.divIcon({className:'',"
+"html:'<div style=\"width:14px;height:14px;border-radius:50%;background:'+c+"
+"';border:2px solid #fff;box-shadow:0 1px 3px rgba(0,0,0,.4)\"></div>',"
+"iconSize:[14,14],iconAnchor:[7,7]});}"
 "function drawCircle(){if(!map)return;if(circle){map.removeLayer(circle);circle=null;}"
 "const r=(parseFloat(fld('patrol_radius_lat').value)||0)*111320;"
-"if(r>0&&marker){circle=L.circle(marker.getLatLng(),{radius:r,color:'#0a7d43',"
+"if(r>0&&dMarker){circle=L.circle(dMarker.getLatLng(),{radius:r,color:'#0a7d43',"
 "weight:1,fillOpacity:.05}).addTo(map);}}"
 "function initMap(){"
-"if(ginit){const c2=baseLL();"          // 已初始化：同步到最新基准点
-"if(map&&marker){marker.setLatLng(c2);drawCircle();}"
-"else if(document.getElementById('gridbox').style.display==='block'){"
-"gbase=c2;gpick=null;drawGrid();}"
-"return;}"
-"ginit=true;const c=baseLL();"
+"if(ginit){syncMarkers();return;}"
+"ginit=true;const o=opLL(),d=baseLL();"
 "if(typeof L!=='undefined'&&!window._mapfail){"
-"map=L.map('map').setView(c,15);"
+"map=L.map('map').setView(o,15);"                     // 地图默认以飞手位置为中心
 "L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',"
 "{maxZoom:19,attribution:'&copy; OpenStreetMap'}).addTo(map);"
-"marker=L.marker(c,{draggable:true}).addTo(map);"
-"marker.on('dragend',function(e){const p=marker.getLatLng();pickLL(p.lat,p.lng);drawCircle();});"
-"map.on('click',function(e){marker.setLatLng(e.latlng);"
-"pickLL(e.latlng.lat,e.latlng.lng);drawCircle();});"
-"live=L.circleMarker(c,{radius:6,color:'#1565c0',fillColor:'#1565c0',"
+"opMarker=L.marker(o,{draggable:true,icon:dotIcon('#c0392b')}).addTo(map);"
+"dMarker=L.marker(d,{draggable:true,icon:dotIcon('#0a7d43')}).addTo(map);"
+"opMarker.on('dragend',function(e){const p=opMarker.getLatLng();"
+"applyPick('op',p.lat,p.lng);});"
+"dMarker.on('dragend',function(e){const p=dMarker.getLatLng();"
+"applyPick('drone',p.lat,p.lng);});"
+"map.on('click',function(e){applyPick(ptarget(),e.latlng.lat,e.latlng.lng);});"
+"live=L.circleMarker(d,{radius:6,color:'#1565c0',fillColor:'#1565c0',"
 "fillOpacity:.9}).addTo(map);"
 "drawCircle();}"
 "else{document.getElementById('map').style.display='none';"
 "document.getElementById('gridbox').style.display='block';"
-"gbase=c;drawGrid();"
+"gbase=o;drawGrid();"                                  // 离线网格同样以飞手为中心
 "document.getElementById('mpp').onchange=function(){drawGrid();};"
 "const cv=document.getElementById('grid');"
 "cv.addEventListener('click',function(e){"
@@ -158,7 +197,7 @@ static const char PAGE_HTML[] =
 "const dx=(x-160)*mpp,dy=(160-y)*mpp;"
 "const la=gbase[0]+dy/111320;"
 "const lo=gbase[1]+dx/(111320*Math.cos(gbase[0]*Math.PI/180));"
-"pickLL(la,lo);gpick=[la,lo];drawGrid();});}}"
+"applyPick(ptarget(),la,lo);gpick=[la,lo];drawGrid();});}}"
 "function drawGrid(){const cv=document.getElementById('grid');"
 "if(!cv)return;"
 "const x=cv.getContext('2d');"
@@ -212,6 +251,9 @@ static esp_err_t handler_get_config(httpd_req_t *req) {
     cJSON_AddNumberToObject(j, "base_latitude", cfg->base_latitude);
     cJSON_AddNumberToObject(j, "base_longitude", cfg->base_longitude);
     cJSON_AddNumberToObject(j, "base_altitude_msl", cfg->base_altitude_msl);
+    cJSON_AddNumberToObject(j, "operator_latitude", cfg->operator_lat);
+    cJSON_AddNumberToObject(j, "operator_longitude", cfg->operator_lon);
+    cJSON_AddNumberToObject(j, "operator_altitude", cfg->operator_alt);
     cJSON_AddNumberToObject(j, "altitude_agl", cfg->altitude_agl);
     cJSON_AddNumberToObject(j, "speed_horizontal", cfg->speed_horizontal);
     cJSON_AddNumberToObject(j, "status", cfg->status);
@@ -313,6 +355,18 @@ static esp_err_t handler_post_config(httpd_req_t *req) {
     if (err[0] == '\0' && jget_num(j, "base_longitude", &v)) {
         if (v < -180 || v > 180) snprintf(err, sizeof(err), "经度须在 -180~180");
         else next.base_longitude = (float)v;
+    }
+    if (err[0] == '\0' && jget_num(j, "operator_latitude", &v)) {
+        if (v < -90 || v > 90) snprintf(err, sizeof(err), "飞手纬度须在 -90~90");
+        else next.operator_lat = (float)v;
+    }
+    if (err[0] == '\0' && jget_num(j, "operator_longitude", &v)) {
+        if (v < -180 || v > 180) snprintf(err, sizeof(err), "飞手经度须在 -180~180");
+        else next.operator_lon = (float)v;
+    }
+    if (err[0] == '\0' && jget_num(j, "operator_altitude", &v)) {
+        if (v < -1000 || v > 10000) snprintf(err, sizeof(err), "飞手海拔须在 -1000~10000m");
+        else next.operator_alt = (float)v;
     }
     if (err[0] == '\0' && jget_num(j, "base_altitude_msl", &v)) next.base_altitude_msl = (float)v;
     if (err[0] == '\0' && jget_num(j, "altitude_agl", &v)) next.altitude_agl = (float)v;
