@@ -5,6 +5,7 @@
  */
 
 #include "crid_web.h"
+#include "crid_wifi.h"
 #include "esp_http_server.h"
 #include "esp_log.h"
 #include "cJSON.h"
