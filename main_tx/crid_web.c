@@ -100,7 +100,12 @@ static const char PAGE_HTML[] =
 "F.forEach(k=>{if(j[k]!==undefined&&j[k]!==null)fld(k).value=j[k];});"
 "initMap();}"
 "catch(e){msg('加载失败: '+e,false);}}"
-"async function save(){const d={};F.forEach(k=>d[k]=fld(k).value);"
+"const NUM=['channel','beacon_interval_ms','base_latitude','base_longitude',"
+"'base_altitude_msl','altitude_agl','speed_horizontal','status',"
+"'patrol_speed','patrol_radius_lat','patrol_radius_lon'];"
+"async function save(){const d={};F.forEach(function(k){"
+"const v=fld(k).value;"
+"d[k]=NUM.indexOf(k)>=0?(v===''?null:parseFloat(v)):v;});"
 "try{const r=await fetch('/api/config',{method:'POST',"
 "headers:{'Content-Type':'application/json'},body:JSON.stringify(d)});"
 "const j=await r.json();"
@@ -208,12 +213,24 @@ static esp_err_t handler_get_config(httpd_req_t *req) {
     return ESP_OK;
 }
 
-// 从 JSON 取浮点/整数（不存在则跳过）
+// 从 JSON 取浮点/整数（不存在则跳过）。
+// 兼容数字与字符串两种类型：浏览器表单提交的值常为字符串（"23.14"）。
 static bool jget_num(const cJSON *j, const char *key, double *out) {
     const cJSON *it = cJSON_GetObjectItemCaseSensitive(j, key);
-    if (it == NULL || !cJSON_IsNumber(it)) return false;
-    *out = cJSON_GetNumberValue(it);
-    return true;
+    if (it == NULL) return false;
+    if (cJSON_IsNumber(it)) {
+        *out = cJSON_GetNumberValue(it);
+        return true;
+    }
+    if (cJSON_IsString(it)) {
+        const char *s = cJSON_GetStringValue(it);
+        if (s != NULL && *s != '\0') {
+            char *end = NULL;
+            double v = strtod(s, &end);
+            if (end != s) { *out = v; return true; }
+        }
+    }
+    return false;
 }
 
 static esp_err_t handler_post_config(httpd_req_t *req) {
