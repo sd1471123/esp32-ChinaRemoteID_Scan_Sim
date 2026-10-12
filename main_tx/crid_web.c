@@ -253,10 +253,18 @@ static esp_err_t handler_post_config(httpd_req_t *req) {
     return ESP_OK;
 }
 
+// 浏览器会自动请求站点图标，返回 204 空响应避免 404 日志刷屏
+static esp_err_t handler_favicon(httpd_req_t *req) {
+    httpd_resp_set_status(req, "204 No Content");
+    httpd_resp_send(req, NULL, 0);
+    return ESP_OK;
+}
+
 static const httpd_uri_t uris[] = {
     { .uri = "/",          .method = HTTP_GET,  .handler = handler_page,      .user_ctx = NULL },
     { .uri = "/api/config",.method = HTTP_GET,  .handler = handler_get_config,.user_ctx = NULL },
     { .uri = "/api/config",.method = HTTP_POST, .handler = handler_post_config,.user_ctx = NULL },
+    { .uri = "/favicon.ico",.method = HTTP_GET, .handler = handler_favicon,   .user_ctx = NULL },
 };
 
 esp_err_t crid_web_start(cn_crid_config_t *config) {
