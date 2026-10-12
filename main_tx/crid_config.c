@@ -91,7 +91,7 @@ void crid_config_init_default(cn_crid_config_t *config) {
     ESP_LOGI(TAG, "  Drone Model (Self-ID): %s", config->drone_name);
     ESP_LOGI(TAG, "  Operator ID: %s", config->operator_id);
     ESP_LOGI(TAG, "  ID Type: %d (Serial Number)", config->id_type);
-    ESP_LOGI(TAG, "  UA Type: %d (Helicopter/Multirotor)", config->ua_type);
+    ESP_LOGI(TAG, "  UA Type: %d", config->ua_type);
     ESP_LOGI(TAG, "  Position: %.6f, %.6f", config->latitude, config->longitude);
 }
 
