@@ -81,7 +81,10 @@ static const char PAGE_HTML[] =
 "<div><label>纬度半径 (度)</label><input id='patrol_radius_lat' type='number' step='0.00001'></div>"
 "<div><label>经度半径 (度)</label><input id='patrol_radius_lon' type='number' step='0.00001'></div>"
 "</div></div>"
-"<button onclick='save()'>保存并应用</button>"
+"<div style='display:flex;gap:10px'>"
+"<button style='flex:2;margin-top:14px' onclick='save()'>保存并应用</button>"
+"<button style='flex:1;margin-top:14px;background:#c0392b' "
+"onclick='resetCfg()'>恢复初始</button></div>"
 "<div id='msg'></div>"
 "<p style='font-size:12px;color:#888'>手机连接本机热点后访问 http://192.168.4.1 打开此页。"
 "修改 SSID / 信道 / 广播间隔保存后需重新连接热点。配置已持久化，断电不丢失。</p>"
@@ -113,14 +116,25 @@ static const char PAGE_HTML[] =
 "if(circle){map.removeLayer(circle);circle=null;}drawCircle();}"
 "else{msg('保存失败: '+(j.err||''),false);}}"
 "catch(e){msg('保存失败: '+e,false);}}"
+"async function resetCfg(){if(!confirm('确认恢复全部初始设定？当前配置将被覆盖。'))return;"
+"try{const r=await fetch('/api/reset',{method:'POST'});const j=await r.json();"
+"if(j.ok){msg('已恢复初始设定 ✓'+(j.restarted?' (热点参数变化，请重新连接热点)':''),true);"
+"await load();}else{msg('恢复失败',false);}}"
+"catch(e){msg('恢复失败: '+e,false);}}"
 // ---- 在线地图（Leaflet）与离线网格双模式 ----
-"let map=null,marker=null,live=null,circle=null;"
+"let map=null,marker=null,live=null,circle=null,ginit=false;"
 "let gbase=[0,0],gpick=null;"
 "function drawCircle(){if(!map)return;if(circle){map.removeLayer(circle);circle=null;}"
 "const r=(parseFloat(fld('patrol_radius_lat').value)||0)*111320;"
 "if(r>0&&marker){circle=L.circle(marker.getLatLng(),{radius:r,color:'#0a7d43',"
 "weight:1,fillOpacity:.05}).addTo(map);}}"
-"function initMap(){const c=baseLL();"
+"function initMap(){"
+"if(ginit){const c2=baseLL();"          // 已初始化：同步到最新基准点
+"if(map&&marker){marker.setLatLng(c2);drawCircle();}"
+"else if(document.getElementById('gridbox').style.display==='block'){"
+"gbase=c2;gpick=null;drawGrid();}"
+"return;}"
+"ginit=true;const c=baseLL();"
 "if(typeof L!=='undefined'&&!window._mapfail){"
 "map=L.map('map').setView(c,15);"
 "L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',"
@@ -376,6 +390,37 @@ static esp_err_t handler_status(httpd_req_t *req) {
     return ESP_OK;
 }
 
+// 恢复出厂默认配置（保留消息计数器，防止接收端乱序）
+static esp_err_t handler_reset(httpd_req_t *req) {
+    cn_crid_config_t *cfg = s_config;
+    cn_crid_config_t next;
+    crid_config_init_default(&next);
+
+    bool ap_changed = (strcmp(next.ssid, cfg->ssid) != 0) ||
+                      (next.channel != cfg->channel) ||
+                      (next.beacon_interval_ms != cfg->beacon_interval_ms);
+    uint8_t saved_counter = cfg->message_counter;
+    *cfg = next;
+    cfg->message_counter = saved_counter;
+    cfg->latitude = cfg->base_latitude;
+    cfg->longitude = cfg->base_longitude;
+    cfg->altitude_msl = cfg->base_altitude_msl;
+
+    bool restarted = false;
+    if (ap_changed) {
+        if (crid_wifi_update_ap(cfg->ssid, cfg->channel, cfg->beacon_interval_ms) == ESP_OK) {
+            restarted = true;
+        }
+    }
+    crid_config_save_nvs(cfg);
+    ESP_LOGW(TAG, "Config reset to factory defaults via web (restarted=%d)", restarted);
+
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_sendstr(req, restarted ? "{\"ok\":true,\"restarted\":true}"
+                                      : "{\"ok\":true,\"restarted\":false}");
+    return ESP_OK;
+}
+
 // 浏览器会自动请求站点图标，返回 204 空响应避免 404 日志刷屏
 static esp_err_t handler_favicon(httpd_req_t *req) {
     httpd_resp_set_status(req, "204 No Content");
@@ -388,6 +433,7 @@ static const httpd_uri_t uris[] = {
     { .uri = "/api/config",.method = HTTP_GET,  .handler = handler_get_config,.user_ctx = NULL },
     { .uri = "/api/config",.method = HTTP_POST, .handler = handler_post_config,.user_ctx = NULL },
     { .uri = "/api/status",.method = HTTP_GET,  .handler = handler_status,    .user_ctx = NULL },
+    { .uri = "/api/reset", .method = HTTP_POST, .handler = handler_reset,     .user_ctx = NULL },
     { .uri = "/favicon.ico",.method = HTTP_GET, .handler = handler_favicon,   .user_ctx = NULL },
 };
 
