@@ -92,20 +92,26 @@ void crid_build_location_message(const cn_crid_config_t *config, uint8_t *messag
 
     // 字节1: [Status(4)][Reserved(1)][HeightType(1)][EWDirection(1)][SpeedMult(1)]
     // SpeedMult: 0 = speed < 255*0.25=63.75, 1 = speed >= 63.75
+    // EWDirection: 0 = 航向 0-179°, 1 = 航向 180-359°（字节2 存减 180 后的值）
     uint8_t speed_mult = (config->speed_horizontal >= 63.75f) ? 1 : 0;
     uint8_t height_type = config->height_type & 0x01;
+    uint8_t ew_dir = (config->heading >= 180.0f && config->heading < 360.0f) ? 1 : 0;
     // OpenDroneID 位序: [Status(4)][Reserved(1)][HeightType(1)][EWDirection(1)][SpeedMult(1)]
-    message[1] = (config->status << 4) | (height_type << 2) | speed_mult;
+    message[1] = (config->status << 4) | (height_type << 2) | (ew_dir << 1) | speed_mult;
 
-    // 字节2: 航迹角 (1°/LSB, 0-255 表示 0-255°)
+    // 字节2: 航迹角（0-179 + EWDirection 标志位组合表示 0-359°，与 OpenDroneID
+    // encodeDirection 及 GB 42590 布局一致；此前直接写 0-360°，≥180° 时报文错误）
     // 255 = Invalid/Unknown
     // 注：ASTM F3411 标准为 0.5°/LSB，但此接收端按 1°/LSB 解码
     uint8_t track_angle;
     if (config->heading < 0 || config->heading >= 360.0f) {
         track_angle = 255; // Invalid
+    } else if (config->heading >= 180.0f) {
+        track_angle = (uint8_t)(config->heading - 180.0f + 0.5f);
+        if (track_angle > 179) track_angle = 179;
     } else {
         track_angle = (uint8_t)(config->heading + 0.5f);
-        if (track_angle > 254) track_angle = 254;
+        if (track_angle > 179) track_angle = 179;
     }
     message[2] = track_angle;
 
