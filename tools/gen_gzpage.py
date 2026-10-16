@@ -1,9 +1,11 @@
 """生成内置网页的 gzip 压缩版头文件（勿手改，由 build.ps1 每次编译前调用）。"""
 import gzip, hashlib, io, os
 
-SRC = r"E:/esp32-crid-1.1.0/main/crid_web.c"
-RXMAP_SRC = r"E:/esp32-crid-1.1.0/main/rxmap_page.js"
-OUT = r"E:/esp32-crid-1.1.0/main/page_gz.h"
+# 仓库根目录 = 本脚本所在目录的上一级（本地与 CI 均可用，不写死绝对路径）
+BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+SRC = os.path.join(BASE, "main", "crid_web.c")
+RXMAP_SRC = os.path.join(BASE, "main", "rxmap_page.js")
+OUT = os.path.join(BASE, "main", "page_gz.h")
 
 src = io.open(SRC, encoding="utf-8").read()
 

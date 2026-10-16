@@ -20,10 +20,14 @@ jobs:
     - name: Checkout repository
       uses: actions/checkout@v4
 
+    # page_gz.h 不入库（.gitignore 排除），编译前必须先由源码生成
+    - name: Generate gzip page resources
+      run: python3 tools/gen_gzpage.py
+
     - name: Build unified firmware (esp32s3)
       uses: espressif/esp-idf-ci-action@v1
       with:
-        esp_idf_version: v6.0.1
+        esp_idf_version: v6.1
         target: esp32s3
         path: '.'
         command: idf.py build
