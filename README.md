@@ -1,6 +1,6 @@
-# ESP32 C-RID (Remote ID Scanner & Simulator)
+# ESP32-ChinaRemoteID_Scan_Sim (Remote ID 统一收发固件)
 
-基于 ESP-IDF 6.0.1 的无人机 Remote ID 收发系统，遵循 ASTM F3411-22 / ASD-STAN prEN 4709-002 标准。主要部署在 ESP32-S3，兼容 ESP32-C3 等模组。
+基于 ESP-IDF 的无人机 Remote ID 收发一体固件，单程序双模式：**发射**（GB 42590 / GB 46750 / 双标准同发）与**接收监测**，遵循 ASTM F3411-22 / ASD-STAN prEN 4709-002 / GB 42590-2023 / GB 46750-2025 标准。主要部署在 ESP32-S3，兼容 ESP32-C3 等模组。
 
 > 本仓库基于 [luolitao/esp32-crid](https://github.com/luolitao/esp32-crid) 修改，感谢原作者的开源工作。
 
@@ -12,7 +12,7 @@ v2.0 发射器配置页面（手机实拍，连接设备热点后访问 `http://
 
 ## 本仓库的修改（相对上游）
 
-发射器（main_tx）修复了"RID 信号在手机上出现几秒后消失、几分钟后又出现"的问题，并增强了接收稳定性：
+本固件（main/）修复了"RID 信号在手机上出现几秒后消失、几分钟后又出现"的问题，并增强了接收稳定性：
 
 1. **改用 softAP 模式广播**：原实现为 STA + 混杂模式下用 `esp_wifi_80211_tx` 手工发送 Beacon 帧，不应答探测请求（Probe Request），导致手机扫描时频繁漏抓。现改为 `WIFI_MODE_AP` 真实热点，硬件自动广播 Beacon 并应答探测请求，手机 WLAN 列表中稳定可见。该做法与 OpenDroneID 官方 ESP32 参考实现（sxjack/uav_electronic_ids）一致。
 2. **RID 数据通过厂商 IE 注入**：使用 `esp_wifi_set_vendor_ie()` 将 RID 数据（OUI FA:0B:BC / Type 0x0D / Message Counter / 0xF1 打包报文，格式与上游完全一致）同时挂到 Beacon 和 Probe Response。每 `DEFAULT_BEACON_INTERVAL_MS` 更新一次 IE。
@@ -23,6 +23,7 @@ v2.0 发射器配置页面（手机实拍，连接设备热点后访问 `http://
 7. **地图选点与实时状态（v2.0 新增）**：配置页内置地图（Leaflet + OpenStreetMap，WGS-84 图源与 RID 广播坐标系一致，无 GCJ-02 偏移），点击/拖动选点自动填入坐标；支持单独设置飞手位置（地图默认以飞手为中心，修改飞手坐标后无人机位置按默认相对偏移自动生成，单独改无人机位置不影响飞手）；实时显示广播位置（蓝点）与巡游范围圈。手机无互联网时自动降级为离线网格拾取器。
 8. **大疆机型伪装预设（v2.0 新增）**：内置大疆主流机型的 RID 序列号前缀库（Mavic / Air / Mini / Avata / Neo / FPV / Matrice / Inspire / FlyCart 等 40 余款），选择型号后自动生成符合大疆真实格式的 20 位序列号（`1581F` 厂商前缀 + 型号码 + 随机后缀），并同步填入机型名称与机型代码。机型前缀数据来源于 [TechExplorer-X/DroneScanner](https://github.com/TechExplorer-X/DroneScanner) 的社区实测积累（详见下方"致谢与数据来源"）。
 9. **界面美化与响应式布局（v2.0 新增）**：配置页面全新视觉风格（渐变标题栏、卡片式布局、自定义下拉组件、输入聚焦高亮、分段式选点切换），电脑端（≥860px）自动切换为双列卡片 + 大地图通栏布局，手机端保持单列，自适应不同屏幕。
+10. **统一收发固件（v3.0 新增）**：接收端并入同一固件，网页顶部可切换**发射 / 接收**模式。发射支持三档广播标准（GB 42590 旧国标 / GB 46750 新国标 / 双标准同发，网页切换自动显隐对应配置项）；接收模式在网页实时显示周边 RID 信号（识别码、位置、高度、速度、协议类型等），同时解码 ASTM / GB 42590 / GB 46750 报文。
 
 ## 致谢与数据来源
 
@@ -33,6 +34,23 @@ v2.0 发射器配置页面（手机实拍，连接设备热点后访问 `http://
 > 注意：本模拟器广播的是虚构 ID，仅用于测试与开发验证，请勿在机场等敏感区域当真实无人机信号广播。
 
 ## 版本历史
+
+### v3.1.0 — 接收端地图与离线网格
+
+- **接收端地图模块（架构重做）**：地图脚本作为独立资源 `/rxmap.js` 按需懒加载，闭包封装全部状态，唯一全局出口 `RXMAP`，与发射端地图零符号共享，杜绝内联脚本错误扩散
+- **双地图三态渲染**：联网时 Leaflet + OSM 显示目标轨迹与飞手位置（卡片点击聚焦）；无互联网时自动降级为 canvas 离线网格底图（比例尺按目标包围盒自适应 1/2/5 档位）；Leaflet CDN 不可达时降级网格，完全无信号时显示提示
+- **接收端飞手位置解析**：GB 46750 数据项 005/006/007 与 GB 42590 System.OperatorLatitude 均可解析出飞手坐标
+- **页面 gzip 传输**：内嵌网页与地图脚本均以 gzip 压缩下发（约 30KB → 11KB），并带禁缓存响应头
+- **构建与回归工具链**：`tools/build.ps1` 统一构建入口（ccache 加速）；`tools/check_page.py` 页面静态断言、`tools/jsdom_test.js` 整页 DOM 回归、`tools/rx_render_test.js` 接收渲染桩、`tools/rxmap_test.js` 地图模块 21 项隔离测试、`tools/extract_bin_page.py` 固件内嵌页面核对
+- 接收监测日志降噪（HTTP 瞬断与 Wi-Fi 例行告警不再刷屏）
+
+### v3.0.0 — 统一收发固件
+
+- **接收端并入发射固件**：单程序双模式，网页在线切换发射 / 接收，无需分别烧录两块固件
+- **新增 GB 46750-2025 新国标发射**：位图数据项报文（含实名登记标志、0.1° 航迹角、Unix 毫秒时间戳等 13 项必选项），支持旧国标 / 新国标 / 双标准同发三档切换
+- 接收模式网页实时监测表格，多协议解码（ASTM / GB 42590 / GB 46750）
+- 修复新国标 IE 长度计算错误导致无法发射的问题；修复航向编码（v2.0.1）保持兼容
+- 仓库结构重组：`main_tx` + `main_rx` 双目录合并为统一 `main/`，旧版独立接收器代码移除（可在 git 历史 v2.x 中查看）
 
 ### v2.0.1 — 航向编码修复
 
@@ -48,7 +66,7 @@ v1.0.0 的 softAP 稳定广播修复全部保留，在此基础上为发射器�
 - **一键恢复出厂**：网页按钮恢复全部默认设定（保留消息计数器，防止接收端乱序）
 - **界面美化与响应式**：全新视觉风格与自定义下拉组件，电脑端双列布局 + 大地图通栏，手机端单列自适应
 
-> 各项功能开发过程中的小改动不再逐条列出，完整改动见[提交历史](https://github.com/sd1471123/esp32-crid-softapfix/commits/main)。
+> 各项功能开发过程中的小改动不再逐条列出，完整改动见[提交历史](https://github.com/sd1471123/esp32-ChinaRemoteID_Scan_Sim/commits/main)。
 
 ### v1.0.0 — softAP 稳定广播修复版
 
@@ -56,9 +74,9 @@ softAP 模式 + vendor IE 广播重构，修复 RID 信号在手机上闪现/消
 
 ## 功能
 
-- **接收器 (Scanner)**：Wi-Fi 混杂模式抓包，使用 OpenDroneID 库多协议解析 ASTM F3411-22a / ASD-STAN prEN 4709-002 / GB 42590-2023 / GB 46750-2023 标准的 Remote ID 信号。所有输出以 JSON 格式通过串口输出，每行一条完整的 JSON 对象。支持双端口输出：UAV 数据走 UART1（GPIO17），调试信息走 USB CDC。
-- **发射器 (Simulator)**：模拟无人机广播 Beacon 帧（巡游路径），Vendor IE 包含 Message Counter + Packed 消息。
-- **网页配置**：发射器为可连接热点（DHCP），手机浏览器访问 `http://192.168.4.1` 在线修改全部仿真参数，配置持久化于 NVS。
+- **发射模式**：模拟无人机广播 Beacon 帧（支持固定点 / 巡游路径），Vendor IE 包含 Message Counter + Packed 消息；三档广播标准：GB 42590（OpenDroneID 打包报文）、GB 46750（位图数据项报文）、双标准同发（双槽位 IE 同时挂载）
+- **接收模式**：Wi-Fi 混杂模式监听所在信道，多协议解码 ASTM F3411 / GB 42590 / GB 46750 报文，网页实时展示周边 RID 信号监测表格
+- **网页配置**：设备为可连接热点（DHCP），手机浏览器访问 `http://192.168.4.1` 在线修改全部仿真参数、切换设备模式与广播标准，配置持久化于 NVS
 
 ### 网页配置使用方法
 
@@ -70,17 +88,18 @@ softAP 模式 + vendor IE 广播重构，修复 RID 信号在手机上闪现/消
 
 ## 构建
 
-```bash
-# 接收器（默认）
-idf.py -DMAIN_DIR=main_rx set-target esp32s3
-idf.py build
+Windows 一键构建（推荐，自动加载 IDF 环境、生成页面 gzip 资源、ccache 加速并输出耗时）：
 
-# 发射器
-idf.py -DMAIN_DIR=main_tx set-target esp32s3
-idf.py build
+```powershell
+powershell -ExecutionPolicy Bypass -File tools\build.ps1
 ```
 
-> 注意：`set-target` 会清空 build 目录重新配置。切换 main_rx / main_tx 时务必重新执行 `set-target`（带上 `-DMAIN_DIR`），不能只跑 `idf.py build`。
+手动构建（Linux/macOS 或已配置好的 IDF 环境）：
+
+```bash
+idf.py set-target esp32s3
+idf.py build
+```
 
 ## 烧录与监视
 
@@ -90,8 +109,8 @@ idf.py build
 # 烧录并打开串口监视器（Ctrl+] 退出监视器）
 idf.py -p COM3 flash monitor
 
-# 发射器烧录后：手机连接热点 ESP32-CRID-XXXX，浏览器访问 http://192.168.4.1 配置
-# 接收器烧录后：串口输出 JSON 格式的 Remote ID 解析结果，可用 tools/ 上位机查看
+# 烧录后：手机连接热点 ESP32-CRID-XXXX，浏览器访问 http://192.168.4.1
+# 网页顶部可切换 发射 / 接收 模式，发射模式下可切换广播标准
 ```
 
 也可以分开执行：`idf.py -p COM3 flash` 只烧录，`idf.py -p COM3 monitor` 只开监视器。
@@ -99,28 +118,30 @@ idf.py -p COM3 flash monitor
 ## 项目结构
 
 ```
-├── main_rx/                      # 接收器
-│   ├── crid_scan_main.c          # 主入口：启动 sniffer / parser / monitor 任务
-│   ├── crid_sniffer.c/h          # Wi-Fi 混杂模式抓包，ISR 安全队列
-│   ├── crid_parser.c/h           # opendroneid 库解码（Message Pack / 单消息）
-│   ├── crid_tracker.c/h          # 无人机追踪表（线程安全，超时清理）
-│   ├── crid_display.c/h          # 精简输出：新 UAV 1 行 + 每分钟状态摘要
-│   ├── crid_json.c/h              # JSON 格式化输出（所有信息统一 JSON 格式）
-│   └── crid_rx_types.h           # 接收端类型定义、OUI、配置常量
-├── main_tx/                      # 发射器
-│   ├── crid-sim.c                # 主入口（softAP + 厂商 IE 广播任务）
-│   ├── crid_wifi.c/h             # softAP 初始化 / 厂商 IE 注入（保留 raw 帧发送）
-│   ├── crid_web.c/h              # 内置网页配置服务器（http://192.168.4.1）
-│   ├── crid_messages.c/h         # 消息编码（Message Counter + Packed + 厂商 IE 构建）
-│   ├── crid_config.c/h           # 配置管理（坐标/速度/ID 等）
-│   └── crid_patrol.c/h           # 巡游路径模拟
+├── main/                         # 统一收发固件（唯一构建目标）
+│   ├── crid-sim.c                # 主入口：设备模式应用与主任务分发
+│   ├── crid_config.c/h           # 配置管理（NVS 持久化，含设备模式/广播标准）
+│   ├── crid_wifi.c/h             # softAP 初始化 / 厂商 IE 注入（双槽位）
+│   ├── crid_messages.c/h         # GB 42590 消息编码（Message Counter + Packed）
+│   ├── crid_gb46750.c/h          # GB 46750 新国标位图报文构建
+│   ├── crid_rx.c/h               # 接收端：混杂模式监听 + 多协议解码
+│   ├── crid_patrol.c/h           # 巡游路径模拟
+│   ├── crid_web.c/h              # 内置网页配置与接收监测（http://192.168.4.1）
+│   ├── rxmap_page.js             # 接收端地图独立脚本（懒加载，无网自动降级离线网格）
+│   └── page_gz.h                 # 自动生成的 gzip 页面资源（构建时由 gen_gzpage.py 生成，不入库）
 ├── components/opendroneid/       # OpenDroneID 官方库（解码核心）
 ├── partition_table/              # 分区表
-├── tools/                        # 上位机工具
-│   └── json_monitor.py           # 串口 JSON 监视器（实时展示 + 退出摘要）
-├── CMakeLists.txt                # 根构建文件（通过 MAIN_DIR 切换目标）
-├── sdkconfig.defaults            # 默认配置覆盖
-└── dependencies.lock             # 依赖锁定
+├── tools/                        # 构建与回归工具
+│   ├── build.ps1                 # 统一构建入口（IDF 环境 + 页面 gzip + ccache）
+│   ├── gen_gzpage.py             # 内嵌网页/地图脚本 gzip 资源生成
+│   ├── check_page.py             # 页面静态断言（语法/结构/地图隔离）
+│   ├── jsdom_test.js             # 整页真实 DOM 回归（加载/恢复/保存/切模式）
+│   ├── rx_render_test.js         # 接收端渲染测试桩
+│   ├── rxmap_test.js             # 接收端地图模块 21 项隔离测试
+│   ├── extract_bin_page.py       # 固件 bin 内嵌页面核对
+│   └── json_monitor.py           # 旧版接收器串口 JSON 监视器（v2.x 遗留）
+├── CMakeLists.txt                # 根构建文件
+└── sdkconfig                     # 工程配置
 ```
 
 ## 协议参数
@@ -134,7 +155,11 @@ idf.py -p COM3 flash monitor
 | IE ID | 221（Vendor Specific） |
 | 消息格式 | Message Pack（含 Message Counter） |
 
-## 接收端输出（JSON 格式，双端口）
+## 附：旧版独立接收器（已移除，见 git 历史）
+
+v2.x 及之前，接收功能为独立固件（混杂模式抓包 + 串口 JSON 输出，源码位于原 `main_rx/` 目录）。统一固件发布后该代码已从仓库移除，可在 git 历史（v2.x 标签）中查看。以下两节文档对应旧版接收器：
+
+### 接收端输出（JSON 格式，双端口）
 
 所有输出以 JSON 格式发送，每行一条完整的 JSON 对象。
 
@@ -211,7 +236,7 @@ idf.py -p COM3 flash monitor
 - 未获取到的字段为 `null`
 - 字符串字段经过 JSON 转义，安全可解析
 
-## 上位机监视工具
+### 上位机监视工具
 
 `tools/json_monitor.py` 从串口读取 ESP32 的 JSON 输出并实时展示。
 
@@ -253,7 +278,7 @@ python3 tools/json_monitor.py --no-summary
 |------|-----|------|---------|
 | ASTM F3411-22a | `FA:0B:BC` | ODID_MessagePack_encoded，Message Counter + Packed 消息 | `odid_message_process_pack()` |
 | GB 42590-2023 | `FA:0B:BC` | 国标 Packed 格式，Message Counter + 3 字节管理信息 + 消息体 | 转为 ASTM 兼容头部后 `odid_message_process_pack()` |
-| GB 46750-2023 | `FA:0B:BC` | Message Counter + 0xFF + 版本号 + 内容长度 + 数据标识(3B) + 数据内容(变长) | 自定义解析 21 个数据内容项 |
+| GB 46750-2025 | `FA:0B:BC` | Message Counter + 0xFF + 版本号 + 内容长度 + 数据标识(3B) + 数据内容(变长) | 自定义解析 21 个数据内容项 |
 
 > 所有 Wi-Fi Beacon 标准统一使用 OUI `FA:0B:BC`、Vendor Type `0x0D`。
 > GB 46750 使用 `data[1]==0xFF` 作为数据类型标识，数据标识固定 3 字节（按位指示字段存在性），
@@ -261,3 +286,7 @@ python3 tools/json_monitor.py --no-summary
 > ASTM 与 GB 42590 在 Wire 格式上均以 `0xF1` 开头（ASTM 为位域编码
 > `MessageType=0xF` + `ProtoVersion=1`，国标为独立 magic byte），
 > 但语义上需要区分协议类型。
+
+## 许可证
+
+本项目基于 [MIT License](LICENSE) 开源。内置的 OpenDroneID 库沿用其原许可证（Apache-2.0）。

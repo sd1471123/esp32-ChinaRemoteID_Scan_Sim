@@ -2,6 +2,8 @@
 build/
 sdkconfig.old
 dependencies.lock
+managed_components/
+main/page_gz.h
 
 # 本地工具数据
 **/.workbuddy/

@@ -3,9 +3,11 @@ idf_component_register(
         crid-sim.c
         crid_config.c
         crid_messages.c
+        crid_gb46750.c
         crid_wifi.c
         crid_patrol.c
         crid_web.c
+        crid_rx.c
     INCLUDE_DIRS "."
     REQUIRES
         esp_wifi
@@ -15,6 +17,6 @@ idf_component_register(
         esp_event
         esp_http_server
         cjson
-    PRIV_REQUIRES soc)
+    PRIV_REQUIRES soc opendroneid)
 
 target_link_libraries(${COMPONENT_LIB} m)

@@ -6,6 +6,8 @@
 
 #include "crid_web.h"
 #include "crid_wifi.h"
+#include "crid_rx.h"
+#include "page_gz.h"
 #include "esp_http_server.h"
 #include "esp_log.h"
 #include "cJSON.h"
@@ -14,7 +16,11 @@
 
 static const char *TAG = "CN_C-RID_WEB";
 
+
 static cn_crid_config_t *s_config = NULL;
+
+// 由 crid-sim.c 提供：模式/标准切换后的运行时应用
+extern void crid_app_apply_mode(void);
 
 // ================================================================
 // 内置网页（全部使用单引号，避免 C 字符串转义）
@@ -24,7 +30,7 @@ static cn_crid_config_t *s_config = NULL;
 static const char PAGE_HTML[] =
 "<!DOCTYPE html><html lang='zh'><head><meta charset='utf-8'>"
 "<meta name='viewport' content='width=device-width,initial-scale=1'>"
-"<title>C-RID 发射器配置</title>"
+"<title>ESP32-RID 接收/发射</title>"
 "<link rel='stylesheet' href='https://unpkg.com/leaflet@1.9.4/dist/leaflet.css'/>"
 "<script src='https://unpkg.com/leaflet@1.9.4/dist/leaflet.js' onerror='window._mapfail=1'></script>"
 "<style>"
@@ -54,7 +60,8 @@ static const char PAGE_HTML[] =
 ".seg{display:flex;gap:8px;margin:8px 0 10px}"
 ".seg label{margin:0;flex:1}"
 ".seg input{display:none}"
-".seg span{display:block;text-align:center;padding:8px;border-radius:8px;"
+".seg span{display:flex;align-items:center;justify-content:center;text-align:center;"
+"min-height:37px;padding:6px 8px;border-radius:8px;line-height:1.25;"
 "border:1px solid #d1d5db;font-size:14px;font-weight:600;color:#374151;"
 "background:#f9fafb;cursor:pointer;transition:.15s}"
 ".seg input:checked+span{background:#0f8a4d;border-color:#0f8a4d;color:#fff}"
@@ -79,6 +86,72 @@ static const char PAGE_HTML[] =
 "#liveinfo{font-size:12px;color:#1565c0;margin-top:8px;min-height:14px;"
 "font-family:monospace;background:#eff6ff;border-radius:6px;padding:5px 8px}"
 "#hint{font-size:12px;color:#9ca3af;margin-top:8px}"
+// ---- 接收监测 ----
+".rxbar{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0 4px}"
+".chip{flex:1 1 76px;min-width:76px;background:#f6f8fa;border:1px solid #e5e7eb;border-radius:10px;"
+"padding:8px 6px;text-align:center}"
+".chip b{display:block;font-size:18px;color:#0b3d2e;line-height:1.25;font-variant-numeric:tabular-nums}"
+".chip span{display:block;font-size:11px;color:#8b95a1;margin-top:2px}"
+".chip.on b{color:#0f8a4d}"
+".chip.warn b{color:#c0392b}"
+".rxbanner{display:flex;align-items:center;gap:8px;font-size:12px;color:#6b7280;margin:12px 0 8px}"
+".rxbanner .dot{width:8px;height:8px}"
+".rxbanner .dot.live{animation:pulse 1.2s infinite}"
+"@keyframes pulse{0%,100%{opacity:1}50%{opacity:.25}}"
+".rxlist{display:flex;flex-direction:column;gap:12px}"
+".dcard{border:1px solid #e5e7eb;border-radius:12px;overflow:hidden;background:#fff;"
+"box-shadow:0 1px 3px rgba(16,24,40,.06)}"
+".dcard.hot{border-color:#f0b6ae;box-shadow:0 1px 6px rgba(192,57,43,.12)}"
+".dh{display:flex;align-items:center;gap:8px;padding:10px 12px;background:#f6f8fa;"
+"border-bottom:1px solid #e5e7eb}"
+".dh .id{flex:1;min-width:0;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;"
+"font-size:14px;font-weight:700;color:#111827;letter-spacing:.3px;overflow:hidden;"
+"text-overflow:ellipsis;white-space:nowrap}"
+".tag{flex:none;font-size:10px;font-weight:700;padding:2px 7px;border-radius:20px;line-height:1.6}"
+".tag.g42590{background:#e0f2fe;color:#075985}"
+".tag.g46750{background:#ede9fe;color:#5b21b6}"
+".tag.astm{background:#f1f5f9;color:#475569}"
+".tag.air{background:#dcfce7;color:#166534}"
+".tag.pend{background:#fef3c7;color:#92400e}"
+".sig{flex:none;display:flex;align-items:flex-end;gap:2px;height:14px}"
+".sig i{width:3px;background:#d1d5db;border-radius:1px;display:block}"
+".sig i.on{background:#0f8a4d}"
+".sig i.on.w{background:#eab308}"
+".sig i.on.weak{background:#c0392b}"
+".db{padding:10px 12px 12px}"
+".dname{font-size:13px;color:#0b3d2e;font-weight:600;margin-bottom:2px}"
+".dmac{font-size:11px;color:#9ca3af;font-family:ui-monospace,Menlo,Consolas,monospace;"
+"word-break:break-all}"
+".kv{display:grid;grid-template-columns:repeat(3,1fr);gap:1px;margin-top:10px;"
+"background:#e5e7eb;border:1px solid #e5e7eb;border-radius:9px;overflow:hidden}"
+".kv div{background:#fff;padding:7px 8px}"
+".kv b{display:block;font-size:14px;color:#111827;font-weight:700;"
+"font-variant-numeric:tabular-nums;line-height:1.35}"
+".kv b small{font-size:10px;font-weight:600;color:#9ca3af;margin-left:2px}"
+".kv span{display:block;font-size:10px;color:#8b95a1;margin-top:1px}"
+".kv .wide{grid-column:span 3;background:#f9fafb}"
+".kv .wide b{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px;word-break:break-all}"
+".kv .hl b{color:#0a7d43}"
+".rxb0{text-align:center;padding:22px 10px;color:#9ca3af;font-size:13px;"
+"background:#fafbfc;border:1px dashed #d1d5db;border-radius:12px}"
+".rxb0 b{display:block;font-size:26px;margin-bottom:4px;opacity:.5}"
+"@media(min-width:560px){.kv{grid-template-columns:repeat(6,1fr)}"
+".kv .wide{grid-column:span 6}}"
+// ---- 接收地图 ----
+".mapbox{position:relative;height:340px;border:1px solid #e5e7eb;border-radius:12px;"
+"overflow:hidden;margin:10px 0 4px;background:#e8edf2}"
+"#rxmap{position:absolute;inset:0}"
+// 接收端离线网格：与发射端同样的 canvas 网格底图，热点无互联网时仍可看相对位置
+"#rxgrid{display:none;width:100%;border-radius:10px;background:#fafafa}"
+".rxoff{margin-top:8px;font-size:11px;color:#6b7280;line-height:1.6}"
+".mapleg{position:absolute;left:8px;bottom:8px;z-index:500;background:rgba(255,255,255,.92);"
+"border:1px solid #e5e7eb;border-radius:8px;padding:5px 8px;font-size:11px;color:#4b5563;"
+"display:flex;gap:10px;align-items:center}"
+".mapleg i{width:9px;height:9px;border-radius:50%;display:inline-block;margin-right:4px;vertical-align:-1px}"
+".mapbtn{position:absolute;right:8px;top:8px;z-index:500;border:1px solid #e5e7eb;"
+"background:rgba(255,255,255,.95);border-radius:8px;padding:5px 10px;font-size:12px;"
+"color:#0b3d2e;font-weight:600;cursor:pointer}"
+".mapbtn:active{background:#f3f4f6}"
 ".actions{display:flex;gap:10px}"
 "button{flex:1;padding:13px;border:0;border-radius:10px;cursor:pointer;transition:.15s;"
 "background:linear-gradient(135deg,#0f8a4d,#0a7d43);color:#fff;font-size:16px;font-weight:600}"
@@ -95,32 +168,62 @@ static const char PAGE_HTML[] =
 "}"
 "</style></head><body>"
 "<div class='hdr'><div class='hdr-in'>"
-"<h2><span class='dot'></span>C-RID 发射器配置</h2>"
-"<p>无人机 Remote ID 广播参数在线配置</p>"
+"<h2><span class='dot'></span>ESP32-RID 接收/发射</h2>"
+"<p>开源项目根据 GB 42590-2023 / GB 46750-2025</p>"
 "</div></div>"
 "<div class='wrap'><div class='grid'>"
-"<div class='card'><h3>身份信息</h3>"
+"<div class='card span2'><h3>运行模式</h3>"
+"<div class='seg'>"
+"<label><input type='radio' name='devmode' value='1'><span>接收模式</span></label>"
+"<label><input type='radio' name='devmode' value='0' checked><span>发射模式</span></label>"
+"</div>"
+"<div id='stdbox'>"
+"<label>广播标准</label>"
+"<div class='seg'>"
+"<label><input type='radio' name='std' value='0'><span>GB42590<br>旧国标</span></label>"
+"<label><input type='radio' name='std' value='1'><span>GB46750<br>新国标</span></label>"
+"<label><input type='radio' name='std' value='2'><span>双标准<br>同发</span></label>"
+"</div>"
+"<p class='note'>旧国标 = GB 42590-2023（OpenDroneID 打包报文，兼容绝大多数现有接收端）；"
+"新国标 = GB 46750-2025（位图数据项报文，2026-05-01 实施，含实名登记标志）；"
+"双标准同发 = 两条厂商 IE 同时挂载。切换在「保存并应用」后生效，"
+"下方身份信息只显示当前标准实际广播的字段。</p>"
+"</div>"
+"<p class='note'>接收模式下本机停止广播，改为监听热点所在信道的周边无人机 RID 信号，下方「接收监测」实时列表显示。</p>"
+"</div>"
+"<div class='card txonly'><h3>身份信息</h3>"
 "<label>无人机唯一 ID (UAS ID)</label><input id='uas_id' maxlength='24'>"
 "<label>机型名称 (Self-ID)</label><input id='drone_name' maxlength='20'>"
-"<label>机型代码 (UA Type)</label>"
+"<p class='note' style='margin-top:2px'>仅旧国标广播（新国标报文无此数据项），两个标准下均可填写记录。</p>"
+"<div class='oldstd'><label>机型代码 (UA Type)</label>"
 "<div class='dd' id='dd2'>"
 "<div class='dd-btn' id='dd2btn'><span class='dd-txt ph' id='dd2txt'>-- 选择机型代码 --</span>"
 "<span class='dd-car'>&#9662;</span></div>"
 "<div class='dd-panel'><div class='dd-list' id='dd2list'></div></div></div>"
-"<input type='hidden' id='ua_type'>"
+"<input type='hidden' id='ua_type'></div>"
 "<label>大疆机型预设 (伪装)</label>"
 "<div class='dd' id='dd'>"
 "<div class='dd-btn' id='ddbtn'><span class='dd-txt ph' id='ddtxt'>-- 选择型号自动填充 --</span>"
 "<span class='dd-car'>&#9662;</span></div>"
 "<div class='dd-panel'><div class='dd-list' id='ddlist'></div></div></div>"
-"<p class='note'>预设按大疆 RID 序列号前 8 位（1581F + 型号码）生成 20 位序列号，并填入机型名称与机型代码；机型代码为 RID 标准 16 类航空器类别码。序列号可手动微调，其他品牌用「其他厂商」分组。</p>"
-"<label>操作员 ID</label><input id='operator_id' maxlength='20'>"
+"<p class='note'>预设按大疆 RID 序列号前 8 位（1581F + 型号码）生成 20 位序列号，并填入机型名称与机型代码；机型代码为 RID 标准 16 类航空器类别码。序列号可手动微调，其他品牌用「其他厂商」分组。两个标准均广播该序列号。</p>"
+"<div class='newstd'><div class='g'>"
+"<div><label>实名登记号后8位</label><input id='realname_id' maxlength='8'>"
+"<p class='note' style='margin-top:2px'>仅新国标广播，空 = 不填。</p></div>"
+"<div><label>新国标分类</label>"
+"<div class='dd' id='dd4'>"
+"<div class='dd-btn' id='dd4btn'><span class='dd-txt ph' id='dd4txt'>-- 选择分类 --</span>"
+"<span class='dd-car'>&#9662;</span></div>"
+"<div class='dd-panel'><div class='dd-list' id='dd4list'></div></div></div>"
+"<input type='hidden' id='ua_category_gb'></div>"
+"</div></div>"
+"<div class='oldstd'><label>操作员 ID</label><input id='operator_id' maxlength='20'></div>"
 "<label>热点名称 (SSID)</label><input id='ssid' maxlength='31'>"
 "<div class='g'>"
 "<div><label>Wi-Fi 信道 (1-13)</label><input id='channel' type='number' min='1' max='13'></div>"
 "<div><label>广播间隔 (ms)</label><input id='beacon_interval_ms' type='number' min='200' max='60000'></div>"
 "</div></div>"
-"<div class='card'><h3>飞行参数</h3><div class='g'>"
+"<div class='card txonly'><h3>飞行参数</h3><div class='g'>"
 "<div><label>基准纬度</label><input id='base_latitude' type='number' step='0.0000001'></div>"
 "<div><label>基准经度</label><input id='base_longitude' type='number' step='0.0000001'></div>"
 "<div><label>海拔高度 m (MSL)</label><input id='base_altitude_msl' type='number'></div>"
@@ -133,18 +236,18 @@ static const char PAGE_HTML[] =
 "<div class='dd-panel'><div class='dd-list' id='dd3list'></div></div></div>"
 "<input type='hidden' id='status'></div>"
 "</div></div>"
-"<div class='card'><h3>飞手位置</h3><div class='g'>"
+"<div class='card txonly'><h3>飞手位置</h3><div class='g'>"
 "<div><label>飞手纬度</label><input id='operator_latitude' type='number' step='0.0000001'></div>"
 "<div><label>飞手经度</label><input id='operator_longitude' type='number' step='0.0000001'></div>"
 "</div>"
 "<label>飞手海拔高度 m</label><input id='operator_altitude' type='number'>"
 "<p class='note'>修改飞手坐标后，无人机位置自动按默认相对偏移生成；单独修改无人机位置不影响飞手。</p></div>"
-"<div class='card'><h3>巡游参数</h3><div class='g'>"
+"<div class='card txonly'><h3>巡游参数</h3><div class='g'>"
 "<div><label>巡游速度系数</label><input id='patrol_speed' type='number' step='0.01'></div>"
 "<div><label>纬度半径 (度)</label><input id='patrol_radius_lat' type='number' step='0.00001'></div>"
 "<div><label>经度半径 (度)</label><input id='patrol_radius_lon' type='number' step='0.00001'></div>"
 "</div></div>"
-"<div class='card span2'><h3>地图选点</h3>"
+"<div class='card span2 txonly'><h3>地图选点</h3>"
 "<div class='seg'>"
 "<label><input type='radio' name='pt' value='op' checked><span>选点：飞手</span></label>"
 "<label><input type='radio' name='pt' value='drone'><span>选点：无人机</span></label>"
@@ -161,6 +264,34 @@ static const char PAGE_HTML[] =
 "地图以飞手位置为中心：选点对象为「飞手」时点击/拖动会同步按默认偏移生成无人机位置；"
 "选「无人机」时只改无人机位置。在线地图需手机保持移动数据，无网络时自动切换离线网格。</div>"
 "</div>"
+"<div class='card span2' id='rxbox' style='display:none'><h3>接收监测</h3>"
+"<div class='rxbar'>"
+"<div class='chip'><b id='s_online'>0</b><span>在线目标</span></div>"
+"<div class='chip on'><b id='s_rid'>0</b><span>RID 帧</span></div>"
+"<div class='chip'><b id='s_total'>0</b><span>总帧数</span></div>"
+"<div class='chip'><b id='s_ok'>0</b><span>解析成功</span></div>"
+"<div class='chip warn' id='s_ovfbox'><b id='s_ovf'>0</b><span>队列溢出</span></div>"
+"</div>"
+"<div class='rxbanner'><span class='dot live'></span>"
+"<span id='rxstate'>正在监听…</span></div>"
+// 接收端信号地图容器：默认隐藏，进入接收模式且 /rxmap.js 加载成功后才显示。
+// 容器 id 与发射端地图（map）完全不同，两张地图各自独立实例、互不干扰。
+"<div class='mapbox' id='rxmapbox' style='display:none'><div id='rxmap'></div>"
+"<canvas id='rxgrid' width='320' height='320'></canvas>"
+"<div class='mapleg'>"
+"<span><i style='background:#5b21b6'></i>GB46750</span>"
+"<span><i style='background:#0369a1'></i>GB42590</span>"
+"<span><i style='background:#6b7280'></i>ASTM</span>"
+"<span><i style='background:#e67e22;border-radius:3px;transform:rotate(45deg)'></i>飞手位置</span>"
+"</div>"
+"<button class='mapbtn' id='rxfit' type='button'>全览</button>"
+"</div>"
+"<div class='rxoff' id='rxgridnote'></div>"
+"<div class='rxlist' id='rxlist'></div>"
+"<p class='note'>监听信道跟随上方「Wi-Fi 信道」设置（保存后生效），只能收到与本机同信道的广播。"
+"卡片按信号强度排序，<b>绿色标题</b>为机型/描述，<b>格内小字</b>为字段名；"
+"5 分钟无信号自动移除，列表 2 秒刷新。</p>"
+"</div>"
 "<div class='actions span2'>"
 "<button onclick='save()'>保存并应用</button>"
 "<button class='danger' onclick='resetCfg()'>恢复初始</button>"
@@ -171,10 +302,14 @@ static const char PAGE_HTML[] =
 "修改 SSID / 信道 / 广播间隔保存后需重新连接热点。配置已持久化，断电不丢失。</p>"
 "</div>"
 "<script>"
-"const F=['uas_id','drone_name','operator_id','ssid','channel','beacon_interval_ms','ua_type',"
+// 地图变量前置声明：save()/drawCircle() 等函数引用这些变量，
+// 若声明留在脚本后段，一旦前段任何顶层语句抛错，变量将停留在
+// 暂时性死区（部分 WebView 会报 circle 未定义），提前声明杜绝此类问题
+"let map=null,opMarker=null,dMarker=null,live=null,circle=null,ginit=false;"
+"const F=['uas_id','drone_name','operator_id','realname_id','ssid','channel','beacon_interval_ms','ua_type',"
 "'base_latitude','base_longitude','base_altitude_msl','altitude_agl','speed_horizontal',"
 "'operator_latitude','operator_longitude','operator_altitude',"
-"'status','patrol_speed','patrol_radius_lat','patrol_radius_lon'];"
+"'status','patrol_speed','patrol_radius_lat','patrol_radius_lon','ua_category_gb'];"
 "function msg(t,ok){const m=document.getElementById('msg');m.textContent=t;"
 "m.style.color=ok?'#0a7d43':'#c0392b';}"
 "function fld(k){return document.getElementById(k);}"
@@ -193,8 +328,10 @@ static const char PAGE_HTML[] =
 "if(opMarker)opMarker.setLatLng(o);"
 "if(dMarker)dMarker.setLatLng(d);"
 "if(map&&opMarker)map.panTo(o);"
-"drawCircle();"
-"if(!map){gbase=o;gpick=null;drawGrid();}}"
+// 地图函数在部分手机浏览器恢复休眠标签页后可能丢失（V8 上下文部分丢弃），
+// 调用点全部加 typeof 防护：地图失效只降级，绝不阻塞参数编辑
+"if(typeof drawCircle==='function')drawCircle();"
+"if(!map){gbase=o;gpick=null;if(typeof drawGrid==='function')drawGrid();}}"
 "function applyPick(t,la,lo){"
 "if(t==='op'){fld('operator_latitude').value=la.toFixed(7);"
 "fld('operator_longitude').value=lo.toFixed(7);autoDrone(la,lo);}"
@@ -276,22 +413,44 @@ static const char PAGE_HTML[] =
 "bt.onclick=function(e){e.stopPropagation();dd.classList.toggle('open');};"
 "ls.onclick=function(e){e.stopPropagation();};"
 "document.addEventListener('click',function(){dd.classList.remove('open');});})();"
+// ---- 新国标分类下拉（GB46750 数据项 004，0=微型 ~ 4=大型）----
+"const GBC=[['0','微型'],['1','轻型'],['2','小型'],['3','中型'],['4','大型']];"
+"function gbcSync(){const v=String(fld('ua_category_gb').value);let lb='';"
+"GBC.forEach(function(u){if(u[0]===v)lb=u[1];});"
+"const t=fld('dd4txt');"
+"if(lb){t.textContent=v+' - '+lb;t.classList.remove('ph');}"
+"else{t.textContent='-- 选择分类 --';t.classList.add('ph');}}"
+"(function(){const dd=fld('dd4'),bt=fld('dd4btn'),ls=fld('dd4list');"
+"GBC.forEach(function(u){const it=document.createElement('div');it.className='dd-item';"
+"it.textContent=u[0]+' - '+u[1];"
+"it.onclick=function(){fld('ua_category_gb').value=u[0];gbcSync();dd.classList.remove('open');};"
+"ls.appendChild(it);});"
+"bt.onclick=function(e){e.stopPropagation();dd.classList.toggle('open');};"
+"ls.onclick=function(e){e.stopPropagation();};"
+"document.addEventListener('click',function(){dd.classList.remove('open');});})();"
 "async function load(){try{const r=await fetch('/api/config');const j=await r.json();"
 "F.forEach(k=>{if(j[k]!==undefined&&j[k]!==null)fld(k).value=j[k];});"
-"uatSync();statusSync();initMap();}"
+"document.querySelectorAll('input[name=devmode]').forEach(function(r){r.checked=(+r.value===j.device_mode);});"
+"document.querySelectorAll('input[name=std]').forEach(function(r){r.checked=(+r.value===j.rid_standard);});"
+"uatSync();statusSync();gbcSync();modeUI();stdUI();"
+"if(getRadio('devmode')!=='1'&&typeof initMap==='function')initMap();}"
 "catch(e){msg('加载失败: '+e,false);}}"
 "const NUM=['channel','beacon_interval_ms','ua_type','base_latitude','base_longitude',"
 "'base_altitude_msl','operator_latitude','operator_longitude','operator_altitude',"
 "'altitude_agl','speed_horizontal','status',"
-"'patrol_speed','patrol_radius_lat','patrol_radius_lon'];"
+"'patrol_speed','patrol_radius_lat','patrol_radius_lon','ua_category_gb'];"
 "async function save(){const d={};F.forEach(function(k){"
 "const v=fld(k).value;"
 "d[k]=NUM.indexOf(k)>=0?(v===''?null:parseFloat(v)):v;});"
+"d.device_mode=+getRadio('devmode');d.rid_standard=+getRadio('std');"
 "try{const r=await fetch('/api/config',{method:'POST',"
 "headers:{'Content-Type':'application/json'},body:JSON.stringify(d)});"
 "const j=await r.json();"
 "if(j.ok){msg('已保存并应用 ✓'+(j.restarted?' (热点参数已更新，如 SSID/信道变化请重新连接)':''),true);"
-"if(circle){map.removeLayer(circle);circle=null;}drawCircle();}"
+// 保存成功后的地图刷新只是附带 UI 更新：包裹 try + typeof 防护，
+// 无论页面 JS 环境处于什么状态都绝不影响「已保存」的判定与提示
+"try{if(map&&circle){map.removeLayer(circle);circle=null;}"
+"if(typeof drawCircle==='function')drawCircle();}catch(me){}}"
 "else{msg('保存失败: '+(j.err||''),false);}}"
 "catch(e){msg('保存失败: '+e,false);}}"
 "async function resetCfg(){if(!confirm('确认恢复全部初始设定？当前配置将被覆盖。'))return;"
@@ -299,8 +458,143 @@ static const char PAGE_HTML[] =
 "if(j.ok){msg('已恢复初始设定 ✓'+(j.restarted?' (热点参数变化，请重新连接热点)':''),true);"
 "await load();}else{msg('恢复失败',false);}}"
 "catch(e){msg('恢复失败: '+e,false);}}"
+// ---- 模式切换 UI 与接收监测轮询 ----
+"function getRadio(n){const r=document.querySelector('input[name='+n+']:checked');"
+"return r?r.value:'0';}"
+// ---- 按广播标准显隐身份字段（旧国标独有 / 新国标独有，双发全显） ----
+"function stdUI(){const s=getRadio('std');"
+"const oldOn=(s!=='1'),newOn=(s!=='0');"
+"document.querySelectorAll('.oldstd').forEach(function(e){e.style.display=oldOn?'block':'none';});"
+"document.querySelectorAll('.newstd').forEach(function(e){e.style.display=newOn?'block':'none';});}"
+"document.querySelectorAll('input[name=std]').forEach(function(r){"
+"r.addEventListener('change',stdUI);});"
+"let rxTimer=null;"
+"function modeUI(){const rx=getRadio('devmode')==='1';"
+"document.getElementById('stdbox').style.display=rx?'none':'block';"
+"document.querySelectorAll('.txonly').forEach(function(e){e.style.display=rx?'none':'block';});"
+"document.getElementById('rxbox').style.display=rx?'block':'none';"
+"if(rx&&!rxTimer){pollRx();rxTimer=setInterval(pollRx,2000);}"
+// 接收端地图：进入接收模式时才按需加载独立脚本，且全程 try 保护，
+// 地图出问题绝不会影响模式切换、参数配置与接收列表
+"if(rx){rxMapLoad();try{if(window.RXMAP)RXMAP.resize();}catch(e){}}"
+"if(!rx){if(!ginit&&typeof initMap==='function')initMap();"
+"if(rxTimer){clearInterval(rxTimer);rxTimer=null;}}}"
+"document.querySelectorAll('input[name=devmode]').forEach(function(r){"
+"r.addEventListener('change',modeUI);});"
+// ---- 接收端地图加载器：仅负责把 /rxmap.js 拉进来，逻辑全在独立脚本里 ----
+"let _rxmAsked=false;"
+"function rxMapFail(msg){try{"
+"const b=q('rxmapbox');if(b)b.style.display='none';"
+"let n=q('rxmapfail');"
+"if(!n){n=document.createElement('div');n.className='note';n.id='rxmapfail';"
+"const host=q('rxbox');if(host&&q('rxlist'))host.insertBefore(n,q('rxlist'));}"
+"if(n)n.textContent=msg;}catch(e){}}"
+"function rxMapLoad(){"
+"if(_rxmAsked||window.RXMAP)return;_rxmAsked=true;"
+"const s=document.createElement('script');s.src='/rxmap.js?v=1';"
+"s.onload=function(){try{if(window.RXMAP)RXMAP.boot();}"
+"catch(e){rxMapFail('地图初始化失败，已降级为纯列表模式');}};"
+"s.onerror=function(){_rxmAsked=false;"
+"rxMapFail('地图脚本未加载（需联网），已降级为纯列表模式');};"
+"document.head.appendChild(s);}"
+// ---- 接收监测：卡片式渲染（风格与发射端卡片统一） ----
+// ---- 接收监测：卡片式渲染（风格与发射端卡片统一） ----
+"const RXST=['未报告','地面','空中','紧急','识别失效','识别失效'];"
+"const UATN=['未声明','固定翼','多旋翼','旋翼机','垂直起降固定翼','扑翼机','滑翔机','风筝',"
+"'自由气球','系留气球','飞艇','降落伞','火箭','系留动力飞行器','地面障碍物','其他'];"
+"const GBCN=['微型','轻型','小型','中型','大型'];"
+"function q(id){return document.getElementById(id);}"
+"function esc(s){return String(s===undefined||s===null?'':s)"
+".replace(/[&<>\"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;'}[c];});}"
+"function f1(v){return (v===null||v===undefined||isNaN(v))?'--':Number(v).toFixed(1);}"
+"function f6(v){return (v===null||v===undefined||isNaN(v))?'--':Number(v).toFixed(6);}"
+"function ageTxt(ms){const s=Math.floor(ms/1000);"
+"return s<60?(s+' 秒前'):(s<3600?(Math.floor(s/60)+' 分前'):(Math.floor(s/3600)+' 时前'));}"
+"function rxProto(p){"
+"if(p===4)return {c:'g46750',t:'GB46750',col:'#5b21b6'};"
+"if(p===3)return {c:'g42590',t:'GB42590',col:'#0369a1'};"
+"return {c:'astm',t:'ASTM',col:'#64748b'};}"
+// 4 格信号柱：按 RSSI 分级着色（强绿 / 中黄 / 弱红）
+"function sigBar(r){"
+"const lv=r>=-55?4:(r>=-67?3:(r>=-78?2:(r>=-90?1:0)));"
+"const cls=lv>=3?'':(lv===2?'w':'weak');"
+"let h=`<div class=\"sig\" title=\"${r} dBm\">`;"
+"for(let i=1;i<=4;i++){const on=i<=lv;"
+"h+=`<i class=\"${on?'on '+(lv>0?cls:''):''}\" style=\"height:${4+i*2.5}px\"></i>`;}"
+"return h+'</div>';}"
+"function cell(v,unit,label,cls){"
+"return `<div class=\"${cls||''}\"><b>${v}${unit?`<small>${unit}</small>`:''}</b><span>${label}</span></div>`;}"
+"function wideCell(v,label){"
+"return `<div class=\"wide\"><b>${v}</b><span>${label}</span></div>`;}"
+"function rxCard(t){"
+"const p=rxProto(t.protocol);"
+"const el=document.createElement('div');"
+"el.className='dcard';"
+"el.dataset.mac=t.mac;"
+"const stTxt=RXST[t.status]||('状态'+t.status);"
+"const air=(t.status===2);"
+// 机型描述：新国标无 Self-ID 数据项，用分类兜底
+"let name=t.drone_name||'',sub='';"
+"if(t.protocol===4){"
+"if(!name)name='新国标 '+(GBCN[t.ua_type]||('分类'+t.ua_type));"
+"sub='新国标分类 '+t.ua_type+' · '+(GBCN[t.ua_type]||'');"
+"}else if(t.protocol===3){"
+"sub='机型代码 '+t.ua_type+' · '+(UATN[t.ua_type]||'');"
+"}else{"
+"sub='机型代码 '+t.ua_type+' · '+(UATN[t.ua_type]||'');"
+"}"
+"let h=`<div class=\"dh\"><span class=\"id\" title=\"${esc(t.uas_id)}\">${esc(t.uas_id||'(无 UAS ID)')}</span>`"
+"+`<span class=\"tag ${p.c}\">${p.t}</span>`"
+"+`<span class=\"tag ${air?'air':'pend'}\">${esc(stTxt)}</span>`"
+"+sigBar(t.rssi)+`</div><div class=\"db\">`;"
+"if(name)h+=`<div class=\"dname\">${esc(name)}</div>`;"
+"h+=`<div class=\"dmac\">${esc(sub)} · 信道 ${t.channel} · 点击卡片在地图上定位</div>`;"
+"h+=`<div class=\"kv\">`"
+"+cell(f6(t.latitude),'','纬度','hl')"
+"+cell(f6(t.longitude),'','经度','hl')"
+"+cell(f1(t.altitude_geo),'m','大地高度')"
+"+cell(f1(t.speed_horizontal),'m/s','水平速度')"
+"+cell(f1(t.direction),'°','航向')"
+"+cell(f1(t.speed_vertical),'m/s','垂直速度')"
+"+`</div><div class=\"kv\">`"
+"+wideCell(`${esc(t.mac)} &nbsp;|&nbsp; ${t.rssi} dBm &nbsp;|&nbsp; ${t.msg_count} 帧 &nbsp;|&nbsp; ${ageTxt(t.age_ms)}`,'链路与统计');"
+"const idt=[];"
+"if(t.has_op_loc)idt.push([f6(t.op_latitude)+', '+f6(t.op_longitude),'飞手位置 (遥控站)']);"
+"if(t.operator_id)idt.push([esc(t.operator_id),'操作员 ID']);"
+"if(t.realname_id)idt.push([esc(t.realname_id),'实名登记号']);"
+"idt.forEach(function(x){h+=wideCell(x[0],x[1]);});"
+"h+=`</div></div>`;"
+"el.innerHTML=h;"
+// 点击卡片聚焦地图：仅调用已加载的独立模块，未加载或报错都不影响卡片本身
+"el.onclick=function(){try{if(window.RXMAP)RXMAP.focus(t.mac);}catch(e){}};"
+"return el;}"
+""
+"async function pollRx(){"
+"try{"
+"const r=await fetch('/api/rx');const j=await r.json();"
+"try{if(window.RXMAP)RXMAP.update(j.tracks);}catch(e){}"   // 地图刷新独立保护
+"const s=j.stats;"
+"q('s_online').textContent=j.tracks.length;"
+"q('s_rid').textContent=s.rid;"
+"q('s_total').textContent=s.total;"
+"q('s_ok').textContent=s.ok;"
+"q('s_ovf').textContent=s.ovf;"
+"q('s_ovfbox').className='chip'+((s.ovf>0)?' warn':'');"
+"let fresh=0;"
+"j.tracks.forEach(function(t){if(t.age_ms<3000)fresh++;});"
+"q('rxstate').innerHTML=(fresh>0?`<b style=\"color:#0a7d43\">${fresh} 个目标</b>信号良好（3 秒内）`"
+":'暂未收到 RID 帧，持续监听中…')+` &nbsp;|&nbsp; 更新于 ${new Date().toLocaleTimeString()}`;"
+// 强信号排前，便于优先关注
+"const ts=j.tracks.slice().sort(function(a,b){return b.rssi-a.rssi;});"
+"const box=q('rxlist');"
+"box.innerHTML='';"
+"if(!ts.length){"
+"box.innerHTML='<div class=\"rxb0\"><b>◎</b>尚未发现无人机 RID 广播<br>周边设备需与本机处于同一 Wi-Fi 信道</div>';"
+"return;}"
+"ts.forEach(function(t){box.appendChild(rxCard(t));});"
+"}catch(e){q('rxstate').textContent='轮询失败：'+e;}}"
 // ---- 在线地图（Leaflet）与离线网格双模式 ----
-"let map=null,opMarker=null,dMarker=null,live=null,circle=null,ginit=false;"
+// map/opMarker/circle 等变量已在脚本开头统一声明
 "let gbase=[0,0],gpick=null;"
 "function dotIcon(c){return L.divIcon({className:'',"
 "html:'<div style=\"width:14px;height:14px;border-radius:50%;background:'+c+"
@@ -373,8 +667,39 @@ static const char PAGE_HTML[] =
 // ================================================================
 
 static esp_err_t handler_page(httpd_req_t *req) {
+    // gzip 优先：页面 36KB 直传在 softAP 上偶发截断（手机端脚本解析失败导致
+    // 整页空白），压缩后仅 12KB，大幅降低传输失败概率
+    char ae[64] = {0};
+    bool gzip_ok = false;
+    if (httpd_req_get_hdr_value_str(req, "Accept-Encoding", ae, sizeof(ae)) == ESP_OK) {
+        gzip_ok = strstr(ae, "gzip") != NULL;
+    }
     httpd_resp_set_type(req, "text/html; charset=utf-8");
+    // 禁止缓存：页面随固件更新，手机连热点后必须拿到当前版本
+    httpd_resp_set_hdr(req, "Cache-Control", "no-cache, no-store, must-revalidate");
+    httpd_resp_set_hdr(req, "Pragma", "no-cache");
+    if (gzip_ok) {
+        httpd_resp_set_hdr(req, "Content-Encoding", "gzip");
+        return httpd_resp_send(req, (const char *)PAGE_HTML_GZ, PAGE_HTML_GZ_LEN);
+    }
     return httpd_resp_send(req, PAGE_HTML, HTTPD_RESP_USE_STRLEN);
+}
+
+// 接收端地图脚本独立下发：与主页面分离，按需加载。加载失败只影响地图，
+// 主页面与接收列表不受任何影响（这是本次重做的核心隔离原则）。
+static esp_err_t handler_rxmapjs(httpd_req_t *req) {
+    char ae[64] = {0};
+    bool gzip_ok = false;
+    if (httpd_req_get_hdr_value_str(req, "Accept-Encoding", ae, sizeof(ae)) == ESP_OK) {
+        gzip_ok = strstr(ae, "gzip") != NULL;
+    }
+    httpd_resp_set_type(req, "application/javascript; charset=utf-8");
+    httpd_resp_set_hdr(req, "Cache-Control", "no-cache, no-store, must-revalidate");
+    if (gzip_ok) {
+        httpd_resp_set_hdr(req, "Content-Encoding", "gzip");
+        return httpd_resp_send(req, (const char *)RXMAP_JS_GZ, RXMAP_JS_GZ_LEN);
+    }
+    return httpd_resp_send(req, RXMAP_JS, HTTPD_RESP_USE_STRLEN);
 }
 
 static esp_err_t handler_get_config(httpd_req_t *req) {
@@ -403,6 +728,10 @@ static esp_err_t handler_get_config(httpd_req_t *req) {
     cJSON_AddNumberToObject(j, "patrol_speed", cfg->patrol_speed);
     cJSON_AddNumberToObject(j, "patrol_radius_lat", cfg->patrol_radius_lat);
     cJSON_AddNumberToObject(j, "patrol_radius_lon", cfg->patrol_radius_lon);
+    cJSON_AddNumberToObject(j, "device_mode", cfg->device_mode);
+    cJSON_AddNumberToObject(j, "rid_standard", cfg->rid_standard);
+    cJSON_AddStringToObject(j, "realname_id", cfg->realname_id);
+    cJSON_AddNumberToObject(j, "ua_category_gb", cfg->ua_category_gb);
 
     const char *s = cJSON_PrintUnformatted(j);
     httpd_resp_set_type(req, "application/json");
@@ -531,6 +860,39 @@ static esp_err_t handler_post_config(httpd_req_t *req) {
     }
     if (err[0] == '\0' && jget_num(j, "patrol_radius_lat", &v)) next.patrol_radius_lat = (float)v;
     if (err[0] == '\0' && jget_num(j, "patrol_radius_lon", &v)) next.patrol_radius_lon = (float)v;
+    if (err[0] == '\0' && jget_num(j, "device_mode", &v)) {
+        if (v < 0 || v > 1) snprintf(err, sizeof(err), "模式取值 0-1");
+        else next.device_mode = (uint8_t)v;
+    }
+    if (err[0] == '\0' && jget_num(j, "rid_standard", &v)) {
+        if (v < 0 || v > 2) snprintf(err, sizeof(err), "标准取值 0-2");
+        else next.rid_standard = (uint8_t)v;
+    }
+    if (err[0] == '\0' && jget_num(j, "ua_category_gb", &v)) {
+        if (v < 0 || v > 4) snprintf(err, sizeof(err), "新国标分类取值 0-4");
+        else next.ua_category_gb = (uint8_t)v;
+    }
+    if ((item = cJSON_GetObjectItemCaseSensitive(j, "realname_id")) != NULL && cJSON_IsString(item)) {
+        // 仅允许数字与大写字母（实名登记号后 8 位格式），空 = 不填
+        const char *s = cJSON_GetStringValue(item);
+        size_t n = strlen(s);
+        if (n > 8) { snprintf(err, sizeof(err), "实名登记号最多 8 位"); }
+        else {
+            for (size_t i = 0; i < n; i++) {
+                char c = s[i];
+                if (!((c >= '0' && c <= '9') || (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z'))) {
+                    snprintf(err, sizeof(err), "实名登记号仅限字母数字");
+                    break;
+                }
+            }
+            if (err[0] == '\0') {
+                memset(next.realname_id, 0, sizeof(next.realname_id));
+                for (size_t i = 0; i < n; i++) {
+                    next.realname_id[i] = (s[i] >= 'a' && s[i] <= 'z') ? (char)(s[i] - 32) : s[i];
+                }
+            }
+        }
+    }
     cJSON_Delete(j);
 
     if (err[0] != '\0') {
@@ -545,6 +907,7 @@ static esp_err_t handler_post_config(httpd_req_t *req) {
     bool ap_changed = (strcmp(next.ssid, cfg->ssid) != 0) ||
                       (next.channel != cfg->channel) ||
                       (next.beacon_interval_ms != cfg->beacon_interval_ms);
+    bool mode_changed = (next.device_mode != cfg->device_mode);
     uint8_t saved_counter = cfg->message_counter;   // 计数器不回退
     *cfg = next;
     cfg->message_counter = saved_counter;
@@ -557,15 +920,85 @@ static esp_err_t handler_post_config(httpd_req_t *req) {
         if (crid_wifi_update_ap(cfg->ssid, cfg->channel, cfg->beacon_interval_ms) == ESP_OK) {
             restarted = true;
         }
+        // 接收模式下信道变化需重启监听
+        if (cfg->device_mode == DEVICE_MODE_RX && ap_changed) {
+            crid_rx_stop();
+        }
+    }
+
+    // 模式切换：停止/启动接收（发射端 IE 由主任务按 device_mode 自动恢复）
+    if (mode_changed) {
+        crid_app_apply_mode();
+    } else if (cfg->device_mode == DEVICE_MODE_RX && ap_changed) {
+        crid_rx_start(cfg->channel);   // 接收模式换信道，重启监听
     }
 
     crid_config_save_nvs(cfg);
-    ESP_LOGI(TAG, "Config updated via web: id=%s pos=(%.6f,%.6f) restarted=%d",
-             cfg->uas_id, cfg->base_latitude, cfg->base_longitude, restarted);
+    ESP_LOGI(TAG, "Config updated via web: id=%s pos=(%.6f,%.6f) mode=%u std=%u restarted=%d",
+             cfg->uas_id, cfg->base_latitude, cfg->base_longitude,
+             cfg->device_mode, cfg->rid_standard, restarted);
 
     httpd_resp_set_type(req, "application/json");
     httpd_resp_sendstr(req, restarted ? "{\"ok\":true,\"restarted\":true}"
                                       : "{\"ok\":true,\"restarted\":false}");
+    return ESP_OK;
+}
+
+// 接收监测列表（网页接收模式 2 秒轮询）
+static esp_err_t handler_rx(httpd_req_t *req) {
+    cJSON *j = cJSON_CreateObject();
+    cJSON *arr = cJSON_AddArrayToObject(j, "tracks");
+    cJSON *st = cJSON_AddObjectToObject(j, "stats");
+    if (j == NULL || arr == NULL || st == NULL) {
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "oom");
+        return ESP_FAIL;
+    }
+
+    crid_rx_track_t tracks[CRID_RX_MAX_TRACKS];
+    int n = crid_rx_get_tracks(tracks);
+    for (int i = 0; i < n; i++) {
+        cJSON *t = cJSON_CreateObject();
+        char mac[18];
+        snprintf(mac, sizeof(mac), "%02X:%02X:%02X:%02X:%02X:%02X",
+                 tracks[i].mac[0], tracks[i].mac[1], tracks[i].mac[2],
+                 tracks[i].mac[3], tracks[i].mac[4], tracks[i].mac[5]);
+        cJSON_AddStringToObject(t, "mac", mac);
+        cJSON_AddNumberToObject(t, "rssi", tracks[i].rssi);
+        cJSON_AddNumberToObject(t, "channel", tracks[i].channel);
+        cJSON_AddNumberToObject(t, "protocol", tracks[i].protocol);
+        cJSON_AddStringToObject(t, "uas_id", tracks[i].uas_id);
+        cJSON_AddStringToObject(t, "drone_name", tracks[i].drone_name);
+        cJSON_AddStringToObject(t, "operator_id", tracks[i].operator_id);
+        cJSON_AddStringToObject(t, "realname_id", tracks[i].realname_id);
+        cJSON_AddNumberToObject(t, "ua_type", tracks[i].ua_type);
+        cJSON_AddNumberToObject(t, "latitude", tracks[i].latitude);
+        cJSON_AddNumberToObject(t, "longitude", tracks[i].longitude);
+        cJSON_AddNumberToObject(t, "altitude_geo", tracks[i].altitude_geo);
+        cJSON_AddNumberToObject(t, "speed_horizontal", tracks[i].speed_horizontal);
+        cJSON_AddNumberToObject(t, "speed_vertical", tracks[i].speed_vertical);
+        cJSON_AddNumberToObject(t, "direction", tracks[i].direction);
+        cJSON_AddNumberToObject(t, "status", tracks[i].status);
+        cJSON_AddBoolToObject(t, "has_op_loc", tracks[i].has_op_loc);
+        cJSON_AddNumberToObject(t, "op_latitude", tracks[i].op_latitude);
+        cJSON_AddNumberToObject(t, "op_longitude", tracks[i].op_longitude);
+        cJSON_AddNumberToObject(t, "op_altitude_geo", tracks[i].op_altitude_geo);
+        cJSON_AddNumberToObject(t, "msg_count", tracks[i].msg_count);
+        cJSON_AddNumberToObject(t, "age_ms", esp_log_timestamp() - tracks[i].last_seen_ms);
+        cJSON_AddItemToArray(arr, t);
+    }
+
+    uint32_t total, rid, ok, ovf;
+    crid_rx_get_stats(&total, &rid, &ok, &ovf);
+    cJSON_AddNumberToObject(st, "total", total);
+    cJSON_AddNumberToObject(st, "rid", rid);
+    cJSON_AddNumberToObject(st, "ok", ok);
+    cJSON_AddNumberToObject(st, "ovf", ovf);
+
+    const char *s = cJSON_PrintUnformatted(j);
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_sendstr(req, s);
+    cJSON_free((void *)s);
+    cJSON_Delete(j);
     return ESP_OK;
 }
 
@@ -613,6 +1046,8 @@ static esp_err_t handler_reset(httpd_req_t *req) {
             restarted = true;
         }
     }
+    // 恢复出厂回到发射模式/旧国标（init_default 已设定），同步运行时状态
+    crid_app_apply_mode();
     crid_config_save_nvs(cfg);
     ESP_LOGW(TAG, "Config reset to factory defaults via web (restarted=%d)", restarted);
 
@@ -631,9 +1066,11 @@ static esp_err_t handler_favicon(httpd_req_t *req) {
 
 static const httpd_uri_t uris[] = {
     { .uri = "/",          .method = HTTP_GET,  .handler = handler_page,      .user_ctx = NULL },
+    { .uri = "/rxmap.js",  .method = HTTP_GET,  .handler = handler_rxmapjs,   .user_ctx = NULL },
     { .uri = "/api/config",.method = HTTP_GET,  .handler = handler_get_config,.user_ctx = NULL },
     { .uri = "/api/config",.method = HTTP_POST, .handler = handler_post_config,.user_ctx = NULL },
     { .uri = "/api/status",.method = HTTP_GET,  .handler = handler_status,    .user_ctx = NULL },
+    { .uri = "/api/rx",    .method = HTTP_GET,  .handler = handler_rx,        .user_ctx = NULL },
     { .uri = "/api/reset", .method = HTTP_POST, .handler = handler_reset,     .user_ctx = NULL },
     { .uri = "/favicon.ico",.method = HTTP_GET, .handler = handler_favicon,   .user_ctx = NULL },
 };
