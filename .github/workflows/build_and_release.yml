@@ -20,39 +20,23 @@ jobs:
     - name: Checkout repository
       uses: actions/checkout@v4
 
-    - name: Build Scanner (main_rx / esp32s3)
+    - name: Build unified firmware (esp32s3)
       uses: espressif/esp-idf-ci-action@v1
       with:
         esp_idf_version: v6.0.1
         target: esp32s3
         path: '.'
-        command: idf.py -DMAIN_DIR=main_rx build
+        command: idf.py build
 
-    - name: Collect scanner firmware
+    - name: Collect firmware
       run: |
         # ESP-IDF CI 容器以 root 写出 build/，runner 用户无权限，先改属主
         sudo chown -R $(id -u):$(id -g) build
-        mkdir -p dist/main_rx_esp32s3
-        cp build/*.bin build/*.elf dist/main_rx_esp32s3/ 2>/dev/null || true
-        cp -r build/bootloader build/partition_table dist/main_rx_esp32s3/
-        rm -rf build
-
-    - name: Build Simulator (main_tx / esp32s3)
-      uses: espressif/esp-idf-ci-action@v1
-      with:
-        esp_idf_version: v6.0.1
-        target: esp32s3
-        path: '.'
-        command: idf.py -DMAIN_DIR=main_tx build
-
-    - name: Collect simulator firmware
-      run: |
-        sudo chown -R $(id -u):$(id -g) build
-        mkdir -p dist/main_tx_esp32s3
-        cp build/*.bin build/*.elf dist/main_tx_esp32s3/ 2>/dev/null || true
-        cp -r build/bootloader build/partition_table dist/main_tx_esp32s3/
+        mkdir -p dist/remoteid_scanner_esp32s3
+        cp build/*.bin build/*.elf dist/remoteid_scanner_esp32s3/ 2>/dev/null || true
+        cp -r build/bootloader build/partition_table dist/remoteid_scanner_esp32s3/
         # 打包成 zip 便于整体下载
-        cd dist && zip -r ../esp32-crid-softapfix-esp32s3.zip . && cd ..
+        cd dist && zip -r ../esp32-crid-esp32s3.zip . && cd ..
         # 汇总所有 .bin / .elf 供 Release 直接列出（排除 CMake 编译器探测临时文件）
         mkdir -p release_files
         find dist -type f \( -name '*.bin' -o -name '*.elf' \) ! -name 'CMakeDetermine*' -exec cp {} release_files/ \;
@@ -63,7 +47,7 @@ jobs:
         name: esp32-crid-firmware
         path: |
           release_files/
-          esp32-crid-softapfix-esp32s3.zip
+          esp32-crid-esp32s3.zip
 
     # 自动发布 Release（仅 tag 触发）
     - name: Create Release
@@ -73,27 +57,26 @@ jobs:
         files: |
           release_files/*.bin
           release_files/*.elf
-          esp32-crid-softapfix-esp32s3.zip
+          esp32-crid-esp32s3.zip
         tag_name: ${{ github.ref_name }}
         name: Release ${{ github.ref_name }}
         body: |
-          ESP32 C-RID 远程识别固件（ESP32-S3）
+          ESP32 C-RID 统一收发固件（ESP32-S3）
+
+          单固件双模式：发射（GB 42590 / GB 46750 / 双标准同发）+ 接收监测，
+          连接设备热点访问 http://192.168.4.1 在线配置与切换。
 
           ## 固件文件说明
-          - `main_rx_esp32s3/`：接收器（Scanner）固件
-          - `main_tx_esp32s3/`：发射器（Simulator）固件
+          - `remoteid_scanner_esp32s3/`：统一固件（含 bootloader 与分区表）
           - `*.bin`：烧录分区镜像，`bootloader/` 为引导程序，`partition_table/` 为分区表
-          - `esp32-crid-softapfix-esp32s3.zip`：全部产物打包
+          - `esp32-crid-esp32s3.zip`：全部产物打包
 
           ## 烧录（使用 ESP-IDF 环境）
           ```bash
-          # 发射器
           esptool.py --chip esp32s3 --baud 460800 write_flash \
             0x0 bootloader/bootloader.bin \
             0x8000 partition_table/partition-table.bin \
-            0x10000 main_tx_esp32s3/remoteid_scanner.bin
-
-          # 接收器：将 0x10000 处的镜像换成 main_rx 的即可
+            0x10000 remoteid_scanner_esp32s3/remoteid_scanner.bin
           ```
           也可使用 [espressif flash download tool](https://www.espressif.com/en/support/download/other-tools) 图形界面烧录。
 

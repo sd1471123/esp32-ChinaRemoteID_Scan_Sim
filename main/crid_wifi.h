@@ -38,16 +38,23 @@ esp_err_t crid_wifi_init_ap(uint8_t channel, const char *ssid, uint16_t beacon_i
 esp_err_t crid_wifi_update_ap(const char *ssid, uint8_t channel, uint16_t beacon_interval_ms);
 
 /**
- * @brief 将 RID 厂商 IE 挂到 softAP 的 Beacon / Probe Response
+ * @brief 将 RID 厂商 IE 挂到 softAP 的 Beacon / Probe Response（指定槽位）
  *
- * IE 格式: [0xDD][len][OUI FA0BBC][Type 0x0D][Counter][Packed 128B]，共 135 字节，
- * 由 crid_build_vendor_ie() 构建。
+ * IE 格式: [0xDD][len][OUI FA0BBC][Type 0x0D][payload...]，
+ * GB42590 打包报文与 GB46750 位图报文各占一个槽位（ID_0 / ID_1）。
  *
+ * @param slot IE 槽位 (0=WIFI_VND_IE_ID_0, 1=WIFI_VND_IE_ID_1)
  * @param ie 完整 IE 数据
- * @param len IE 总长度（135）
+ * @param len IE 总长度
  * @return ESP_OK 成功
  */
-esp_err_t crid_wifi_set_rid_ie(const uint8_t *ie, uint16_t len);
+esp_err_t crid_wifi_set_rid_ie(uint8_t slot, const uint8_t *ie, uint16_t len);
+
+/**
+ * @brief 清除指定槽位的 RID 厂商 IE（从 Beacon / Probe Response 摘除）
+ * @param slot IE 槽位 (0 或 1)
+ */
+void crid_wifi_clear_rid_ie(uint8_t slot);
 
 /**
  * @brief 发送 raw 802.11 帧，带 fallback 机制

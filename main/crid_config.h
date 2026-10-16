@@ -79,6 +79,15 @@ extern "C" {
 #define CRID_OUI_2 0xBC
 #define CRID_VENDOR_TYPE 0x0D
 
+// --- 设备工作模式 ---
+#define DEVICE_MODE_TX 0            // 发射模式（广播 RID）
+#define DEVICE_MODE_RX 1            // 接收模式（监听周边无人机 RID）
+
+// --- 广播标准 ---
+#define RID_STD_GB42590 0           // 旧国标 GB 42590-2023（OpenDroneID 打包报文）
+#define RID_STD_GB46750 1           // 新国标 GB 46750-2025（位图数据项报文）
+#define RID_STD_BOTH    2           // 双标准同时广播（两条 vendor IE）
+
 // --- 默认配置 ---
 #define DEFAULT_WIFI_CHANNEL       6
 // Beacon 发送间隔：1 秒一次
@@ -113,6 +122,12 @@ typedef struct {
     uint8_t channel;                         // 通道
     uint8_t message_counter;                 // 消息计数器 (0-255, 循环)
     uint16_t beacon_interval_ms;             // 广播间隔 (ms, 200-60000)
+
+    // 模式与标准
+    uint8_t device_mode;                     // 工作模式 (0=发射, 1=接收)
+    uint8_t rid_standard;                    // 广播标准 (0=GB42590, 1=GB46750, 2=双标准)
+    char realname_id[9];                     // 实名登记号后 8 位 (GB46750 数据项 002, 空=不填)
+    uint8_t ua_category_gb;                  // 新国标无人机分类 (0=微型,1=轻型,2=小型,3=中型,4=大型)
 
     // 巡游参数
     float base_latitude;                     // 基准纬度

@@ -131,27 +131,35 @@ esp_err_t crid_wifi_update_ap(const char *ssid, uint8_t channel, uint16_t beacon
     return ret;
 }
 
-esp_err_t crid_wifi_set_rid_ie(const uint8_t *ie, uint16_t len) {
+esp_err_t crid_wifi_set_rid_ie(uint8_t slot, const uint8_t *ie, uint16_t len) {
     if (ie == NULL || len < 2 || ie[0] != 0xDD || len != (uint16_t)ie[1] + 2) {
         return ESP_ERR_INVALID_ARG;
     }
+    wifi_vendor_ie_id_t id = (slot == 1) ? WIFI_VND_IE_ID_1 : WIFI_VND_IE_ID_0;
 
     // 同时挂到 Beacon 和 Probe Response，主动扫描也能拿到 RID 数据。
     // 注意: IDF 不允许直接覆盖已设置的 IE 槽位，必须先清除(enable=false)再设置。
-    esp_wifi_set_vendor_ie(false, WIFI_VND_IE_TYPE_BEACON, WIFI_VND_IE_ID_0, ie);
-    esp_err_t ret = esp_wifi_set_vendor_ie(true, WIFI_VND_IE_TYPE_BEACON, WIFI_VND_IE_ID_0, ie);
+    esp_wifi_set_vendor_ie(false, WIFI_VND_IE_TYPE_BEACON, id, ie);
+    esp_err_t ret = esp_wifi_set_vendor_ie(true, WIFI_VND_IE_TYPE_BEACON, id, ie);
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "set beacon vendor IE failed: %s", esp_err_to_name(ret));
         return ret;
     }
 
-    esp_wifi_set_vendor_ie(false, WIFI_VND_IE_TYPE_PROBE_RESP, WIFI_VND_IE_ID_0, ie);
-    ret = esp_wifi_set_vendor_ie(true, WIFI_VND_IE_TYPE_PROBE_RESP, WIFI_VND_IE_ID_0, ie);
+    esp_wifi_set_vendor_ie(false, WIFI_VND_IE_TYPE_PROBE_RESP, id, ie);
+    ret = esp_wifi_set_vendor_ie(true, WIFI_VND_IE_TYPE_PROBE_RESP, id, ie);
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "set probe-resp vendor IE failed: %s", esp_err_to_name(ret));
         return ret;
     }
     return ESP_OK;
+}
+
+void crid_wifi_clear_rid_ie(uint8_t slot) {
+    wifi_vendor_ie_id_t id = (slot == 1) ? WIFI_VND_IE_ID_1 : WIFI_VND_IE_ID_0;
+    // enable=false 的清除调用允许传入 NULL 数据（IDF 仅校验 enable 时的指针）
+    esp_wifi_set_vendor_ie(false, WIFI_VND_IE_TYPE_BEACON, id, NULL);
+    esp_wifi_set_vendor_ie(false, WIFI_VND_IE_TYPE_PROBE_RESP, id, NULL);
 }
 
 esp_err_t crid_wifi_send_raw_frame(const uint8_t *frame, uint16_t len) {

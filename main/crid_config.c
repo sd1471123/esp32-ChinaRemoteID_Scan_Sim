@@ -74,6 +74,12 @@ void crid_config_init_default(cn_crid_config_t *config) {
     config->message_counter = 0;
     config->beacon_interval_ms = DEFAULT_BEACON_INTERVAL_MS;
 
+    // 模式与标准
+    config->device_mode = DEVICE_MODE_TX;
+    config->rid_standard = RID_STD_GB42590;
+    config->realname_id[0] = '\0';
+    config->ua_category_gb = 1;   // 默认轻型
+
     // 巡游参数
     config->base_latitude = config->latitude;
     config->base_longitude = config->longitude;
@@ -142,13 +148,38 @@ typedef struct __attribute__((packed)) {
     uint8_t channel;
 } crid_persist_v1_t;
 
+// v2: 新增模式/标准/实名登记号/新国标分类
+typedef struct __attribute__((packed)) {
+    uint32_t magic;
+    uint16_t version;                            // = 2
+    char uas_id[CRID_UAS_ID_MAX_LEN + 1];
+    char drone_name[CRID_UAS_ID_MAX_LEN + 1];
+    char operator_id[CRID_UAS_ID_MAX_LEN + 1];
+    char ssid[CRID_SSID_MAX_LEN + 1];
+    float base_latitude;
+    float base_longitude;
+    float base_altitude_msl;
+    float altitude_agl;
+    float speed_horizontal;
+    float patrol_radius_lat;
+    float patrol_radius_lon;
+    float patrol_speed;
+    uint16_t beacon_interval_ms;
+    uint8_t status;
+    uint8_t channel;
+    uint8_t device_mode;                         // 0=发射, 1=接收
+    uint8_t rid_standard;                        // 0=GB42590, 1=GB46750, 2=双标准
+    char realname_id[9];                         // 实名登记号后 8 位
+    uint8_t ua_category_gb;                      // 0-4
+} crid_persist_v2_t;
+
 #define CRID_PERSIST_MAGIC   0x44495243UL
-#define CRID_PERSIST_VERSION 1
+#define CRID_PERSIST_VERSION 2
 
 esp_err_t crid_config_save_nvs(const cn_crid_config_t *config) {
     if (config == NULL) return ESP_ERR_INVALID_ARG;
 
-    crid_persist_v1_t p;
+    crid_persist_v2_t p;
     memset(&p, 0, sizeof(p));
     p.magic = CRID_PERSIST_MAGIC;
     p.version = CRID_PERSIST_VERSION;
@@ -167,6 +198,10 @@ esp_err_t crid_config_save_nvs(const cn_crid_config_t *config) {
     p.beacon_interval_ms = config->beacon_interval_ms;
     p.status = config->status;
     p.channel = config->channel;
+    p.device_mode = config->device_mode;
+    p.rid_standard = config->rid_standard;
+    strncpy(p.realname_id, config->realname_id, sizeof(p.realname_id) - 1);
+    p.ua_category_gb = config->ua_category_gb;
 
     nvs_handle_t handle;
     esp_err_t ret = nvs_open(CRID_NVS_NAMESPACE, NVS_READWRITE, &handle);
@@ -185,52 +220,75 @@ esp_err_t crid_config_save_nvs(const cn_crid_config_t *config) {
     return ret;
 }
 
-bool crid_config_load_nvs(cn_crid_config_t *config) {
-    if (config == NULL) return false;
-
-    crid_persist_v1_t p;
-    nvs_handle_t handle;
-    esp_err_t ret = nvs_open(CRID_NVS_NAMESPACE, NVS_READONLY, &handle);
-    if (ret != ESP_OK) return false;   // 无存储数据，使用默认值
-
-    size_t len = sizeof(p);
-    ret = nvs_get_blob(handle, CRID_NVS_KEY_CFG, &p, &len);
-    nvs_close(handle);
-    if (ret != ESP_OK || len != sizeof(p) ||
-        p.magic != CRID_PERSIST_MAGIC || p.version != CRID_PERSIST_VERSION) {
-        ESP_LOGW(TAG, "No valid stored config, using defaults");
-        return false;
-    }
-
-    strncpy(config->uas_id, p.uas_id, CRID_UAS_ID_MAX_LEN);
+// 从持久化公共字段恢复（v1/v2 共有部分）
+static void persist_apply_common(cn_crid_config_t *config, const crid_persist_v1_t *p) {
+    strncpy(config->uas_id, p->uas_id, CRID_UAS_ID_MAX_LEN);
     config->uas_id[CRID_UAS_ID_MAX_LEN] = '\0';
-    strncpy(config->drone_name, p.drone_name, CRID_UAS_ID_MAX_LEN);
+    strncpy(config->drone_name, p->drone_name, CRID_UAS_ID_MAX_LEN);
     config->drone_name[CRID_UAS_ID_MAX_LEN] = '\0';
-    strncpy(config->operator_id, p.operator_id, CRID_UAS_ID_MAX_LEN);
+    strncpy(config->operator_id, p->operator_id, CRID_UAS_ID_MAX_LEN);
     config->operator_id[CRID_UAS_ID_MAX_LEN] = '\0';
-    strncpy(config->ssid, p.ssid, CRID_SSID_MAX_LEN);
+    strncpy(config->ssid, p->ssid, CRID_SSID_MAX_LEN);
     config->ssid[CRID_SSID_MAX_LEN] = '\0';
-    config->base_latitude = p.base_latitude;
-    config->base_longitude = p.base_longitude;
-    config->base_altitude_msl = p.base_altitude_msl;
-    config->altitude_agl = p.altitude_agl;
-    config->speed_horizontal = p.speed_horizontal;
-    config->patrol_radius_lat = p.patrol_radius_lat;
-    config->patrol_radius_lon = p.patrol_radius_lon;
-    config->patrol_speed = p.patrol_speed;
-    if (p.beacon_interval_ms >= 200 && p.beacon_interval_ms <= 60000) {
-        config->beacon_interval_ms = p.beacon_interval_ms;
+    config->base_latitude = p->base_latitude;
+    config->base_longitude = p->base_longitude;
+    config->base_altitude_msl = p->base_altitude_msl;
+    config->altitude_agl = p->altitude_agl;
+    config->speed_horizontal = p->speed_horizontal;
+    config->patrol_radius_lat = p->patrol_radius_lat;
+    config->patrol_radius_lon = p->patrol_radius_lon;
+    config->patrol_speed = p->patrol_speed;
+    if (p->beacon_interval_ms >= 200 && p->beacon_interval_ms <= 60000) {
+        config->beacon_interval_ms = p->beacon_interval_ms;
     }
-    config->status = p.status;
-    if (p.channel >= 1 && p.channel <= 13) {
-        config->channel = p.channel;
+    config->status = p->status;
+    if (p->channel >= 1 && p->channel <= 13) {
+        config->channel = p->channel;
     }
-
     // 同步当前显示位置到基准（首次巡游步进前的显示值）
     config->latitude = config->base_latitude;
     config->longitude = config->base_longitude;
     config->altitude_msl = config->base_altitude_msl;
+}
 
-    ESP_LOGI(TAG, "Config loaded from NVS: %s @ %s", config->uas_id, config->ssid);
+bool crid_config_load_nvs(cn_crid_config_t *config) {
+    if (config == NULL) return false;
+
+    nvs_handle_t handle;
+    esp_err_t ret = nvs_open(CRID_NVS_NAMESPACE, NVS_READONLY, &handle);
+    if (ret != ESP_OK) return false;   // 无存储数据，使用默认值
+
+    uint8_t raw[512];
+    size_t len = sizeof(raw);
+    ret = nvs_get_blob(handle, CRID_NVS_KEY_CFG, raw, &len);
+    nvs_close(handle);
+    if (ret != ESP_OK || len < sizeof(crid_persist_v1_t)) {
+        ESP_LOGW(TAG, "No valid stored config, using defaults");
+        return false;
+    }
+
+    const crid_persist_v1_t *p1 = (const crid_persist_v1_t *)raw;
+    if (p1->magic != CRID_PERSIST_MAGIC) {
+        ESP_LOGW(TAG, "Stored config magic mismatch, using defaults");
+        return false;
+    }
+
+    if (p1->version == 2 && len >= sizeof(crid_persist_v2_t)) {
+        const crid_persist_v2_t *p2 = (const crid_persist_v2_t *)raw;
+        persist_apply_common(config, (const crid_persist_v1_t *)raw);
+        config->device_mode = (p2->device_mode == DEVICE_MODE_RX) ? DEVICE_MODE_RX : DEVICE_MODE_TX;
+        if (p2->rid_standard <= RID_STD_BOTH) config->rid_standard = p2->rid_standard;
+        strncpy(config->realname_id, p2->realname_id, sizeof(config->realname_id) - 1);
+        config->realname_id[sizeof(config->realname_id) - 1] = '\0';
+        if (p2->ua_category_gb <= 4) config->ua_category_gb = p2->ua_category_gb;
+    } else if (p1->version == 1) {
+        persist_apply_common(config, p1);
+    } else {
+        ESP_LOGW(TAG, "Unknown config version %u, using defaults", p1->version);
+        return false;
+    }
+
+    ESP_LOGI(TAG, "Config loaded from NVS: %s @ %s (mode=%u std=%u)",
+             config->uas_id, config->ssid, config->device_mode, config->rid_standard);
     return true;
 }
