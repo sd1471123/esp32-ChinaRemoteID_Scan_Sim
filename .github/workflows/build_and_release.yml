@@ -36,7 +36,7 @@ jobs:
         cp build/*.bin build/*.elf dist/remoteid_scanner_esp32s3/ 2>/dev/null || true
         cp -r build/bootloader build/partition_table dist/remoteid_scanner_esp32s3/
         # 打包成 zip 便于整体下载
-        cd dist && zip -r ../esp32-crid-esp32s3.zip . && cd ..
+        cd dist && zip -r ../esp32-ChinaRemoteID_Scan_Sim-esp32s3.zip . && cd ..
         # 汇总所有 .bin / .elf 供 Release 直接列出（排除 CMake 编译器探测临时文件）
         mkdir -p release_files
         find dist -type f \( -name '*.bin' -o -name '*.elf' \) ! -name 'CMakeDetermine*' -exec cp {} release_files/ \;
@@ -44,10 +44,10 @@ jobs:
     - name: Upload Build Artifacts
       uses: actions/upload-artifact@v4
       with:
-        name: esp32-crid-firmware
+        name: esp32-ChinaRemoteID_Scan_Sim-firmware
         path: |
           release_files/
-          esp32-crid-esp32s3.zip
+          esp32-ChinaRemoteID_Scan_Sim-esp32s3.zip
 
     # 自动发布 Release（仅 tag 触发）
     - name: Create Release
@@ -61,7 +61,7 @@ jobs:
         tag_name: ${{ github.ref_name }}
         name: Release ${{ github.ref_name }}
         body: |
-          ESP32 C-RID 统一收发固件（ESP32-S3）
+          ESP32-ChinaRemoteID_Scan_Sim 统一收发固件（ESP32-S3）
 
           单固件双模式：发射（GB 42590 / GB 46750 / 双标准同发）+ 接收监测，
           连接设备热点访问 http://192.168.4.1 在线配置与切换。
@@ -69,7 +69,7 @@ jobs:
           ## 固件文件说明
           - `remoteid_scanner_esp32s3/`：统一固件（含 bootloader 与分区表）
           - `*.bin`：烧录分区镜像，`bootloader/` 为引导程序，`partition_table/` 为分区表
-          - `esp32-crid-esp32s3.zip`：全部产物打包
+          - `esp32-ChinaRemoteID_Scan_Sim-esp32s3.zip`：全部产物打包
 
           ## 烧录（使用 ESP-IDF 环境）
           ```bash
@@ -80,7 +80,7 @@ jobs:
           ```
           也可使用 [espressif flash download tool](https://www.espressif.com/en/support/download/other-tools) 图形界面烧录。
 
-          本 Release 由 CI 自动构建于 ${{ github.ref_name }}，基于 [luolitao/esp32-crid](https://github.com/luolitao/esp32-crid) 修改，修改内容见仓库 README。
+          本 Release 由 CI 自动构建于 ${{ github.ref_name }}，功能说明见仓库 README。
         draft: false
         prerelease: false
       env:
