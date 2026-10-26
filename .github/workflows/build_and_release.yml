@@ -31,7 +31,8 @@ jobs:
         esp_idf_version: v6.1
         target: ${{ matrix.target }}
         path: '.'
-        command: idf.py build
+        # sdkconfig 不入库，显式 set-target 由 sdkconfig.defaults* 生成各芯片配置
+        command: idf.py set-target ${{ matrix.target }} && idf.py build
 
     - name: Collect firmware (${{ matrix.target }})
       run: |
