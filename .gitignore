@@ -17,3 +17,6 @@ __pycache__/
 *.pyc
 # 临时构建日志
 build_*.log
+# target 生成的本机配置，不入库（CI 由 sdkconfig.defaults* 生成）
+sdkconfig
+!sdkconfig.defaults*
