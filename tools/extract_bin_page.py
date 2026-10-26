@@ -37,7 +37,9 @@ else:
         "应用脚本内联在页面中": "async function pollRx" in page,
         "无 /app.js 拆分": "/app.js" not in page,
         "无自检诊断代码": "selfCheck" not in page and "__probe" not in page,
-        "无接收端地图": "rxmapbox" not in page and "initRxMap" not in page,
+        # 接收端地图架构：容器与 /rxmap.js 引用在页面里，建图逻辑必须仍在独立资源中
+        "地图容器与独立资源引用在": "rxmapbox" in page and "/rxmap.js" in page,
+        "接收端地图逻辑不内联": "L.map('rxmap')" not in page and "initRxMap" not in page,
     }.items():
         print(("OK   " if cond else "FAIL ") + name)
         ok = ok and cond
@@ -51,7 +53,7 @@ try:
 except Exception as e:
     plain = ""
     print("FAIL PAGE_HTML_GZ 解压失败:", e); ok = False
-markers = ["</html>", "async function pollRx", "unpkg.com/leaflet@1.9.4/dist/leaflet.js"]
+markers = ["</html>", "async function pollRx", "unpkg.com/leaflet@1.9.4/dist/leaflet.js", "/rxmap.js"]
 cond_len = len(blob) == declared
 cond_marks = all(mk in plain for mk in markers)
 print("PAGE_HTML_GZ: %d 字节(声明 %d) 在bin中=%s 解压后 %d 字节 标记=%s"

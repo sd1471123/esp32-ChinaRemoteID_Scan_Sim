@@ -2,15 +2,15 @@
 
 ESP32 无人机 Remote ID **广播（模拟）/ 接收（扫描）一体固件**，单程序双模式，网页在线配置。
 
-- **发射模式**：模拟无人机 Remote ID 广播，支持 **GB 42590-2023（旧国标）/ GB 46750-2025（新国标）/ 双标准同发** 三档切换，同时兼容 ASTM F3411-22 与 ASD-STAN prEN 4709-002
+- **发射模式**：模拟无人机 Remote ID 广播，支持 **GB 42590-2023（旧国标）/ GB 46750-2025（新国标）** 两档切换，同时兼容 ASTM F3411-22 与 ASD-STAN prEN 4709-002
 - **接收模式**：Wi-Fi 混杂模式监听所在信道，同时解码 **GB 42590 / GB 46750 / ASTM** 三种协议的 RID 报文，网页实时展示周边无人机与飞手位置
 - **零编译配置**：手机/电脑连接设备热点，浏览器访问 `http://192.168.4.1` 即可修改全部参数并持久化（NVS 断电保持）
 
-主要部署在 ESP32-S3，兼容 ESP32-C3 等模组。
+已在 **ESP32-S3** 与 **ESP32-C5**（均为 N16R8，16MB Flash）上实测；其他 4MB 以上 Flash 的 ESP32 模组可自行调整分区表编译。
 
 ## 界面预览
 
-连接设备热点后访问 `http://192.168.4.1`，网页顶部可切换发射 / 接收模式（电脑端实拍）：
+连接设备热点后访问 `http://192.168.4.1`，网页顶部可切换发射 / 接收模式：
 
 | 发射模式（GB 46750 新国标） | 接收模式（监测扫描） |
 |---|---|
@@ -20,18 +20,19 @@ ESP32 无人机 Remote ID **广播（模拟）/ 接收（扫描）一体固件**
 
 ### 发射模式（模拟器）
 
-- **三档广播标准**：GB 42590（OpenDroneID 打包报文）、GB 46750（位图数据项报文，13 项必选）、双标准同发（双槽位 IE 同时挂载），网页切换自动显隐对应配置项
+- **双档广播标准**：GB 42590（OpenDroneID 打包报文）、GB 46750（位图数据项报文，13 项必选），网页切换自动显隐对应配置项
 - **稳定广播**：softAP 真实热点 + vendor IE 注入（OUI `FA:0B:BC`），硬件自动应答探测请求，手机 WLAN 列表稳定可见，无闪现/消失问题
 - **在线参数配置**：UAS ID、机型名称、机型代码（RID 标准 16 类航空器类别码）、操作员 ID、GPS 基准坐标、高度、速度、运行状态、巡游参数、热点 SSID/信道/广播间隔，保存即时生效
 - **大疆机型伪装预设**：内置 40 余款大疆主流机型（Mavic / Air / Mini / Avata / Neo / FPV / Matrice / Inspire / FlyCart 等），选型号自动生成符合真实格式的 20 位序列号并同步填入机型名称与机型代码
-- **地图选点**：Leaflet + OpenStreetMap 点击/拖动选点自动填入坐标（WGS-84，与 RID 广播坐标系一致，无 GCJ-02 偏移）；支持独立设置飞手位置并与无人机位置联动；实时显示广播位置与巡游范围圈；无互联网自动降级离线网格拾取器
+- **地图选点**：Leaflet + OpenStreetMap 点击/拖动选点自动填入坐标（WGS-84，与 RID 广播坐标系一致，无 GCJ-02 偏移）；支持独立设置飞手位置并与无人机位置联动；实时显示广播位置、**飞行轨迹（蓝线）**与巡游范围圈；无互联网自动降级离线网格拾取器
 - **巡游路径模拟**：固定点或圆形巡游，半径/速度/圈数可调
 
 ### 接收模式（扫描器）
 
 - **多协议解码**：ASTM F3411 / GB 42590 / GB 46750 报文全部解析（GB 46750 支持全部 21 个数据内容项）
-- **实时监测页面**：卡片式列表展示周边 RID 信号——识别码、机型、位置、高度、速度、航向、协议类型、信号强度等；点击卡片可在地图上聚焦显示目标轨迹与飞手位置连线
+- **实时监测页面**：卡片式列表展示周边 RID 信号——识别码、机型、位置、高度、速度、航向、协议类型、信号强度等；**在线 / 已离线分组显示**（10 秒无信号转入离线组，灰度置底，保留 30 分钟）；点击卡片可在地图上聚焦显示目标轨迹与飞手位置连线
 - **双地图三态渲染**：联网时 Leaflet + OSM 地图；CDN 不可达或无互联网时自动降级为 canvas 离线网格底图（比例尺按目标包围盒自适应 1/2/5 档位）；完全无信号时显示空态提示
+- **目标航迹**：每架无人机的历史位置绘制为地图轨迹线（在线实线、离线灰虚线），离线网格模式下同步绘制折线
 - **飞手位置解析**：GB 46750 数据项 005/006/007 与 GB 42590 System 消息中的操作员坐标均可解析显示
 
 ### 网页与传输
@@ -44,7 +45,7 @@ ESP32 无人机 Remote ID **广播（模拟）/ 接收（扫描）一体固件**
 
 1. 烧录固件后，手机连接热点 `ESP32-CRID-XXXX`（SSID/密码可在配置中修改）；
 2. 浏览器打开 `http://192.168.4.1`；
-3. 网页顶部切换 **发射 / 接收** 模式；发射模式下可切换广播标准（GB 42590 / GB 46750 / 双标准同发）；
+3. 网页顶部切换 **发射 / 接收** 模式；发射模式下可切换广播标准（GB 42590 / GB 46750）；
 4. 修改 UAS ID、基准坐标（可地图选点）、高度、速度、巡游参数等，点击「保存并应用」即时生效；
 5. 修改 SSID / 信道 / 广播间隔后，需重新连接热点；
 6. 「恢复初始」按钮一键还原全部默认配置（保留消息计数器，防止接收端乱序）；
@@ -63,9 +64,13 @@ powershell -ExecutionPolicy Bypass -File tools\build.ps1
 ### 手动构建（Linux/macOS 或已配置好的 IDF 环境）
 
 ```bash
-idf.py set-target esp32s3
+idf.py set-target esp32s3    # 或 esp32c5（自动叠加 sdkconfig.defaults.esp32c5）
 idf.py build
 ```
+
+> S3 与 C5 频繁切换编译互不干扰：两芯片各自的 flash 大小等差异项
+> 已写入 `sdkconfig.defaults.esp32s3` / `sdkconfig.defaults.esp32c5`，
+> `set-target` 时自动叠加生效（构建目录会全量重编一次属正常）。
 
 ### 烧录
 
@@ -77,7 +82,32 @@ idf.py -p COM3 flash monitor    # 烧录并打开串口监视器（Ctrl+] 退出
 
 也可分开执行：`idf.py -p COM3 flash` 只烧录，`idf.py -p COM3 monitor` 只开监视器。
 
-也可使用 GitHub Release 中的预编译固件（CI 自动构建）+ [flash download tool](https://www.espressif.com/en/support/download/other-tools) 图形界面烧录。
+## 预编译固件下载
+
+到 [Releases](https://github.com/sd1471123/esp32-ChinaRemoteID_Scan_Sim/releases) 页面按芯片下载对应 zip（CI 自动构建，均按 **16MB Flash** 编译）：
+
+| 芯片 | 下载包 | bootloader 偏移 | 实测 |
+|------|--------|-----------------|------|
+| ESP32-S3 | `esp32-ChinaRemoteID_Scan_Sim-esp32s3.zip` | `0x0` | N16R8 ✓ |
+| ESP32-C5 | `esp32-ChinaRemoteID_Scan_Sim-esp32c5.zip` | **`0x2000`（与 S3 不同）** | N16R8 ✓ |
+
+解压后用 esptool 烧录（在 zip 目录内执行）：
+
+```bash
+# ESP32-S3
+esptool.py --chip esp32s3 --baud 460800 write_flash \
+  0x0 remoteid_scanner_esp32s3/bootloader/bootloader.bin \
+  0x8000 remoteid_scanner_esp32s3/partition_table/partition-table.bin \
+  0x10000 remoteid_scanner_esp32s3/remoteid_scanner.bin
+
+# ESP32-C5（bootloader 地址是 0x2000，不是 0x0！）
+esptool.py --chip esp32c5 --baud 460800 write_flash \
+  0x2000 remoteid_scanner_esp32c5/bootloader/bootloader.bin \
+  0x8000 remoteid_scanner_esp32c5/partition_table/partition-table.bin \
+  0x10000 remoteid_scanner_esp32c5/remoteid_scanner.bin
+```
+
+也可使用 [flash download tool](https://www.espressif.com/en/support/download/other-tools) 图形界面，选择对应芯片型号与上表地址烧录。
 
 ## 项目结构
 
@@ -137,12 +167,22 @@ idf.py -p COM3 flash monitor    # 烧录并打开串口监视器（Ctrl+] 退出
 
 ## 版本历史
 
+### v1.1.0 — C5 支持 / 轨迹 / 在线离线分组
+
+- **ESP32-C5 支持**：16MB Flash 自定义分区表（factory 1.5MB），S3 / C5 各自的
+  `sdkconfig.defaults.esp32*` 随 `set-target` 自动叠加，双芯片切换编译互不干扰；两芯片均已实测
+- **飞行轨迹**：发射端地图实时绘制广播位置轨迹（蓝线）；接收端为每架无人机绘制历史航迹（在线实线 / 离线灰虚线），离线网格模式同步绘制
+- **在线 / 离线分组**：接收列表按信号活跃度分组（10 秒无信号转离线组、灰度置底、保留 30 分钟后清除）
+- **界面优化**：发射模式双列布局改为左右等高（列尾卡片自动拉伸补齐）
+- **精简**：删除发射端「双标准同发」模式，广播标准仅保留 GB 42590 / GB 46750 两档（NVS 中旧配置自动回落默认值）
+- **修复**：CI 构建前自动生成页面 gzip 资源（page_gz.h 不入库导致的历史构建失败）
+
 ### v1.0.0 — 首个发布版本
 
 本仓库首个独立版本，功能基线：
 
 - **统一收发固件**：单程序双模式，网页在线切换发射 / 接收，无需分别烧录
-- **发射**：三档广播标准（GB 42590 / GB 46750 / 双标准同发）；softAP + vendor IE 稳定广播；全套在线参数配置与 NVS 持久化；大疆机型伪装预设；地图选点与巡游模拟
+- **发射**：双档广播标准（GB 42590 / GB 46750）；softAP + vendor IE 稳定广播；全套在线参数配置与 NVS 持久化；大疆机型伪装预设；地图选点与巡游模拟
 - **接收**：多协议实时解码（ASTM / GB 42590 / GB 46750，含飞手位置）；卡片式监测列表 + 点击地图聚焦；双地图三态渲染（在线地图 / 离线网格 / 空态）
 - **工程化**：页面 gzip 传输与禁缓存头；接收端地图独立资源懒加载架构；一键构建脚本与五套回归测试工具；GitHub Actions 自动构建发布
 

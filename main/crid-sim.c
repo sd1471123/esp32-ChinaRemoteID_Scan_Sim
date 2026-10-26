@@ -4,7 +4,7 @@
  *
  * 双模式（网页可切换，NVS 持久化）:
  *   - 发射模式: softAP vendor IE 广播 RID（GB 42590-2023 旧国标 /
- *     GB 46750-2025 新国标 / 双标准同发）
+ *     GB 46750-2025 新国标）
  *   - 接收模式: 混杂模式监听周边无人机 RID 广播并解析（网页展示）
  *
  * softAP 始终运行（网页配置入口 http://192.168.4.1 不受模式影响）。
@@ -60,16 +60,15 @@ static bool apply_tx_ie(void) {
         crid_wifi_clear_rid_ie(1);
         s_applied_standard = std;
         ESP_LOGI(TAG, "广播标准切换: %s",
-                 std == RID_STD_GB42590 ? "GB42590 旧国标" :
-                 std == RID_STD_GB46750 ? "GB46750 新国标" : "双标准同发");
+                 std == RID_STD_GB42590 ? "GB42590 旧国标" : "GB46750 新国标");
     }
 
     bool ok = false;
-    if (std == RID_STD_GB42590 || std == RID_STD_BOTH) {
+    if (std == RID_STD_GB42590) {
         uint16_t len = crid_build_vendor_ie(&g_config, g_rid_ie_42590, RID_IE_BUF_SIZE);
         if (len > 0 && crid_wifi_set_rid_ie(0, g_rid_ie_42590, len) == ESP_OK) ok = true;
     }
-    if (std == RID_STD_GB46750 || std == RID_STD_BOTH) {
+    if (std == RID_STD_GB46750) {
         uint16_t len = crid_build_gb46750_ie(&g_config, g_rid_ie_46750, RID_IE_BUF_SIZE);
         if (len > 0 && crid_wifi_set_rid_ie(1, g_rid_ie_46750, len) == ESP_OK) ok = true;
     }

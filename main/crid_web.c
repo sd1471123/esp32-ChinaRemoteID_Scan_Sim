@@ -45,6 +45,9 @@ static const char PAGE_HTML[] =
 ".hdr p{margin:4px 0 0;font-size:12px;opacity:.8}"
 ".wrap{max-width:1080px;margin:0 auto;padding:14px}"
 ".grid{display:grid;grid-template-columns:1fr;gap:14px}"
+".col{display:flex;flex-direction:column;gap:14px;min-width:0}"
+// 列尾卡片拉伸补齐，两列强制等高
+".col>.card:last-child{flex:1 1 auto}"
 ".card{background:#fff;border-radius:12px;padding:16px;box-shadow:0 1px 4px rgba(16,24,40,.08)}"
 ".card h3{margin:0 0 4px;font-size:15px;color:#0b3d2e;display:flex;align-items:center;gap:7px}"
 ".card h3::before{content:'';width:4px;height:14px;border-radius:2px;background:#0f8a4d;flex:none}"
@@ -99,9 +102,13 @@ static const char PAGE_HTML[] =
 ".rxbanner .dot.live{animation:pulse 1.2s infinite}"
 "@keyframes pulse{0%,100%{opacity:1}50%{opacity:.25}}"
 ".rxlist{display:flex;flex-direction:column;gap:12px}"
+".rxsec{font-size:12px;font-weight:700;color:#0f8a4d;margin:2px 0 -4px;letter-spacing:.3px}"
+".rxsec.dim{color:#9ca3af}"
 ".dcard{border:1px solid #e5e7eb;border-radius:12px;overflow:hidden;background:#fff;"
 "box-shadow:0 1px 3px rgba(16,24,40,.06)}"
 ".dcard.hot{border-color:#f0b6ae;box-shadow:0 1px 6px rgba(192,57,43,.12)}"
+// 离线目标卡片：整体灰度弱化，与在线目标一眼区分
+".dcard.off{filter:grayscale(1);opacity:.62}"
 ".dh{display:flex;align-items:center;gap:8px;padding:10px 12px;background:#f6f8fa;"
 "border-bottom:1px solid #e5e7eb}"
 ".dh .id{flex:1;min-width:0;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;"
@@ -182,15 +189,16 @@ static const char PAGE_HTML[] =
 "<div class='seg'>"
 "<label><input type='radio' name='std' value='0'><span>GB42590<br>旧国标</span></label>"
 "<label><input type='radio' name='std' value='1'><span>GB46750<br>新国标</span></label>"
-"<label><input type='radio' name='std' value='2'><span>双标准<br>同发</span></label>"
 "</div>"
 "<p class='note'>旧国标 = GB 42590-2023（OpenDroneID 打包报文，兼容绝大多数现有接收端）；"
-"新国标 = GB 46750-2025（位图数据项报文，2026-05-01 实施，含实名登记标志）；"
-"双标准同发 = 两条厂商 IE 同时挂载。切换在「保存并应用」后生效，"
+"新国标 = GB 46750-2025（位图数据项报文，2026-05-01 实施，含实名登记标志）。"
+"切换在「保存并应用」后生效，"
 "下方身份信息只显示当前标准实际广播的字段。</p>"
 "</div>"
-"<p class='note'>接收模式下本机停止广播，改为监听热点所在信道的周边无人机 RID 信号，下方「接收监测」实时列表显示。</p>"
 "</div>"
+// 两列自平衡布局：左列身份信息，右列飞行参数+飞手位置+巡游参数，
+// 消除两列视图下飞行参数卡片下方的大块空白
+"<div class='col txonly'>"
 "<div class='card txonly'><h3>身份信息</h3>"
 "<label>无人机唯一 ID (UAS ID)</label><input id='uas_id' maxlength='24'>"
 "<label>机型名称 (Self-ID)</label><input id='drone_name' maxlength='20'>"
@@ -223,6 +231,8 @@ static const char PAGE_HTML[] =
 "<div><label>Wi-Fi 信道 (1-13)</label><input id='channel' type='number' min='1' max='13'></div>"
 "<div><label>广播间隔 (ms)</label><input id='beacon_interval_ms' type='number' min='200' max='60000'></div>"
 "</div></div>"
+"</div>"
+"<div class='col txonly'>"
 "<div class='card txonly'><h3>飞行参数</h3><div class='g'>"
 "<div><label>基准纬度</label><input id='base_latitude' type='number' step='0.0000001'></div>"
 "<div><label>基准经度</label><input id='base_longitude' type='number' step='0.0000001'></div>"
@@ -247,6 +257,7 @@ static const char PAGE_HTML[] =
 "<div><label>纬度半径 (度)</label><input id='patrol_radius_lat' type='number' step='0.00001'></div>"
 "<div><label>经度半径 (度)</label><input id='patrol_radius_lon' type='number' step='0.00001'></div>"
 "</div></div>"
+"</div>"
 "<div class='card span2 txonly'><h3>地图选点</h3>"
 "<div class='seg'>"
 "<label><input type='radio' name='pt' value='op' checked><span>选点：飞手</span></label>"
@@ -260,7 +271,8 @@ static const char PAGE_HTML[] =
 "<option value='100'>100</option><option value='500'>500</option></select></div>"
 "</div>"
 "<div id='liveinfo'></div>"
-"<div id='hint'>红点=飞手，绿点=无人机，蓝点=实时广播位置，绿圈=巡游范围。"
+"<div id='hint'>红点=飞手，绿点=无人机，蓝点=实时广播位置，蓝线=飞行轨迹（最近约 8 分钟），"
+"绿圈=巡游范围。"
 "地图以飞手位置为中心：选点对象为「飞手」时点击/拖动会同步按默认偏移生成无人机位置；"
 "选「无人机」时只改无人机位置。在线地图需手机保持移动数据，无网络时自动切换离线网格。</div>"
 "</div>"
@@ -283,6 +295,7 @@ static const char PAGE_HTML[] =
 "<span><i style='background:#0369a1'></i>GB42590</span>"
 "<span><i style='background:#6b7280'></i>ASTM</span>"
 "<span><i style='background:#e67e22;border-radius:3px;transform:rotate(45deg)'></i>飞手位置</span>"
+"<span><i style='background:#1565c0;height:2px;border-radius:1px'></i>飞行轨迹</span>"
 "</div>"
 "<button class='mapbtn' id='rxfit' type='button'>全览</button>"
 "</div>"
@@ -290,7 +303,7 @@ static const char PAGE_HTML[] =
 "<div class='rxlist' id='rxlist'></div>"
 "<p class='note'>监听信道跟随上方「Wi-Fi 信道」设置（保存后生效），只能收到与本机同信道的广播。"
 "卡片按信号强度排序，<b>绿色标题</b>为机型/描述，<b>格内小字</b>为字段名；"
-"5 分钟无信号自动移除，列表 2 秒刷新。</p>"
+"10 秒无信号标记为已离线（灰度显示，保留 30 分钟），列表 2 秒刷新。</p>"
 "</div>"
 "<div class='actions span2'>"
 "<button onclick='save()'>保存并应用</button>"
@@ -306,6 +319,7 @@ static const char PAGE_HTML[] =
 // 若声明留在脚本后段，一旦前段任何顶层语句抛错，变量将停留在
 // 暂时性死区（部分 WebView 会报 circle 未定义），提前声明杜绝此类问题
 "let map=null,opMarker=null,dMarker=null,live=null,circle=null,ginit=false;"
+"let trailPts=[],trailLine=null;"   // 飞行轨迹：poll 每 2 秒记录广播位置连成线
 "const F=['uas_id','drone_name','operator_id','realname_id','ssid','channel','beacon_interval_ms','ua_type',"
 "'base_latitude','base_longitude','base_altitude_msl','altitude_agl','speed_horizontal',"
 "'operator_latitude','operator_longitude','operator_altitude',"
@@ -461,7 +475,7 @@ static const char PAGE_HTML[] =
 // ---- 模式切换 UI 与接收监测轮询 ----
 "function getRadio(n){const r=document.querySelector('input[name='+n+']:checked');"
 "return r?r.value:'0';}"
-// ---- 按广播标准显隐身份字段（旧国标独有 / 新国标独有，双发全显） ----
+// ---- 按广播标准显隐身份字段（旧国标独有 / 新国标独有） ----
 "function stdUI(){const s=getRadio('std');"
 "const oldOn=(s!=='1'),newOn=(s!=='0');"
 "document.querySelectorAll('.oldstd').forEach(function(e){e.style.display=oldOn?'block':'none';});"
@@ -471,7 +485,9 @@ static const char PAGE_HTML[] =
 "let rxTimer=null;"
 "function modeUI(){const rx=getRadio('devmode')==='1';"
 "document.getElementById('stdbox').style.display=rx?'none':'block';"
-"document.querySelectorAll('.txonly').forEach(function(e){e.style.display=rx?'none':'block';});"
+// txonly 恢复显隐用空串（回退样式表 display）：.col 列容器依赖 flex 布局，
+// 若写死 block 会覆盖 flex 导致两列布局塌掉
+"document.querySelectorAll('.txonly').forEach(function(e){e.style.display=rx?'none':'';});"
 "document.getElementById('rxbox').style.display=rx?'block':'none';"
 "if(rx&&!rxTimer){pollRx();rxTimer=setInterval(pollRx,2000);}"
 // 接收端地图：进入接收模式时才按需加载独立脚本，且全程 try 保护，
@@ -529,7 +545,7 @@ static const char PAGE_HTML[] =
 "function rxCard(t){"
 "const p=rxProto(t.protocol);"
 "const el=document.createElement('div');"
-"el.className='dcard';"
+"el.className='dcard'+(t.active===false?' off':'');"
 "el.dataset.mac=t.mac;"
 "const stTxt=RXST[t.status]||('状态'+t.status);"
 "const air=(t.status===2);"
@@ -574,24 +590,33 @@ static const char PAGE_HTML[] =
 "const r=await fetch('/api/rx');const j=await r.json();"
 "try{if(window.RXMAP)RXMAP.update(j.tracks);}catch(e){}"   // 地图刷新独立保护
 "const s=j.stats;"
-"q('s_online').textContent=j.tracks.length;"
+// 在线/离线分组：active=false 为离线（后端 10 秒无信号标记，保留 30 分钟后清除）
+"const on=[],off=[];"
+"j.tracks.forEach(function(t){(t.active===false?off:on).push(t);});"
+"on.sort(function(a,b){return b.rssi-a.rssi;});"
+"off.sort(function(a,b){return a.age_ms-b.age_ms;});"
+"q('s_online').textContent=on.length;"
 "q('s_rid').textContent=s.rid;"
 "q('s_total').textContent=s.total;"
 "q('s_ok').textContent=s.ok;"
 "q('s_ovf').textContent=s.ovf;"
 "q('s_ovfbox').className='chip'+((s.ovf>0)?' warn':'');"
 "let fresh=0;"
-"j.tracks.forEach(function(t){if(t.age_ms<3000)fresh++;});"
+"on.forEach(function(t){if(t.age_ms<3000)fresh++;});"
 "q('rxstate').innerHTML=(fresh>0?`<b style=\"color:#0a7d43\">${fresh} 个目标</b>信号良好（3 秒内）`"
 ":'暂未收到 RID 帧，持续监听中…')+` &nbsp;|&nbsp; 更新于 ${new Date().toLocaleTimeString()}`;"
-// 强信号排前，便于优先关注
-"const ts=j.tracks.slice().sort(function(a,b){return b.rssi-a.rssi;});"
+// 列表分区：在线在上（按信号强度），已离线灰度在下（按最后收到时间）
 "const box=q('rxlist');"
 "box.innerHTML='';"
-"if(!ts.length){"
+"if(!on.length&&!off.length){"
 "box.innerHTML='<div class=\"rxb0\"><b>◎</b>尚未发现无人机 RID 广播<br>周边设备需与本机处于同一 Wi-Fi 信道</div>';"
 "return;}"
-"ts.forEach(function(t){box.appendChild(rxCard(t));});"
+"function sec(txt,dim){const d=document.createElement('div');"
+"d.className='rxsec'+(dim?' dim':'');d.textContent=txt;box.appendChild(d);}"
+"if(on.length){sec('在线信号 · '+on.length,false);"
+"on.forEach(function(t){box.appendChild(rxCard(t));});}"
+"if(off.length){sec('已离线 · '+off.length+'（10 秒无信号，保留 30 分钟）',true);"
+"off.forEach(function(t){box.appendChild(rxCard(t));});}"
 "}catch(e){q('rxstate').textContent='轮询失败：'+e;}}"
 // ---- 在线地图（Leaflet）与离线网格双模式 ----
 // map/opMarker/circle 等变量已在脚本开头统一声明
@@ -647,16 +672,35 @@ static const char PAGE_HTML[] =
 "x.fillText(fld('mpp').value+'米/像素',8,312);"
 "x.fillStyle='#0a7d43';x.beginPath();x.arc(160,160,6,0,6.3);x.fill();"
 "x.fillStyle='#0a7d43';x.fillText('中心=基准点',170,164);"
+// 飞行轨迹（蓝线）：与在线地图同数据源，网格模式下同样可见
+"if(trailPts.length>1){const tm=parseFloat(fld('mpp').value);"
+"x.strokeStyle='rgba(21,101,192,.55)';x.lineWidth=2;x.beginPath();"
+"trailPts.forEach(function(p,i){"
+"const px=160+(p[1]-gbase[1])*111320*Math.cos(gbase[0]*Math.PI/180)/tm;"
+"const py=160-(p[0]-gbase[0])*111320/tm;"
+"if(i)x.lineTo(px,py);else x.moveTo(px,py);});x.stroke();x.lineWidth=1;}"
 "if(gpick){const mpp=parseFloat(fld('mpp').value);"
 "const px=160+(gpick[1]-gbase[1])*111320*Math.cos(gbase[0]*Math.PI/180)/mpp;"
 "const py=160-(gpick[0]-gbase[0])*111320/mpp;"
 "x.fillStyle='#c0392b';x.beginPath();x.arc(px,py,6,0,6.3);x.fill();}}"
+// ---- 发射端飞行轨迹：每 2 秒把实时广播位置追加进轨迹 ----
+// 与接收端航迹（独立 /rxmap.js 模块内实现）互不相干
+"function trailPush(la,lo){const n=trailPts.length;"
+"if(n){const dla=la-trailPts[n-1][0],dlo=lo-trailPts[n-1][1];"
+"if(Math.abs(dla)>0.005||Math.abs(dlo)>0.005){trailPts=[];}"   // 位置跳变（改基准点/保存应用）后重新起线
+"else if(Math.abs(dla)>1e-7||Math.abs(dlo)>1e-7)trailPts.push([la,lo]);}"
+"else{trailPts.push([la,lo]);}"
+"if(trailPts.length>240)trailPts.shift();"   // 保留最近 240 点（约 8 分钟巡游）
+"if(map){if(!trailLine)trailLine=L.polyline(trailPts,"
+"{color:'#1565c0',weight:2,opacity:.6}).addTo(map);"
+"else trailLine.setLatLngs(trailPts);}}"
 // ---- 实时广播位置轮询 ----
 "async function poll(){try{const r=await fetch('/api/status');const j=await r.json();"
 "const t='实时广播位置: '+j.latitude.toFixed(6)+', '+j.longitude.toFixed(6)+"
 "'  高度 '+j.altitude_msl.toFixed(1)+'m  航向 '+j.heading.toFixed(0)+'°';"
 "document.getElementById('liveinfo').textContent=t;"
-"if(live){live.setLatLng([j.latitude,j.longitude]);}}"
+"if(live){live.setLatLng([j.latitude,j.longitude]);}"
+"trailPush(j.latitude,j.longitude);}"
 "catch(e){}}"
 "setInterval(poll,2000);"
 "load();"
@@ -865,7 +909,7 @@ static esp_err_t handler_post_config(httpd_req_t *req) {
         else next.device_mode = (uint8_t)v;
     }
     if (err[0] == '\0' && jget_num(j, "rid_standard", &v)) {
-        if (v < 0 || v > 2) snprintf(err, sizeof(err), "标准取值 0-2");
+        if (v < 0 || v > 1) snprintf(err, sizeof(err), "标准取值 0-1");
         else next.rid_standard = (uint8_t)v;
     }
     if (err[0] == '\0' && jget_num(j, "ua_category_gb", &v)) {
@@ -963,6 +1007,7 @@ static esp_err_t handler_rx(httpd_req_t *req) {
                  tracks[i].mac[0], tracks[i].mac[1], tracks[i].mac[2],
                  tracks[i].mac[3], tracks[i].mac[4], tracks[i].mac[5]);
         cJSON_AddStringToObject(t, "mac", mac);
+        cJSON_AddBoolToObject(t, "active", tracks[i].active);
         cJSON_AddNumberToObject(t, "rssi", tracks[i].rssi);
         cJSON_AddNumberToObject(t, "channel", tracks[i].channel);
         cJSON_AddNumberToObject(t, "protocol", tracks[i].protocol);

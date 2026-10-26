@@ -423,13 +423,13 @@ int crid_rx_get_tracks(crid_rx_track_t *out) {
     for (int i = 0; i < CRID_RX_MAX_TRACKS; i++) {
         rx_track_t *t = &s_tracks[i];
         if (!t->active) continue;
-        if (now - t->last_seen_ms > 300000) {   // 5 分钟未更新视为离线
-            t->active = false;
+        if (now - t->last_seen_ms > 1800000) {  // 30 分钟无信号才从航迹表移除，
+            t->active = false;                  // 在此之前继续下发供网页展示「已离线」
             continue;
         }
         crid_rx_track_t *o = &out[n++];
         memset(o, 0, sizeof(*o));
-        o->active = true;
+        o->active = (now - t->last_seen_ms <= 10000);   // 10 秒内有信号视为在线
         memcpy(o->mac, t->mac, 6);
         o->rssi = t->last_rssi;
         o->channel = t->last_channel;

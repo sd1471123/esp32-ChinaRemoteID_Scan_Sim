@@ -15,3 +15,5 @@ main/page_gz.h
 # Python
 __pycache__/
 *.pyc
+# 临时构建日志
+build_*.log

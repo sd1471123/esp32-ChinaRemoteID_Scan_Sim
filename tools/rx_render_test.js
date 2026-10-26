@@ -88,18 +88,32 @@ global.fetch = async () => ({ json: async () => FAKE });
 const fn = new Function(rx + '\nreturn {pollRx, rxCard};');
 const api = fn();
 const A = (x) => console.log(x);
+// 卡片数 = rxlist 直接子节点里带 dataset.mac 的（分区标题不带 mac）
+const cardCount = () => store.rxlist.children.filter(c => c.dataset && c.dataset.mac).length;
 api.pollRx().then(() => {
-  A('cards          : ' + store.rxlist.children.length + ' (expect 2)');
-  const c1 = store.rxlist.children[0];
+  A('cards          : ' + cardCount() + ' (expect 2)');
+  A('sections       : ' + (store.rxlist.children[0].textContent.indexOf('在线信号 · 2') >= 0 ? 'OK' : 'FAIL')
+    + ' — ' + store.rxlist.children[0].textContent);
+  const c1 = store.rxlist.children[1];
   A('op pos on card1: ' + (c1._html.includes('飞手位置') && c1._html.includes('22.530001') ? 'OK' : 'FAIL'));
-  A('no op on card2 : ' + (!store.rxlist.children[1]._html.includes('飞手位置') ? 'OK' : 'FAIL'));
-  // ---- 目标离线移除：只剩 1 架 ----
-  FAKE.tracks = FAKE.tracks.slice(0, 1);
+  A('no op on card2 : ' + (!store.rxlist.children[2]._html.includes('飞手位置') ? 'OK' : 'FAIL'));
+  A('online no gray : ' + (!store.rxlist.children[1].className.includes('off') ? 'OK' : 'FAIL'));
+  // ---- 目标 2 转为离线：应有「已离线」分区 + 灰度卡片 ----
+  FAKE.tracks[1].active = false;
   return api.pollRx().then(() => {
-    A('offline remove : ' + (store.rxlist.children.length === 1 ? 'OK' : 'FAIL'));
-    // ---- 空列表 ----
-    FAKE.tracks = [];
-    return api.pollRx();
+    const secs = store.rxlist.children.filter(c => !c.dataset || !c.dataset.mac)
+      .map(c => c.textContent).join(' | ');
+    A('split sections : ' + (secs.indexOf('在线信号 · 1') >= 0 && secs.indexOf('已离线 · 1') >= 0 ? 'OK' : 'FAIL') + ' — ' + secs);
+    const offCard = store.rxlist.children.filter(c => c.dataset && c.dataset.mac && c.className.includes('off'));
+    A('offline gray   : ' + (offCard.length === 1 ? 'OK' : 'FAIL ' + offCard.length));
+    // ---- 目标离线移除：只剩 1 架 ----
+    FAKE.tracks = FAKE.tracks.slice(0, 1);
+    return api.pollRx().then(() => {
+      A('offline remove : ' + (cardCount() === 1 ? 'OK' : 'FAIL ' + cardCount()));
+      // ---- 空列表 ----
+      FAKE.tracks = [];
+      return api.pollRx();
+    });
   });
 }).then(() => {
   A('empty state    : ' + (store.rxlist._html.includes('尚未发现') ? 'OK' : 'FAIL'));

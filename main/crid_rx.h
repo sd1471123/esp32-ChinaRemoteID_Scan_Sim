@@ -31,7 +31,7 @@ extern "C" {
 
 // 单个被探测无人机的快照（网页展示用，从航迹表拷贝）
 typedef struct {
-    bool     active;
+    bool     active;                  // true=在线（10 秒内有信号），false=已离线（保留展示）
     uint8_t  mac[6];
     int8_t   rssi;
     uint8_t  channel;
