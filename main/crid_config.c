@@ -168,7 +168,7 @@ typedef struct __attribute__((packed)) {
     uint8_t status;
     uint8_t channel;
     uint8_t device_mode;                         // 0=发射, 1=接收
-    uint8_t rid_standard;                        // 0=GB42590, 1=GB46750, 2=双标准
+    uint8_t rid_standard;                        // 0=GB42590, 1=GB46750
     char realname_id[9];                         // 实名登记号后 8 位
     uint8_t ua_category_gb;                      // 0-4
 } crid_persist_v2_t;
@@ -277,7 +277,7 @@ bool crid_config_load_nvs(cn_crid_config_t *config) {
         const crid_persist_v2_t *p2 = (const crid_persist_v2_t *)raw;
         persist_apply_common(config, (const crid_persist_v1_t *)raw);
         config->device_mode = (p2->device_mode == DEVICE_MODE_RX) ? DEVICE_MODE_RX : DEVICE_MODE_TX;
-        if (p2->rid_standard <= RID_STD_BOTH) config->rid_standard = p2->rid_standard;
+        if (p2->rid_standard <= RID_STD_GB46750) config->rid_standard = p2->rid_standard;
         strncpy(config->realname_id, p2->realname_id, sizeof(config->realname_id) - 1);
         config->realname_id[sizeof(config->realname_id) - 1] = '\0';
         if (p2->ua_category_gb <= 4) config->ua_category_gb = p2->ua_category_gb;

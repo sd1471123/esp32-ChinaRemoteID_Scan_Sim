@@ -1,0 +1,4 @@
+# ESP32-C5 专属默认配置（idf.py set-target esp32c5 时自动叠加在 sdkconfig.defaults 之后）
+# 这块 C5 板实际 flash 为 16MB（板载 boya 16MB，启动日志会警告 2MB 配置偏小）
+CONFIG_ESPTOOLPY_FLASHSIZE_16MB=y
+CONFIG_ESPTOOLPY_FLASHSIZE="16MB"

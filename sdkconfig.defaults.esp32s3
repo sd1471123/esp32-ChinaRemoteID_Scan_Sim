@@ -1,0 +1,4 @@
+# ESP32-S3 专属默认配置（idf.py set-target esp32s3 时自动叠加在 sdkconfig.defaults 之后）
+# 板子为 N16R8：16MB flash + 8MB PSRAM，与 C5 板同款
+CONFIG_ESPTOOLPY_FLASHSIZE_16MB=y
+CONFIG_ESPTOOLPY_FLASHSIZE="16MB"

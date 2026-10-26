@@ -2,17 +2,21 @@
  *
  * 隔离原则（与发射端地图互不干扰的关键）：
  *   1. 只向 window 暴露一个对象 RXMAP（boot/update/resize/focus），不新增其它全局变量；
- *   2. 全部状态收在闭包内（m / lay / autoFit），绝不使用 map、opMarker、dMarker、
+ *   2. 全部状态收在闭包内（m / lay / hist / autoFit），绝不使用 map、opMarker、dMarker、
  *      circle、ginit、dotIcon、drawCircle 等发射端地图的变量与函数；
  *   3. 容器 id 为 rxmap / rxmapbox，与发射端的 map 完全不同；
  *   4. 不依赖页面的 q()/fld()/esc()，自带工具函数，页面出问题也不会牵连这里；
  *   5. 全部 ES5 语法 + 字符串拼接（不用模板串），最大化兼容性；
  *   6. 任何异常都在内部捕获，失败只降级为纯列表，绝不影响配置页与接收列表。
+ *
+ * 航迹：按目标 mac 记录最近 200 个位置点，在线地图画 polyline、离线网格画折线；
+ * 目标离线后以灰点+灰虚线航迹展示，后端清除航迹时同步清理。
  */
 (function () {
   var LB = null;           // Leaflet 引用：boot 时从 window.L 取，避免声明同名变量遮蔽全局
   var m = null;            // 本模块自己的地图实例
-  var lay = {};            // mac -> { d:无人机点, o:飞手点, line:连线, ring:焦点环 }
+  var lay = {};            // mac -> { d:无人机点, o:飞手点, line:连线, trail:航迹线, ring:焦点环 }
+  var hist = {};           // mac -> [[纬度,经度],...] 飞行航迹（网格/地图两模式共用，最多 200 点）
   var autoFit = true;      // 是否自动缩放（用户手动拖动后置 false）
   var focusMac = null;     // 当前聚焦目标
 
@@ -30,6 +34,33 @@
   function noPos(t) { return !t || t.latitude === 0 && t.longitude === 0; }
   function noOp(t) { return !t || !t.has_op_loc || t.op_latitude === 0 && t.op_longitude === 0; }
 
+  // ---- 飞行航迹 ----
+  // 每个目标按 mac 记录最近 200 个位置点；网格与在线地图两种模式共用同一份数据
+  var HIST_MAX = 200;
+
+  function pushHist(mac, la, lo) {
+    var h = hist[mac];
+    if (!h) h = hist[mac] = [];
+    var n = h.length;
+    if (n) {
+      var dla = la - h[n - 1][0], dlo = lo - h[n - 1][1];
+      if (Math.abs(dla) < 1e-7 && Math.abs(dlo) < 1e-7) return;   // 位置未变
+      if (Math.abs(dla) > 0.01 || Math.abs(dlo) > 0.01) {         // 疑似换机重识别，重新起线
+        hist[mac] = [[la, lo]];
+        return;
+      }
+    }
+    h.push([la, lo]);
+    if (h.length > HIST_MAX) h.shift();
+  }
+
+  // 航迹线样式：在线=协议色实线，离线=灰色虚线弱化
+  function trailStyle(t) {
+    return (t.active === false)
+      ? { color: '#9ca3af', weight: 2, opacity: 0.4, dashArray: '4,4' }
+      : { color: protoColor(t.protocol), weight: 2, opacity: 0.6, dashArray: null };
+  }
+
   // 飞手位置用菱形图标，用 DOM 构造避免任何 HTML 字符串拼接
   function planeIcon() {
     var d = document.createElement('div');
@@ -40,7 +71,8 @@
 
   function popHtml(t, drone) {
     if (drone) {
-      return '<b>' + esc(t.uas_id || t.mac) + '</b><br>' + protoName(t.protocol)
+      return '<b>' + esc(t.uas_id || t.mac) + (t.active === false ? '（已离线）' : '') + '</b><br>'
+        + protoName(t.protocol)
         + ' · ' + esc(t.drone_name || '') + '<br>' + f6(t.latitude) + ', ' + f6(t.longitude)
         + '<br>高度 ' + f1(t.altitude_geo) + ' m · RSSI ' + t.rssi + ' dBm';
     }
@@ -79,22 +111,23 @@
     return cv.getContext('2d');
   }
 
-  // 依据所有目标经纬度计算网格中心与米/像素，使全部目标落在画布内
+  // 依据所有目标经纬度（含历史航迹点）计算网格中心与米/像素
   function gridScale(tracks) {
     var i, t, n = 0, minLa = 1e9, maxLa = -1e9, minLo = 1e9, maxLo = -1e9;
+    function eat(la, lo) {
+      if (la === 0 && lo === 0) return;
+      if (la < minLa) minLa = la;
+      if (la > maxLa) maxLa = la;
+      if (lo < minLo) minLo = lo;
+      if (lo > maxLo) maxLo = lo;
+      n++;
+    }
     for (i = 0; i < tracks.length; i++) {
       t = tracks[i];
-      var pts = [[t.latitude, t.longitude]];
-      if (!noOp(t)) pts.push([t.op_latitude, t.op_longitude]);
-      for (var j = 0; j < pts.length; j++) {
-        var la = pts[j][0], lo = pts[j][1];
-        if (la === 0 && lo === 0) continue;
-        if (la < minLa) minLa = la;
-        if (la > maxLa) maxLa = la;
-        if (lo < minLo) minLo = lo;
-        if (lo > maxLo) maxLo = lo;
-        n++;
-      }
+      eat(t.latitude, t.longitude);
+      if (!noOp(t)) eat(t.op_latitude, t.op_longitude);
+      var h = hist[t.mac];
+      if (h) for (var j = 0; j < h.length; j++) eat(h[j][0], h[j][1]);
     }
     if (!n) return null;
     var cLa = (minLa + maxLa) / 2, cLo = (minLo + maxLo) / 2;
@@ -148,14 +181,34 @@
       x.fillText('暂无目标位置', 110, 164);
       return;
     }
-    // 无人机点
+    // 飞行航迹线：在线用协议色，离线用灰色
+    for (i = 0; i < tracks.length; i++) {
+      var t0 = tracks[i];
+      var hh = hist[t0.mac];
+      if (!hh || hh.length < 2) continue;
+      x.beginPath();
+      for (var j2 = 0; j2 < hh.length; j2++) {
+        var hp = gridXY(s, hh[j2][0], hh[j2][1]);
+        if (j2) x.lineTo(hp[0], hp[1]); else x.moveTo(hp[0], hp[1]);
+      }
+      x.lineWidth = 1.5;
+      if (t0.active === false) {
+        x.strokeStyle = '#c3c9d1';
+      } else {
+        x.globalAlpha = 0.55;
+        x.strokeStyle = protoColor(t0.protocol);
+      }
+      x.stroke();
+      x.globalAlpha = 1;
+    }
+    // 无人机点（离线目标灰点）
     for (i = 0; i < tracks.length; i++) {
       var t = tracks[i];
       if (noPos(t)) continue;
       var p = gridXY(s, t.latitude, t.longitude);
       x.beginPath();
       x.arc(p[0], p[1], 6, 0, 6.3);
-      x.fillStyle = protoColor(t.protocol);
+      x.fillStyle = (t.active === false) ? '#9ca3af' : protoColor(t.protocol);
       x.fill();
       x.lineWidth = 2;
       x.strokeStyle = '#fff';
@@ -261,6 +314,15 @@
   var lastTracks = [];
   function update(tracks) {
     lastTracks = tracks || [];
+    // 航迹积累放在一切渲染之前：无论当前是网格还是地图模式都要记录
+    var i, t;
+    if (tracks && tracks.length) {
+      for (i = 0; i < tracks.length; i++) {
+        t = tracks[i];
+        if (t.active === false) continue;      // 离线目标没有新位置，不追加航迹
+        if (!noPos(t)) pushHist(t.mac, t.latitude, t.longitude);
+      }
+    }
     if (mode === 'grid') { drawRxGrid(lastTracks); return; }
     if (mode !== 'map' || !m || !LB) {
       if (m) clearAll();
@@ -268,31 +330,48 @@
     }
     if (!tracks || !tracks.length) {
       clearAll();
+      for (var hk in hist) delete hist[hk];    // 目标全部消失（后端已清除）时连航迹一起清
       return;
     }
     try {
-      var seen = {}, i, t, l, pts = [];
+      var seen = {}, l, pts = [];
       for (i = 0; i < tracks.length; i++) {
         t = tracks[i];
         seen[t.mac] = 1;
         l = lay[t.mac];
-        if (!l) l = lay[t.mac] = { d: null, o: null, line: null, ring: null };
+        if (!l) l = lay[t.mac] = { d: null, o: null, line: null, trail: null, ring: null };
+        var off = (t.active === false);
 
         if (!noPos(t)) {
           if (!l.d) {
             l.d = LB.circleMarker([t.latitude, t.longitude], {
               radius: 7, color: '#fff', weight: 2,
-              fillColor: protoColor(t.protocol), fillOpacity: 0.95
+              fillColor: off ? '#9ca3af' : protoColor(t.protocol),
+              fillOpacity: off ? 0.55 : 0.95
             }).addTo(m);
             l.d.bindPopup(popHtml(t, true));
           } else {
             l.d.setLatLng([t.latitude, t.longitude]);
-            l.d.setStyle({ fillColor: protoColor(t.protocol) });
+            l.d.setStyle({ fillColor: off ? '#9ca3af' : protoColor(t.protocol),
+                           fillOpacity: off ? 0.55 : 0.95 });
             l.d.setPopupContent(popHtml(t, true));
           }
           pts.push(l.d.getLatLng());
         } else if (l.d) {
           m.removeLayer(l.d); l.d = null;
+        }
+
+        // 飞行航迹线：跟随目标位置历史逐段生长
+        var h = hist[t.mac];
+        if (h && h.length > 1) {
+          if (!l.trail) {
+            l.trail = LB.polyline(h.slice(), trailStyle(t)).addTo(m);
+          } else {
+            l.trail.setLatLngs(h.slice());
+            l.trail.setStyle(trailStyle(t));
+          }
+        } else if (l.trail) {
+          m.removeLayer(l.trail); l.trail = null;
         }
 
         if (!noOp(t)) {
@@ -315,15 +394,17 @@
           if (l.line) { m.removeLayer(l.line); l.line = null; }
         }
       }
-      // 清理已离线目标
+      // 清理已离线目标（后端 30 分钟后移除航迹时才会走到这里）
       for (var k in lay) {
         if (seen[k]) continue;
         var x = lay[k];
         if (x.d) m.removeLayer(x.d);
         if (x.o) m.removeLayer(x.o);
         if (x.line) m.removeLayer(x.line);
+        if (x.trail) m.removeLayer(x.trail);
         if (x.ring) m.removeLayer(x.ring);
         delete lay[k];
+        delete hist[k];
       }
       if (focusMac && lay[focusMac] && lay[focusMac].ring) {
         var ll = lay[focusMac].d ? lay[focusMac].d.getLatLng()

@@ -1,0 +1,5 @@
+# 跨芯片共用默认配置（esp32s3 / esp32c5 等）
+# 自定义分区表：factory 分区扩到 1.5MB（见 partition_table/partitionTable.csv）
+# 内置默认 1MB app 分区对 RISC-V 目标（C3/C5/C6）偏小，固件约 1.03MB 会溢出
+CONFIG_PARTITION_TABLE_CUSTOM=y
+CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partition_table/partitionTable.csv"

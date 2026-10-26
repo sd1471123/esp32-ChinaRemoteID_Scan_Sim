@@ -103,14 +103,26 @@ const before = layers.added.length;
 M.update(T);
 A('no duplicate  : ' + (layers.added.length === before ? 'OK' : 'FAIL'));
 
+// ---- 飞行航迹：位置变化后建 trail 线，之后更新只生长不重建 ----
+let polyCreated = 0;
+const origPoly = global.L.polyline;
+global.L.polyline = function (ll, o) { polyCreated++; return origPoly(ll, o); };
+T[0].latitude = 22.5401;
+M.update(T);
+A('trail created : ' + (polyCreated === 1 ? 'OK' : 'FAIL ' + polyCreated) + ' (移动一次后应建 1 条航迹线)');
+const pc1 = polyCreated;
+T[0].latitude = 22.5402;
+M.update(T);
+A('trail grows   : ' + (polyCreated === pc1 ? 'OK' : 'FAIL ' + polyCreated) + ' (后续移动只 setLatLngs 不重建)');
+
 // ---- 目标离线：AA:02（无飞手位置）只移除 1 个无人机点 ----
 let rm = layers.removed.length;
 M.update([T[0]]);
 A('offline remove : ' + (layers.removed.length - rm === 1 ? 'OK' : 'FAIL ' + (layers.removed.length - rm)));
-// ---- 带飞手位置的目标离线：应移除无人机点 + 飞手点 + 连线 共 3 个 ----
+// ---- 带飞手位置的目标离线：应移除无人机点 + 飞手点 + 连线 + 航迹线 共 4 个 ----
 rm = layers.removed.length;
 M.update([T[1]]);
-A('offline 3 layer: ' + (layers.removed.length - rm === 3 ? 'OK' : 'FAIL ' + (layers.removed.length - rm)));
+A('offline 4 layer: ' + (layers.removed.length - rm === 4 ? 'OK' : 'FAIL ' + (layers.removed.length - rm)));
 M.update(T);
 
 // ---- focus / 再次点击取消 ----
