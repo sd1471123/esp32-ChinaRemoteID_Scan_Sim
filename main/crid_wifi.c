@@ -14,58 +14,45 @@ static const char *TAG = "CN_C-RID_WIFI";
 // 而跌破 GB 42590 表 A.11「固定信道 ≥1Hz」的下限。
 static uint16_t crid_ms_to_tu(uint16_t ms) {
     uint32_t tu = (uint32_t)((float)ms / 1.024f);
-    if (tu < 15) tu = 15;          // 802.11 规定 Beacon 间隔下限 15 TU
-    if (tu > 65535) tu = 65535;
+    // esp_wifi_types 规定 beacon_interval 范围为 100~60000 TU，
+    // 越界会让 esp_wifi_set_config 直接返回 ESP_ERR_INVALID_ARG
+    if (tu < 100) tu = 100;
+    if (tu > 60000) tu = 60000;
     return (uint16_t)tu;
 }
 
-esp_err_t crid_wifi_init(uint8_t channel) {
-    esp_err_t ret;
+// 说明：早期版本这里还有一个 STA 模式的 crid_wifi_init()，用于纯接收。
+// 现在统一为 softAP + 可选混杂监听（AP 模式下混杂同样可用），
+// 手机上始终能连热点进网页，因此该函数已移除。
 
-    wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
-    ret = esp_wifi_init(&cfg);
+/**
+ * @brief 切换射频工作频段
+ *
+ * ESP32-C5 只有一个射频链路，2.4G 与 5.8G 互斥。IDF 要求该 API 在
+ * esp_wifi_start() 之后调用，切换后信道会回落到该频段的默认值，
+ * 需要再调 crid_wifi_update_ap() 把 SSID/信道/间隔重新写回去。
+ */
+static esp_err_t crid_wifi_apply_band(uint8_t band) {
+#if CRID_HAS_5G_BAND
+    wifi_band_mode_t mode = (band == CRID_BAND_5G) ? WIFI_BAND_MODE_5G_ONLY
+                                                   : WIFI_BAND_MODE_2G_ONLY;
+    esp_err_t ret = esp_wifi_set_band_mode(mode);
     if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "esp_wifi_init failed: %s", esp_err_to_name(ret));
+        ESP_LOGE(TAG, "set band mode %d failed: %s", (int)mode, esp_err_to_name(ret));
         return ret;
     }
-
-    ret = esp_wifi_set_mode(WIFI_MODE_STA);
-    if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "esp_wifi_set_mode failed: %s", esp_err_to_name(ret));
-        return ret;
-    }
-
-    ret = esp_wifi_start();
-    if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "esp_wifi_start failed: %s", esp_err_to_name(ret));
-        return ret;
-    }
-
-    // 关闭调制解调器省电模式，避免射频休眠导致 raw 帧发送出现间隙
-    ret = esp_wifi_set_ps(WIFI_PS_NONE);
-    if (ret != ESP_OK) {
-        ESP_LOGW(TAG, "esp_wifi_set_ps failed: %s", esp_err_to_name(ret));
-    }
-
-    vTaskDelay(pdMS_TO_TICKS(100));
-
-    ret = esp_wifi_set_channel(channel, WIFI_SECOND_CHAN_NONE);
-    if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "esp_wifi_set_channel failed: %s", esp_err_to_name(ret));
-        return ret;
-    }
-
-    ret = esp_wifi_set_promiscuous(true);
-    if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "esp_wifi_set_promiscuous failed: %s", esp_err_to_name(ret));
-        return ret;
-    }
-
-    ESP_LOGI(TAG, "Wi-Fi initialized: channel=%u, promiscuous mode", channel);
+    ESP_LOGI(TAG, "射频频段: %s", band == CRID_BAND_5G ? "5.8G" : "2.4G");
     return ESP_OK;
+#else
+    if (band == CRID_BAND_5G) {
+        ESP_LOGW(TAG, "本芯片无 5 GHz 射频，强制使用 2.4G");
+        return ESP_ERR_NOT_SUPPORTED;
+    }
+    return ESP_OK;
+#endif
 }
 
-esp_err_t crid_wifi_init_ap(uint8_t channel, const char *ssid, uint16_t beacon_interval_ms) {
+esp_err_t crid_wifi_init_ap(uint8_t band, uint8_t channel, const char *ssid, uint16_t beacon_interval_ms) {
     esp_err_t ret;
 
     wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
@@ -83,6 +70,13 @@ esp_err_t crid_wifi_init_ap(uint8_t channel, const char *ssid, uint16_t beacon_i
         return ret;
     }
 
+    // 国家码决定 5G 可用信道集合：CN 允许 36-64 与 149-165。
+    // 默认的 "01"(world safe) 会裁掉大部分 5G 信道，必须显式指定。
+    ret = esp_wifi_set_country_code("CN", true);
+    if (ret != ESP_OK) {
+        ESP_LOGW(TAG, "set country CN failed: %s", esp_err_to_name(ret));
+    }
+
     // 创建 AP netif（含 DHCP 服务），手机连接后才能获取 192.168.4.x 地址
     esp_netif_t *netif_ap = esp_netif_create_default_wifi_ap();
     if (netif_ap == NULL) {
@@ -90,12 +84,26 @@ esp_err_t crid_wifi_init_ap(uint8_t channel, const char *ssid, uint16_t beacon_i
         return ESP_FAIL;
     }
 
+    // 先 start 再设置配置：esp_wifi_set_band_mode() 要求 Wi-Fi 已启动，
+    // 而 C5 复位后默认 band mode 是 5G_only，此时写入 2.4G 信道会被驱动
+    // 直接拒绝（Channel number 6 (2G) is not supported in current band mode）。
+    // 所以顺序必须是 start -> 切 band -> set_config(匹配该频段的信道)。
+    ret = esp_wifi_start();
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "esp_wifi_start failed: %s", esp_err_to_name(ret));
+        return ret;
+    }
+
+    if (crid_wifi_apply_band(band) != ESP_OK) {
+        return ESP_ERR_NOT_SUPPORTED;
+    }
+
     wifi_config_t ap_config = { 0 };
     size_t ssid_len = strlen(ssid);
     if (ssid_len > sizeof(ap_config.ap.ssid)) ssid_len = sizeof(ap_config.ap.ssid);
     memcpy(ap_config.ap.ssid, ssid, ssid_len);
     ap_config.ap.ssid_len = (uint8_t)ssid_len;
-    ap_config.ap.channel = channel;
+    ap_config.ap.channel = crid_band_normalize_channel(band, channel);
     ap_config.ap.authmode = WIFI_AUTH_OPEN;
     ap_config.ap.max_connection = 4;
     ap_config.ap.ssid_hidden = 0;
@@ -109,14 +117,12 @@ esp_err_t crid_wifi_init_ap(uint8_t channel, const char *ssid, uint16_t beacon_i
         return ret;
     }
 
-    ret = esp_wifi_start();
-    if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "esp_wifi_start failed: %s", esp_err_to_name(ret));
-        return ret;
-    }
+    // 5.8G 只支持 20 MHz 带宽，显式设置避免驱动在 5G 上尝试 40 MHz
+    esp_wifi_set_bandwidth(WIFI_IF_AP, WIFI_BW20);
 
-    ESP_LOGI(TAG, "Wi-Fi AP initialized: ssid=%s, channel=%u, beacon=%ums (%u TU)",
-             ssid, channel, beacon_interval_ms, crid_ms_to_tu(beacon_interval_ms));
+    ESP_LOGI(TAG, "Wi-Fi AP initialized: ssid=%s, band=%s, channel=%u, beacon=%ums (%u TU)",
+             ssid, band == CRID_BAND_5G ? "5.8G" : "2.4G", channel,
+             beacon_interval_ms, crid_ms_to_tu(beacon_interval_ms));
     return ESP_OK;
 }
 
@@ -139,8 +145,26 @@ esp_err_t crid_wifi_update_ap(const char *ssid, uint8_t channel, uint16_t beacon
     if (ret == ESP_OK) {
         ESP_LOGI(TAG, "Wi-Fi AP config updated: ssid=%s, channel=%u, beacon=%ums (%u TU)",
                  ssid, channel, beacon_interval_ms, crid_ms_to_tu(beacon_interval_ms));
+    } else {
+        ESP_LOGE(TAG, "Wi-Fi AP config update failed: %s", esp_err_to_name(ret));
     }
     return ret;
+}
+
+/**
+ * @brief 运行时切换频段并重建热点（网页保存频段时调用）
+ *
+ * 单射频：切频段会重建 AP，所有已连接客户端（含正在提交表单的手机）都会掉线。
+ * 调用前必须先把手头的 HTTP 响应发出去。
+ */
+esp_err_t crid_wifi_switch_band(uint8_t band, const char *ssid, uint8_t channel,
+                                uint16_t beacon_interval_ms) {
+    esp_err_t ret = crid_wifi_apply_band(band);
+    if (ret != ESP_OK) {
+        return ret;
+    }
+    vTaskDelay(pdMS_TO_TICKS(50));   // 等驱动完成频段切换
+    return crid_wifi_update_ap(ssid, channel, beacon_interval_ms);
 }
 
 esp_err_t crid_wifi_set_rid_ie(uint8_t slot, const uint8_t *ie, uint16_t len) {

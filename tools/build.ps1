@@ -8,6 +8,10 @@
 #   （工具 defender_exclude.ps1 是 Windows Defender 版的等效操作）
 # - 项目编译单元 ~953 个，首次全量编译约几分钟属正常，之后增量/命中缓存应 <30s
 
+# PositionalBinding=$false 是关键：否则第一个位置参数会被绑到 $Port 上，
+# 跑 `build.ps1 set-target esp32c5` 时 "set-target" 会被当成串口名，
+# idf.py 实际收到的是 `-p set-target esp32c5`，报 unknown target。
+[CmdletBinding(PositionalBinding=$false)]
 param(
   # 显式声明 -p/-Port：否则 PowerShell 会把未识别的 "-p COM3" 直接丢弃，
   # 导致 idf.py 收不到端口、esptool 自动挑串口（两块板同时插着时会挑错芯片）

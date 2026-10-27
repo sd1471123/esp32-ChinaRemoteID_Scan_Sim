@@ -52,10 +52,23 @@ CFG_TX = {
     'patrol_speed': 1.2,
     'patrol_radius_lat': 0.0009,
     'patrol_radius_lon': 0.0012,
+    # 单射频二选一：发射模式截图取 5.8G 频段（ESP32-C5 专属），
+    # 这样 README 里的界面图能直接体现 v1.2.0 的双频段能力。
+    'band': 1,
+    'tx_2g': 1, 'rx_2g': 0,
+    'tx_5g': 1, 'rx_5g': 0,
+    'channel_5g': 149,
+    'has5g': True,
 }
 
+# 接收模式截图用 2.4G（监听周边最常见），同时保留 5.8G 选项可见
 CFG_RX = dict(CFG_TX)
 CFG_RX['device_mode'] = 1
+CFG_RX['band'] = 0
+CFG_RX['tx_2g'] = 0
+CFG_RX['rx_2g'] = 1
+CFG_RX['tx_5g'] = 0
+CFG_RX['rx_5g'] = 1
 
 NOW = int(time.time() * 1000)
 
@@ -222,6 +235,7 @@ def main():
     print('mock server on 127.0.0.1:%d' % port)
     try:
         if 'tx' in want:
+            # 高度按整页内容定：说明折叠后仍保持 1960，改小会截掉地图卡片
             shoot(port, 'tx', 'webui_tx.png', 1960)
         if 'rx' in want:
             shoot(port, 'rx', 'webui_rx.png', 1560, width=1000)

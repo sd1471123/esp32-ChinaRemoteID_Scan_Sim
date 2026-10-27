@@ -84,6 +84,26 @@ extern "C" {
 #define DEVICE_MODE_TX 0            // 发射模式（广播 RID）
 #define DEVICE_MODE_RX 1            // 接收模式（监听周边无人机 RID）
 
+// --- Wi-Fi 频段 ---
+// 只有 ESP32-C5 系列带 5 GHz 射频；S3 等 2.4G-only 芯片在编译期就把相关
+// 代码与页面选项裁掉，避免链接到不存在的 esp_wifi_set_band_mode()。
+#if defined(CONFIG_IDF_TARGET_ESP32C5)
+#define CRID_HAS_5G_BAND 1
+#else
+#define CRID_HAS_5G_BAND 0
+#endif
+
+#define CRID_BAND_2G 0              // 2.4 GHz（GB42590: 2400-2476 MHz）
+#define CRID_BAND_5G 1              // 5.8 GHz（GB42590: 5725-5829 MHz）
+
+// GB 42590 A.1.3.1.3：5.8 GHz 固定信道应使用 149（中心频点 5745 MHz）
+#define CRID_5G_CH_DEFAULT 149
+#define CRID_5G_CH_MIN     149      // 5725-5829 MHz 对应 149-165
+#define CRID_5G_CH_MAX     165
+
+// 单射频约束：2.4G 与 5.8G 不能同时工作，同一时刻只有一个频段是「活跃」的。
+// 两个频段的开关各自独立保存，但只有活跃频段那一组真正生效。
+
 // --- 广播标准 ---
 #define RID_STD_GB42590 0           // 旧国标 GB 42590-2023（OpenDroneID 打包报文）
 #define RID_STD_GB46750 1           // 新国标 GB 46750-2025（位图数据项报文）
@@ -124,10 +144,18 @@ typedef struct {
     uint16_t beacon_interval_ms;             // 广播间隔 (ms, 200-60000)
 
     // 模式与标准
-    uint8_t device_mode;                     // 工作模式 (0=发射, 1=接收)
+    uint8_t device_mode;                     // 兼容字段 (0=发射, 1=接收)，由 tx/rx 开关推导
     uint8_t rid_standard;                    // 广播标准 (0=GB42590, 1=GB46750)
     char realname_id[9];                     // 实名登记号后 8 位 (GB46750 数据项 002, 空=不填)
     uint8_t ua_category_gb;                  // 新国标无人机分类 (0=微型,1=轻型,2=小型,3=中型,4=大型)
+
+    // 频段与收发开关（两频段各自记忆，但单射频下只有 active band 生效）
+    uint8_t band;                            // 当前活跃频段 (CRID_BAND_2G / CRID_BAND_5G)
+    uint8_t tx_2g;                           // 2.4G 发射开关
+    uint8_t rx_2g;                           // 2.4G 接收开关
+    uint8_t tx_5g;                           // 5.8G 发射开关（仅 CRID_HAS_5G_BAND）
+    uint8_t rx_5g;                           // 5.8G 接收开关（仅 CRID_HAS_5G_BAND）
+    uint8_t channel_5g;                      // 5.8G 信道 (149-165，默认 149)
 
     // 巡游参数
     float base_latitude;                     // 基准纬度
@@ -168,6 +196,37 @@ void crid_config_update_position(cn_crid_config_t *config,
                                  float alt_msl, float alt_agl,
                                  float speed_h, float speed_v,
                                  float heading);
+
+/**
+ * @brief 当前活跃频段是否开启发射
+ */
+uint8_t crid_band_tx_enabled(const cn_crid_config_t *config);
+
+/**
+ * @brief 当前活跃频段是否开启接收
+ */
+uint8_t crid_band_rx_enabled(const cn_crid_config_t *config);
+
+/**
+ * @brief 收发互斥归一化（单射频约束）
+ *
+ * 同一频段的发射与接收不能同时为 1（双开只能是分时轮转，会互相抢空口）；
+ * 双开时保留发射，双关时给活跃频段补一个接收，保证设备至少有一路在工作。
+ * 调用后会同步刷新 device_mode。
+ */
+void crid_config_radio_mutex(cn_crid_config_t *config);
+
+/**
+ * @brief 当前活跃频段对应的 Wi-Fi 信道
+ *
+ * 2.4G 用 config->channel；5.8G 固定映射到 149-165 区间（国标允许的唯一 5.8G 段）。
+ */
+uint8_t crid_band_channel(const cn_crid_config_t *config);
+
+/**
+ * @brief 把 5.8G 信道规整到 149-165（其他值一律回落到 149）
+ */
+uint8_t crid_band_normalize_channel(uint8_t band, uint8_t channel);
 
 #ifdef __cplusplus
 }

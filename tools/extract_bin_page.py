@@ -4,9 +4,10 @@
 1. 明文 PAGE_HTML 在 bin 中的完整性（HTML 里不应再出现应用代码）
 2. page_gz.h 里的两份 gzip 数组是否原样进入 bin、解压后内容是否符合预期
 """
-import gzip, io, re
+import gzip, io, os, re, sys
 
-BIN = r"E:/esp32-crid-1.1.0/build/remoteid_scanner.bin"
+# 允许用第一个参数指定 bin，方便核对非默认构建目录（如 -B build_c5 的产物）
+BIN = sys.argv[1] if len(sys.argv) > 1 else r"E:/esp32-crid-1.1.0/build/remoteid_scanner.bin"
 HDR = r"E:/esp32-crid-1.1.0/main/page_gz.h"
 
 data = open(BIN, "rb").read()
@@ -40,6 +41,10 @@ else:
         # 接收端地图架构：容器与 /rxmap.js 引用在页面里，建图逻辑必须仍在独立资源中
         "地图容器与独立资源引用在": "rxmapbox" in page and "/rxmap.js" in page,
         "接收端地图逻辑不内联": "L.map('rxmap')" not in page and "initRxMap" not in page,
+        # 运行模式：接收/发射二选一 radio（不再是两个独立 checkbox）
+        "角色拨动开关在": "name='role'" in page and "name='tx_en'" not in page,
+        # 说明信息默认折叠（details 无 open 属性）
+        "说明默认折叠": page.count("details class='tip'") >= 4,
     }.items():
         print(("OK   " if cond else "FAIL ") + name)
         ok = ok and cond

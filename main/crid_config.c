@@ -80,6 +80,15 @@ void crid_config_init_default(cn_crid_config_t *config) {
     config->realname_id[0] = '\0';
     config->ua_category_gb = 1;   // 默认轻型
 
+    // 频段与收发开关：单射频互斥，每个频段默认只开一路。
+    // 出厂默认 2.4G 发射（与 device_mode 默认 TX 一致）；5.8G 组也默认发射，切过去即可用
+    config->band = CRID_BAND_2G;
+    config->tx_2g = 1;
+    config->rx_2g = 0;
+    config->tx_5g = 1;
+    config->rx_5g = 0;
+    config->channel_5g = CRID_5G_CH_DEFAULT;
+
     // 巡游参数
     config->base_latitude = config->latitude;
     config->base_longitude = config->longitude;
@@ -173,13 +182,44 @@ typedef struct __attribute__((packed)) {
     uint8_t ua_category_gb;                      // 0-4
 } crid_persist_v2_t;
 
+// v3: 新增频段与 2.4G/5.8G 各自的收发开关（单射频，只有活跃频段生效）
+typedef struct __attribute__((packed)) {
+    uint32_t magic;
+    uint16_t version;                            // = 3
+    char uas_id[CRID_UAS_ID_MAX_LEN + 1];
+    char drone_name[CRID_UAS_ID_MAX_LEN + 1];
+    char operator_id[CRID_UAS_ID_MAX_LEN + 1];
+    char ssid[CRID_SSID_MAX_LEN + 1];
+    float base_latitude;
+    float base_longitude;
+    float base_altitude_msl;
+    float altitude_agl;
+    float speed_horizontal;
+    float patrol_radius_lat;
+    float patrol_radius_lon;
+    float patrol_speed;
+    uint16_t beacon_interval_ms;
+    uint8_t status;
+    uint8_t channel;
+    uint8_t device_mode;
+    uint8_t rid_standard;
+    char realname_id[9];
+    uint8_t ua_category_gb;
+    uint8_t band;                                // 0=2.4G, 1=5.8G
+    uint8_t tx_2g;
+    uint8_t rx_2g;
+    uint8_t tx_5g;
+    uint8_t rx_5g;
+    uint8_t channel_5g;
+} crid_persist_v3_t;
+
 #define CRID_PERSIST_MAGIC   0x44495243UL
-#define CRID_PERSIST_VERSION 2
+#define CRID_PERSIST_VERSION 3
 
 esp_err_t crid_config_save_nvs(const cn_crid_config_t *config) {
     if (config == NULL) return ESP_ERR_INVALID_ARG;
 
-    crid_persist_v2_t p;
+    crid_persist_v3_t p;
     memset(&p, 0, sizeof(p));
     p.magic = CRID_PERSIST_MAGIC;
     p.version = CRID_PERSIST_VERSION;
@@ -202,6 +242,12 @@ esp_err_t crid_config_save_nvs(const cn_crid_config_t *config) {
     p.rid_standard = config->rid_standard;
     strncpy(p.realname_id, config->realname_id, sizeof(p.realname_id) - 1);
     p.ua_category_gb = config->ua_category_gb;
+    p.band = (config->band == CRID_BAND_5G) ? CRID_BAND_5G : CRID_BAND_2G;
+    p.tx_2g = config->tx_2g ? 1 : 0;
+    p.rx_2g = config->rx_2g ? 1 : 0;
+    p.tx_5g = config->tx_5g ? 1 : 0;
+    p.rx_5g = config->rx_5g ? 1 : 0;
+    p.channel_5g = config->channel_5g;
 
     nvs_handle_t handle;
     esp_err_t ret = nvs_open(CRID_NVS_NAMESPACE, NVS_READWRITE, &handle);
@@ -273,7 +319,27 @@ bool crid_config_load_nvs(cn_crid_config_t *config) {
         return false;
     }
 
-    if (p1->version == 2 && len >= sizeof(crid_persist_v2_t)) {
+    if (p1->version == 3 && len >= sizeof(crid_persist_v3_t)) {
+        const crid_persist_v3_t *p3 = (const crid_persist_v3_t *)raw;
+        persist_apply_common(config, (const crid_persist_v1_t *)raw);
+        config->device_mode = (p3->device_mode == DEVICE_MODE_RX) ? DEVICE_MODE_RX : DEVICE_MODE_TX;
+        if (p3->rid_standard <= RID_STD_GB46750) config->rid_standard = p3->rid_standard;
+        strncpy(config->realname_id, p3->realname_id, sizeof(config->realname_id) - 1);
+        config->realname_id[sizeof(config->realname_id) - 1] = '\0';
+        if (p3->ua_category_gb <= 4) config->ua_category_gb = p3->ua_category_gb;
+
+        config->band = (p3->band == CRID_BAND_5G) ? CRID_BAND_5G : CRID_BAND_2G;
+#if !CRID_HAS_5G_BAND
+        config->band = CRID_BAND_2G;     // 无 5G 射频的芯片强制回落到 2.4G
+#endif
+        config->tx_2g = p3->tx_2g ? 1 : 0;
+        config->rx_2g = p3->rx_2g ? 1 : 0;
+        config->tx_5g = p3->tx_5g ? 1 : 0;
+        config->rx_5g = p3->rx_5g ? 1 : 0;
+        config->channel_5g = crid_band_normalize_channel(CRID_BAND_5G, p3->channel_5g);
+        // 单射频互斥 + 保底：归一化收发开关，避免历史配置里出现双开或全关
+        crid_config_radio_mutex(config);
+    } else if (p1->version == 2 && len >= sizeof(crid_persist_v2_t)) {
         const crid_persist_v2_t *p2 = (const crid_persist_v2_t *)raw;
         persist_apply_common(config, (const crid_persist_v1_t *)raw);
         config->device_mode = (p2->device_mode == DEVICE_MODE_RX) ? DEVICE_MODE_RX : DEVICE_MODE_TX;
@@ -281,6 +347,10 @@ bool crid_config_load_nvs(cn_crid_config_t *config) {
         strncpy(config->realname_id, p2->realname_id, sizeof(config->realname_id) - 1);
         config->realname_id[sizeof(config->realname_id) - 1] = '\0';
         if (p2->ua_category_gb <= 4) config->ua_category_gb = p2->ua_category_gb;
+        // v2 只有 TX/RX 二选一，迁移到 2.4G 组的对应开关
+        config->band = CRID_BAND_2G;
+        config->tx_2g = (p2->device_mode == DEVICE_MODE_RX) ? 0 : 1;
+        config->rx_2g = (p2->device_mode == DEVICE_MODE_RX) ? 1 : 0;
     } else if (p1->version == 1) {
         persist_apply_common(config, p1);
     } else {
@@ -288,7 +358,66 @@ bool crid_config_load_nvs(cn_crid_config_t *config) {
         return false;
     }
 
-    ESP_LOGI(TAG, "Config loaded from NVS: %s @ %s (mode=%u std=%u)",
-             config->uas_id, config->ssid, config->device_mode, config->rid_standard);
+    ESP_LOGI(TAG, "Config loaded from NVS: %s @ %s (band=%s tx=%u rx=%u std=%u)",
+             config->uas_id, config->ssid,
+             config->band == CRID_BAND_5G ? "5.8G" : "2.4G",
+             crid_band_tx_enabled(config), crid_band_rx_enabled(config),
+             config->rid_standard);
     return true;
+}
+
+// ================================================================
+// 频段辅助
+// ================================================================
+
+uint8_t crid_band_tx_enabled(const cn_crid_config_t *config) {
+    if (config == NULL) return 0;
+#if CRID_HAS_5G_BAND
+    if (config->band == CRID_BAND_5G) return config->tx_5g ? 1 : 0;
+#endif
+    return config->tx_2g ? 1 : 0;
+}
+
+uint8_t crid_band_rx_enabled(const cn_crid_config_t *config) {
+    if (config == NULL) return 0;
+#if CRID_HAS_5G_BAND
+    if (config->band == CRID_BAND_5G) return config->rx_5g ? 1 : 0;
+#endif
+    return config->rx_2g ? 1 : 0;
+}
+
+// 单射频互斥：一条射频链路同一时刻只能发或只能收。
+// 双开在硬件上只能是分时轮转（发射时段到不了的信号收不到），故归一化为二选一。
+void crid_config_radio_mutex(cn_crid_config_t *config) {
+    if (config == NULL) return;
+    if (config->tx_2g && config->rx_2g) config->rx_2g = 0;   // 双开保留发射
+    if (config->tx_5g && config->rx_5g) config->rx_5g = 0;
+    if (!crid_band_tx_enabled(config) && !crid_band_rx_enabled(config)) {
+        if (config->band == CRID_BAND_5G) config->rx_5g = 1;  // 双关补接收，保证有一路在跑
+        else config->rx_2g = 1;
+    }
+    config->device_mode = crid_band_tx_enabled(config) ? DEVICE_MODE_TX : DEVICE_MODE_RX;
+}
+
+uint8_t crid_band_normalize_channel(uint8_t band, uint8_t channel) {
+    if (band == CRID_BAND_5G) {
+        // 5.8 GHz 只允许 149-165，且必须落在 20 MHz 网格上（步进 4）
+        if (channel < CRID_5G_CH_MIN || channel > CRID_5G_CH_MAX ||
+            ((channel - CRID_5G_CH_MIN) % 4) != 0) {
+            return CRID_5G_CH_DEFAULT;
+        }
+        return channel;
+    }
+    if (channel < 1 || channel > 13) return DEFAULT_WIFI_CHANNEL;
+    return channel;
+}
+
+uint8_t crid_band_channel(const cn_crid_config_t *config) {
+    if (config == NULL) return DEFAULT_WIFI_CHANNEL;
+#if CRID_HAS_5G_BAND
+    if (config->band == CRID_BAND_5G) {
+        return crid_band_normalize_channel(CRID_BAND_5G, config->channel_5g);
+    }
+#endif
+    return crid_band_normalize_channel(CRID_BAND_2G, config->channel);
 }

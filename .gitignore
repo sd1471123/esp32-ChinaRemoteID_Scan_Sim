@@ -1,5 +1,5 @@
-# ESP-IDF 构建产物
-build/
+# ESP-IDF 构建产物（build/ 与多目标目录 build_c5 等，后者单个就有 240MB+）
+build*/
 sdkconfig.old
 dependencies.lock
 managed_components/
@@ -15,10 +15,13 @@ main/page_gz.h
 # Python
 __pycache__/
 *.pyc
-# 临时构建日志
+# 临时构建日志 / 烧录日志
 build_*.log
+flash_*.log
+*_role.log
 # 抓取的串口启动日志
 build_*.txt
+boot_*.txt
 # 本地标准原文与第三方参考实现（仅本地查阅，不入库）
 docs/std/
 # target 生成的本机配置，不入库（CI 由 sdkconfig.defaults* 生成）

@@ -20,6 +20,8 @@ const dom = new JSDOM(patched, {
       if (u === '/api/config') return { json: async () => ({
         device_mode: 0, rid_standard: 0, uas_id: 'X', drone_name: 'X',
         channel: '6', beacon_interval_ms: 5, ua_type: '2',
+        band: 0, tx_2g: 1, rx_2g: 0, tx_5g: 1, rx_5g: 0,
+        channel_5g: 149, has5g: true,
       })};
       if (u === '/api/rx') return { json: async () => ({
         stats: { total: 10, rid: 8, ok: 8, ovf: 0 },
@@ -79,15 +81,50 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
   try { await w.save(); console.log('save OK'); }
   catch (e) { console.log('save THREW:', e.message); }
 
-  // 模拟：切换到接收模式（复现用户报的 "pollRx is not defined" 场景）
+  // 角色开关：出厂/加载默认应为「发射」，且两个 radio 只能有一个选中
   try {
-    const rxRadio = w.document.querySelector('input[name=devmode][value="1"]');
-    rxRadio.checked = true;
-    rxRadio.dispatchEvent(new w.Event('change', { bubbles: true }));
+    const rd = w.document.querySelectorAll('input[name=role]');
+    const checked = Array.prototype.filter.call(rd, r => r.checked);
+    console.log('role radios:', rd.length, 'checked:', checked.length,
+                'value:', checked[0] && checked[0].value);
+    if (rd.length !== 2 || checked.length !== 1) console.log('ROLE UI FAIL');
+    if (checked[0] && checked[0].value !== 'tx') console.log('ROLE DEFAULT FAIL (expect tx)');
+  } catch (e) { console.log('role check THREW:', e.message); }
+
+  // 模拟：拨到接收（复现用户报的 "pollRx is not defined" 场景）
+  try {
+    const rx = w.document.querySelector('input[name=role][value=rx]');
+    rx.checked = true;
+    rx.dispatchEvent(new w.Event('change', { bubbles: true }));
     await sleep(400);
     const cards = w.document.getElementById('rxlist').children.length;
-    console.log('rx mode switch OK, rx cards:', cards, '(expect >=1)');
-  } catch (e) { console.log('rx switch THREW:', e.message); }
+    const txCards = w.document.querySelector('.card.txonly').style.display;
+    console.log('rx role OK, rx cards:', cards, '(expect >=1), tx cards display:',
+                JSON.stringify(txCards), '(expect "none")');
+    if (txCards !== 'none') console.log('ROLE SWITCH FAIL (tx cards still visible)');
+  } catch (e) { console.log('rx role THREW:', e.message); }
+
+  // 模拟：切到 5.8G 频段（单射频互斥，信道应自动锁到 149 并禁用输入）
+  try {
+    const b5 = w.document.querySelector('input[name=band][value="1"]');
+    b5.checked = true;
+    b5.dispatchEvent(new w.Event('change', { bubbles: true }));
+    const ch = w.document.getElementById('channel');
+    console.log('band 5.8G OK, channel =', ch.value, 'disabled =', ch.disabled);
+    if (ch.value !== '149' || !ch.disabled) console.log('BAND UI FAIL');
+  } catch (e) { console.log('band switch THREW:', e.message); }
+
+  // 拨回发射：飞行参数/地图卡片应恢复显示
+  try {
+    const tx = w.document.querySelector('input[name=role][value=tx]');
+    tx.checked = true;
+    tx.dispatchEvent(new w.Event('change', { bubbles: true }));
+    const disp = w.document.querySelector('.card.txonly').style.display;
+    console.log('tx role OK, tx cards display:', JSON.stringify(disp), '(expect "")');
+    if (disp !== '') console.log('ROLE SWITCH BACK FAIL');
+    await w.save();
+    console.log('save under tx role OK');
+  } catch (e) { console.log('tx role THREW:', e.message); }
 
   console.log('=== 运行后错误 ===');
   console.log(w._pageErrors.length ? w._pageErrors : '(none)');
