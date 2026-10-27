@@ -118,10 +118,13 @@ ls.onclick=function(e){e.stopPropagation();};
 document.addEventListener('click',function(){dd.classList.remove('open');});})();
 async function load(){try{const r=await fetch('/api/config');const j=await r.json();
 F.forEach(k=>{if(j[k]!==undefined&&j[k]!==null)fld(k).value=j[k];});
-document.querySelectorAll('input[name=devmode]').forEach(function(r){r.checked=(+r.value===j.device_mode);});
+LASTCFG=j;
+document.querySelectorAll('input[name=band]').forEach(function(r){r.checked=(+r.value===(+j.band||0));});
+if(!j.has5g){const b5=document.getElementById('b5gl');if(b5)b5.style.display='none';}
+setRole((+j.band===1)?!!j.tx_5g:!!j.tx_2g);
 document.querySelectorAll('input[name=std]').forEach(function(r){r.checked=(+r.value===j.rid_standard);});
-uatSync();statusSync();gbcSync();modeUI();stdUI();
-if(getRadio('devmode')!=='1'&&typeof initMap==='function')initMap();}
+uatSync();statusSync();gbcSync();bandUI();modeUI();stdUI();
+if(roleTx()&&typeof initMap==='function')initMap();}
 catch(e){msg('加载失败: '+e,false);}}
 const NUM=['channel','beacon_interval_ms','ua_type','base_latitude','base_longitude',
 'base_altitude_msl','operator_latitude','operator_longitude','operator_altitude',
@@ -130,20 +133,28 @@ const NUM=['channel','beacon_interval_ms','ua_type','base_latitude','base_longit
 async function save(){const d={};F.forEach(function(k){
 const v=fld(k).value;
 d[k]=NUM.indexOf(k)>=0?(v===''?null:parseFloat(v)):v;});
-d.device_mode=+getRadio('devmode');d.rid_standard=+getRadio('std');
+const _b=+getRadio('band'),_L=LASTCFG||{};
+const _tx=roleTx()?1:0,_rx=_tx?0:1;
+d.band=_b;d.rid_standard=+getRadio('std');
+d.tx_2g=_b===0?_tx:(_L.tx_2g!==undefined?_L.tx_2g:1);
+d.rx_2g=_b===0?_rx:(_L.rx_2g!==undefined?_L.rx_2g:0);
+d.tx_5g=_b===1?_tx:(_L.tx_5g!==undefined?_L.tx_5g:1);
+d.rx_5g=_b===1?_rx:(_L.rx_5g!==undefined?_L.rx_5g:0);
+d.channel_5g=149;
+if(_b===1)d.channel=(_L.channel||6);
 try{const r=await fetch('/api/config',{method:'POST',
 headers:{'Content-Type':'application/json'},body:JSON.stringify(d)});
 const j=await r.json();
-if(j.ok){msg('已保存并应用 ✓'+(j.restarted?' (热点参数已更新，如 SSID/信道变化请重新连接)':''),true);
+if(j.ok){msg('已保存并应用 ✓'+(j.restarted?' (SSID/信道/广播间隔变更会重建热点，连接可能短暂中断，请稍候或重新连接)':''),true);
 try{if(map&&circle){map.removeLayer(circle);circle=null;}
 if(typeof drawCircle==='function')drawCircle();}catch(me){}}
 else{msg('保存失败: '+(j.err||''),false);}}
-catch(e){msg('保存失败: '+e,false);}}
+catch(e){msg(e&&e.name==='TypeError'?'热点参数已生效，连接被重置，请重新连接热点后刷新确认':'保存失败: '+e,false);}}
 async function resetCfg(){if(!confirm('确认恢复全部初始设定？当前配置将被覆盖。'))return;
 try{const r=await fetch('/api/reset',{method:'POST'});const j=await r.json();
 if(j.ok){msg('已恢复初始设定 ✓'+(j.restarted?' (热点参数变化，请重新连接热点)':''),true);
 await load();}else{msg('恢复失败',false);}}
-catch(e){msg('恢复失败: '+e,false);}}
+catch(e){msg(e&&e.name==='TypeError'?'已恢复初始设定，连接被重置，请重新连接热点后刷新确认':'恢复失败: '+e,false);}}
 function getRadio(n){const r=document.querySelector('input[name='+n+']:checked');
 return r?r.value:'0';}
 function stdUI(){const s=getRadio('std');
@@ -152,16 +163,28 @@ document.querySelectorAll('.oldstd').forEach(function(e){e.style.display=oldOn?'
 document.querySelectorAll('.newstd').forEach(function(e){e.style.display=newOn?'block':'none';});}
 document.querySelectorAll('input[name=std]').forEach(function(r){
 r.addEventListener('change',stdUI);});
-let rxTimer=null;
-function modeUI(){const rx=getRadio('devmode')==='1';
-document.getElementById('stdbox').style.display=rx?'none':'block';
-document.querySelectorAll('.txonly').forEach(function(e){e.style.display=rx?'none':'';});
+let rxTimer=null;let LASTCFG={};
+function roleTx(){const r=document.querySelector('input[name=role]:checked');
+return r?r.value==='tx':true;}
+function setRole(tx){document.querySelectorAll('input[name=role]').forEach(function(r){
+r.checked=(r.value===(tx?'tx':'rx'));});}
+function bandUI(){const b=getRadio('band');const c=fld('channel');if(!c)return;
+const lb=document.getElementById('chlbl');
+if(b==='1'){c.value=149;c.disabled=true;
+if(lb)lb.textContent='Wi-Fi 信道 (149-165)';}else{c.disabled=false;
+if(lb)lb.textContent='Wi-Fi 信道 (1-13)';
+if(+c.value>13)c.value=(LASTCFG&&LASTCFG.channel)||6;}}
+function modeUI(){const tx=roleTx();const rx=!tx;
+document.getElementById('stdbox').style.display=tx?'block':'none';
+document.querySelectorAll('.txonly').forEach(function(e){e.style.display=tx?'':'none';});
 document.getElementById('rxbox').style.display=rx?'block':'none';
 if(rx&&!rxTimer){pollRx();rxTimer=setInterval(pollRx,2000);}
+if(!rx&&rxTimer){clearInterval(rxTimer);rxTimer=null;}
 if(rx){rxMapLoad();try{if(window.RXMAP)RXMAP.resize();}catch(e){}}
-if(!rx){if(!ginit&&typeof initMap==='function')initMap();
-if(rxTimer){clearInterval(rxTimer);rxTimer=null;}}}
-document.querySelectorAll('input[name=devmode]').forEach(function(r){
+if(tx&&!ginit&&typeof initMap==='function')initMap();}
+document.querySelectorAll('input[name=band]').forEach(function(r){
+r.addEventListener('change',bandUI);});
+document.querySelectorAll('input[name=role]').forEach(function(r){
 r.addEventListener('change',modeUI);});
 let _rxmAsked=false;
 function rxMapFail(msg){try{

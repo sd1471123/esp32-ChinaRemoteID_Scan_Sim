@@ -87,26 +87,43 @@ static bool apply_tx_ie(void) {
 }
 
 /**
- * @brief 应用当前工作模式（网页切换 / 启动时调用）
+ * @brief 应用当前收发开关（网页保存 / 启动时调用）
  *
- * 发射模式: 关闭混杂模式，发送任务自动恢复 IE 广播
- * 接收模式: 发送任务自动摘除 IE，开启混杂模式监听
+ * 发射与接收是两个独立开关，可以同时打开：softAP 在硬件层面持续发 Beacon，
+ * 同时混杂模式接收同信道的管理帧，单射频下二者共用同一个信道，互不冲突。
+ * 两者都关是禁止状态（网页端已拦截），这里再兜底按发射处理。
  */
 void crid_app_apply_mode(void) {
-    if (g_config.device_mode == DEVICE_MODE_RX) {
-        crid_rx_start(g_config.channel);
+    uint8_t ch = crid_band_channel(&g_config);
+    bool tx = crid_band_tx_enabled(&g_config);
+    bool rx = crid_band_rx_enabled(&g_config);
+
+    if (rx) {
+        crid_rx_start(ch);           // 已在跑则直接返回
     } else {
         crid_rx_stop();
-        s_applied_standard = 0xFF;   // 强制下一轮重建 IE
     }
+
+    if (tx) {
+        s_applied_standard = 0xFF;   // 强制下一轮重建 IE
+    } else {
+        crid_wifi_clear_rid_ie(0);
+        crid_wifi_clear_rid_ie(1);
+        s_applied_standard = 0xFF;
+    }
+
+    ESP_LOGI(TAG, "射频状态: 频段=%s 信道=%u 发射=%s 接收=%s",
+             g_config.band == CRID_BAND_5G ? "5.8G" : "2.4G", ch,
+             tx ? "开" : "关", rx ? "开" : "关");
 }
 
 /**
- * @brief C-RID 主任务（发射/接收按配置分发）
+ * @brief C-RID 主任务（按开关分别维护发射 IE 与接收监听）
  */
 static void crid_main_task(void *pvParameter) {
-    ESP_LOGI(TAG, "C-RID main task started (mode=%s)",
-             g_config.device_mode == DEVICE_MODE_RX ? "接收" : "发射");
+    ESP_LOGI(TAG, "C-RID main task started (band=%s tx=%u rx=%u)",
+             g_config.band == CRID_BAND_5G ? "5.8G" : "2.4G",
+             crid_band_tx_enabled(&g_config), crid_band_rx_enabled(&g_config));
 
     TickType_t xLastWake10s = xTaskGetTickCount();
     const TickType_t xInterval10s = pdMS_TO_TICKS(PATROL_INTERVAL_SEC * 1000);
@@ -114,25 +131,23 @@ static void crid_main_task(void *pvParameter) {
     for (;;) {
         vTaskDelay(pdMS_TO_TICKS(g_config.beacon_interval_ms));
 
-        if (g_config.device_mode == DEVICE_MODE_RX) {
-            // 接收模式: 确保 IE 已摘除（首帧进入时清一次）
-            if (s_applied_standard != 0xFF) {
-                crid_wifi_clear_rid_ie(0);
-                crid_wifi_clear_rid_ie(1);
-                s_applied_standard = 0xFF;
-                ESP_LOGI(TAG, "发射 IE 已摘除，进入接收模式");
-            }
-        } else {
-            // 发射模式: 定时重建并更新厂商 IE（softAP 硬件负责广播）
+        if (crid_band_tx_enabled(&g_config)) {
+            // 发射开启: 定时重建并更新厂商 IE（softAP 硬件负责广播）
             if (!apply_tx_ie()) {
                 ESP_LOGE(TAG, "Failed to set RID vendor IE");
             }
+        } else if (s_applied_standard != 0xFF) {
+            // 发射关闭: 确保 IE 已摘除（首帧进入时清一次），AP 继续发空 Beacon
+            crid_wifi_clear_rid_ie(0);
+            crid_wifi_clear_rid_ie(1);
+            s_applied_standard = 0xFF;
+            ESP_LOGI(TAG, "发射已关闭，RID IE 从 Beacon 摘除");
         }
 
-        // --- 10 秒定时：更新巡游位置（仅发射模式有意义） ---
+        // --- 10 秒定时：更新巡游位置（仅发射开启时推进） ---
         TickType_t xNow = xTaskGetTickCount();
         if ((xNow - xLastWake10s) >= xInterval10s) {
-            if (g_config.device_mode == DEVICE_MODE_TX) {
+            if (crid_band_tx_enabled(&g_config)) {
                 ESP_LOGI(TAG, "=== Patrol position update ===");
                 crid_patrol_step(&g_config);
             }
@@ -174,8 +189,9 @@ void app_main(void) {
     crid_config_init_default(&g_config);
     crid_config_load_nvs(&g_config);
 
-    // 5. 初始化 Wi-Fi（softAP 模式始终运行：网页配置入口）
-    ret = crid_wifi_init_ap(g_config.channel, g_config.ssid, g_config.beacon_interval_ms);
+    // 5. 初始化 Wi-Fi（softAP 始终运行：网页配置入口；band 决定 2.4G / 5.8G）
+    ret = crid_wifi_init_ap(g_config.band, crid_band_channel(&g_config),
+                            g_config.ssid, g_config.beacon_interval_ms);
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "Wi-Fi init failed: %s", esp_err_to_name(ret));
         return;
@@ -197,8 +213,9 @@ void app_main(void) {
         ESP_LOGE(TAG, "Web config server failed to start!");
     }
 
-    ESP_LOGI(TAG, "C-RID started successfully! (mode=%s, std=%u)",
-             g_config.device_mode == DEVICE_MODE_RX ? "RX" : "TX",
+    ESP_LOGI(TAG, "C-RID started successfully! (band=%s, tx=%u, rx=%u, std=%u)",
+             g_config.band == CRID_BAND_5G ? "5.8G" : "2.4G",
+             crid_band_tx_enabled(&g_config), crid_band_rx_enabled(&g_config),
              g_config.rid_standard);
     ESP_LOGI(TAG, "  UAS ID (Model): %s", g_config.uas_id);
     ESP_LOGI(TAG, "  Drone Name: %s", g_config.drone_name);
@@ -207,7 +224,9 @@ void app_main(void) {
              g_config.mac_address[0], g_config.mac_address[1], g_config.mac_address[2],
              g_config.mac_address[3], g_config.mac_address[4], g_config.mac_address[5]);
     ESP_LOGI(TAG, "  Position: %.6f, %.6f", g_config.latitude, g_config.longitude);
-    ESP_LOGI(TAG, "  Channel: %u, Interval: %ums", g_config.channel, g_config.beacon_interval_ms);
+    ESP_LOGI(TAG, "  Band: %s, Channel: %u, Interval: %ums",
+             g_config.band == CRID_BAND_5G ? "5.8G" : "2.4G",
+             crid_band_channel(&g_config), g_config.beacon_interval_ms);
     ESP_LOGI(TAG, "  Web config: http://192.168.4.1");
 
     // 临时校验用：构建一份 GB46750 报文并打印（不改变当前广播标准）

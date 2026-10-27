@@ -11,6 +11,9 @@
 #include "page_gz.h"
 #include "esp_http_server.h"
 #include "esp_log.h"
+#include "esp_err.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 #include "cJSON.h"
 #include <string.h>
 #include <stdlib.h>
@@ -59,6 +62,16 @@ static const char PAGE_HTML[] =
 "box-shadow:0 0 0 3px rgba(15,138,77,.15)}"
 ".g{display:grid;grid-template-columns:1fr 1fr;gap:0 12px}"
 ".note{font-size:12px;color:#9ca3af;margin:8px 0 0}"
+// 说明信息默认折叠：details/summary 原生控件，零 JS，点开才展开完整文字
+"details.tip{margin:10px 0 0;background:#f7f9fa;border:1px solid #e6eaee;border-radius:8px}"
+"details.tip>summary{list-style:none;cursor:pointer;padding:7px 10px;display:flex;"
+"align-items:center;gap:6px;font-size:12px;font-weight:600;color:#0f8a4d}"
+"details.tip>summary::-webkit-details-marker{display:none}"
+"details.tip>summary::after{content:'\\25BE';margin-left:auto;font-size:10px;"
+"color:#9ca3af;transition:.15s}"
+"details.tip[open]>summary::after{transform:rotate(180deg)}"
+"details.tip>div{padding:0 10px 9px;font-size:12px;color:#6b7280;line-height:1.7}"
+"details.tip>div b{color:#0b3d2e}"
 "#map{height:320px;border-radius:10px;border:1px solid #e5e7eb;z-index:0}"
 "#grid{width:100%;border-radius:10px;border:1px solid #e5e7eb;touch-action:manipulation}"
 ".seg{display:flex;gap:8px;margin:8px 0 10px}"
@@ -69,6 +82,19 @@ static const char PAGE_HTML[] =
 "border:1px solid #d1d5db;font-size:14px;font-weight:600;color:#374151;"
 "background:#f9fafb;cursor:pointer;transition:.15s}"
 ".seg input:checked+span{background:#0f8a4d;border-color:#0f8a4d;color:#fff}"
+".lbl{display:block;font-size:12px;color:#6b7280;margin:0 0 4px}"
+".ckl{display:flex;align-items:center;gap:8px;cursor:pointer;margin:0;padding:8px 10px;"
+"background:#f7f8fa;border:1px solid #e3e6ea;border-radius:8px}"
+".ckl input{display:none}"
+".ckl i{width:36px;height:20px;background:#cfd6df;border-radius:10px;position:relative;"
+"transition:.15s;flex:none}"
+".ckl i:after{content:'';position:absolute;left:2px;top:2px;width:16px;height:16px;"
+"background:#fff;border-radius:50%;transition:.15s}"
+".ckl input:checked+i{background:#0f8a4d}"
+".ckl input:checked+i:after{left:18px}"
+".ckl b{font-weight:600;font-size:12px;color:#6b7280}"
+".ckl input:checked~b{color:#0f8a4d}"
+".ckl.off{opacity:.4;pointer-events:none}"
 ".mpp{margin-top:10px}"
 ".dd{position:relative}"
 ".dd-btn{display:flex;justify-content:space-between;align-items:center;width:100%;"
@@ -197,20 +223,34 @@ static const char PAGE_HTML[] =
 "</div></div>"
 "<div class='wrap'><div class='grid'>"
 "<div class='card span2'><h3>运行模式</h3>"
+"<span class='lbl'>工作角色（拨动选择，单射频二选一）</span>"
 "<div class='seg'>"
-"<label><input type='radio' name='devmode' value='1'><span>接收模式</span></label>"
-"<label><input type='radio' name='devmode' value='0' checked><span>发射模式</span></label>"
+"<label><input type='radio' name='role' value='rx'><span>接收<br>监听周边</span></label>"
+"<label><input type='radio' name='role' value='tx'><span>发射<br>RID 广播</span></label>"
 "</div>"
+"<span class='lbl'>Wi-Fi 频段（单射频，二选一）</span>"
+"<div class='seg'>"
+"<label><input type='radio' name='band' value='0' checked><span>2.4 GHz</span></label>"
+"<label id='b5gl'><input type='radio' name='band' value='1'><span>5.8 GHz</span></label>"
+"</div>"
+"<details class='tip'><summary>说明：为什么只能选一个角色</summary><div>"
+"本机只有<b>一条射频链路</b>，同一时刻只能发或只能收。发射时射频忙于发出 Beacon（携带 RID 报文），"
+"这段时间到达的信号收不到；接收时射频一直在监听，就没有空口资源稳定广播。"
+"所以「又发又收」在单射频硬件上只能是分时轮转，会互相抢时间、掉帧，不如明确二选一。"
+"<br>热点本身<b>始终开启</b>，与角色开关无关，手机随时可以连进来改参数。"
+"<br>2.4G 与 5.8G 也共用同一射频，只能启用一个频段；切换频段会重建热点，手机需重新连接。"
+"</div></details>"
 "<div id='stdbox'>"
 "<label>广播标准</label>"
 "<div class='seg'>"
 "<label><input type='radio' name='std' value='0'><span>GB42590<br>旧国标</span></label>"
 "<label><input type='radio' name='std' value='1'><span>GB46750<br>新国标</span></label>"
 "</div>"
-"<p class='note'>旧国标 = GB 42590-2023（OpenDroneID 打包报文，兼容绝大多数现有接收端）；"
-"新国标 = GB 46750-2025（位图数据项报文，2026-05-01 实施，含实名登记标志）。"
-"切换在「保存并应用」后生效，"
-"下方身份信息只显示当前标准实际广播的字段。</p>"
+"<details class='tip'><summary>说明：两个国标的区别</summary><div>"
+"<b>旧国标</b> = GB 42590-2023（OpenDroneID 打包报文，兼容绝大多数现有接收端）；"
+"<b>新国标</b> = GB 46750-2025（位图数据项报文，2026-05-01 实施，含实名登记标志）。"
+"切换在「保存并应用」后生效，下方身份信息只显示当前标准实际广播的字段。"
+"</div></details>"
 "</div>"
 "</div>"
 // 两列自平衡布局：左列身份信息，右列飞行参数+飞手位置+巡游参数，
@@ -231,7 +271,10 @@ static const char PAGE_HTML[] =
 "<div class='dd-btn' id='ddbtn'><span class='dd-txt ph' id='ddtxt'>-- 选择型号自动填充 --</span>"
 "<span class='dd-car'>&#9662;</span></div>"
 "<div class='dd-panel'><div class='dd-list' id='ddlist'></div></div></div>"
-"<p class='note'>预设按大疆 RID 序列号前 8 位（1581F + 型号码）生成 20 位序列号，并填入机型名称与机型代码；机型代码为 RID 标准 16 类航空器类别码。序列号可手动微调，其他品牌用「其他厂商」分组。两个标准均广播该序列号。</p>"
+"<details class='tip'><summary>说明：预设如何生成序列号</summary><div>"
+"预设按大疆 RID 序列号前 8 位（1581F + 型号码）生成 20 位序列号，并填入机型名称与机型代码；"
+"机型代码为 RID 标准 16 类航空器类别码。序列号可手动微调，其他品牌用「其他厂商」分组。"
+"两个标准均广播该序列号。</div></details>"
 "<div class='newstd'><div class='g'>"
 "<div><label>实名登记号后8位</label><input id='realname_id' maxlength='8'>"
 "<p class='note' style='margin-top:2px'>仅新国标广播，空 = 不填。</p></div>"
@@ -245,7 +288,7 @@ static const char PAGE_HTML[] =
 "<div class='oldstd'><label>操作员 ID</label><input id='operator_id' maxlength='20'></div>"
 "<label>热点名称 (SSID)</label><input id='ssid' maxlength='31'>"
 "<div class='g'>"
-"<div><label>Wi-Fi 信道 (1-13)</label><input id='channel' type='number' min='1' max='13'></div>"
+"<div><label id='chlbl'>Wi-Fi 信道 (1-13)</label><input id='channel' type='number' min='1' max='13'></div>"
 "<div><label>广播间隔 (ms)</label><input id='beacon_interval_ms' type='number' min='200' max='60000'></div>"
 "</div></div>"
 "</div>"
@@ -288,10 +331,11 @@ static const char PAGE_HTML[] =
 "<option value='100'>100</option><option value='500'>500</option></select></div>"
 "</div>"
 "<div id='liveinfo'></div>"
-"<div id='hint'>红点=飞手，绿点=无人机，蓝点=实时广播位置，蓝线=飞行轨迹（最近约 8 分钟），"
-"绿圈=巡游范围。"
-"地图以飞手位置为中心：选点对象为「飞手」时点击/拖动会同步按默认偏移生成无人机位置；"
-"选「无人机」时只改无人机位置。在线地图需手机保持移动数据，无网络时自动切换离线网格。</div>"
+"<details class='tip'><summary>说明：地图图例与离线网格</summary><div>"
+"红点=飞手，绿点=无人机，蓝点=实时广播位置，蓝线=飞行轨迹（最近约 8 分钟），绿圈=巡游范围。"
+"<br>地图以飞手位置为中心：选点对象为「飞手」时点击/拖动会同步按默认偏移生成无人机位置；"
+"选「无人机」时只改无人机位置。在线地图需手机保持移动数据，无网络时自动切换离线网格。"
+"</div></details>"
 "</div>"
 "<div class='card span2' id='rxbox' style='display:none'><h3>接收监测</h3>"
 "<div class='rxbar'>"
@@ -319,9 +363,10 @@ static const char PAGE_HTML[] =
 "</div>"
 "<div class='rxoff' id='rxgridnote'></div>"
 "<div class='rxlist' id='rxlist'></div>"
-"<p class='note'>监听信道跟随上方「Wi-Fi 信道」设置（保存后生效），只能收到与本机同信道的广播。"
+"<details class='tip'><summary>说明：接收列表与离线规则</summary><div>"
+"监听信道跟随上方「Wi-Fi 信道」设置（保存后生效），只能收到与本机同信道的广播。"
 "卡片按信号强度排序，<b>绿色标题</b>为机型/描述，<b>格内小字</b>为字段名；"
-"10 秒无信号标记为已离线（灰度显示，保留 30 分钟），列表 2 秒刷新。</p>"
+"10 秒无信号标记为已离线（灰度显示，保留 30 分钟），列表 2 秒刷新。</div></details>"
 "</div>"
 "<div class='actions span2'>"
 "<button onclick='save()'>保存并应用</button>"
@@ -462,10 +507,13 @@ static const char PAGE_HTML[] =
 "document.addEventListener('click',function(){dd.classList.remove('open');});})();"
 "async function load(){try{const r=await fetch('/api/config');const j=await r.json();"
 "F.forEach(k=>{if(j[k]!==undefined&&j[k]!==null)fld(k).value=j[k];});"
-"document.querySelectorAll('input[name=devmode]').forEach(function(r){r.checked=(+r.value===j.device_mode);});"
+"LASTCFG=j;"
+"document.querySelectorAll('input[name=band]').forEach(function(r){r.checked=(+r.value===(+j.band||0));});"
+"if(!j.has5g){const b5=document.getElementById('b5gl');if(b5)b5.style.display='none';}"
+"setRole((+j.band===1)?!!j.tx_5g:!!j.tx_2g);"
 "document.querySelectorAll('input[name=std]').forEach(function(r){r.checked=(+r.value===j.rid_standard);});"
-"uatSync();statusSync();gbcSync();modeUI();stdUI();"
-"if(getRadio('devmode')!=='1'&&typeof initMap==='function')initMap();}"
+"uatSync();statusSync();gbcSync();bandUI();modeUI();stdUI();"
+"if(roleTx()&&typeof initMap==='function')initMap();}"
 "catch(e){msg('加载失败: '+e,false);}}"
 "const NUM=['channel','beacon_interval_ms','ua_type','base_latitude','base_longitude',"
 "'base_altitude_msl','operator_latitude','operator_longitude','operator_altitude',"
@@ -474,22 +522,30 @@ static const char PAGE_HTML[] =
 "async function save(){const d={};F.forEach(function(k){"
 "const v=fld(k).value;"
 "d[k]=NUM.indexOf(k)>=0?(v===''?null:parseFloat(v)):v;});"
-"d.device_mode=+getRadio('devmode');d.rid_standard=+getRadio('std');"
+"const _b=+getRadio('band'),_L=LASTCFG||{};"
+"const _tx=roleTx()?1:0,_rx=_tx?0:1;"
+"d.band=_b;d.rid_standard=+getRadio('std');"
+"d.tx_2g=_b===0?_tx:(_L.tx_2g!==undefined?_L.tx_2g:1);"
+"d.rx_2g=_b===0?_rx:(_L.rx_2g!==undefined?_L.rx_2g:0);"
+"d.tx_5g=_b===1?_tx:(_L.tx_5g!==undefined?_L.tx_5g:1);"
+"d.rx_5g=_b===1?_rx:(_L.rx_5g!==undefined?_L.rx_5g:0);"
+"d.channel_5g=149;"
+"if(_b===1)d.channel=(_L.channel||6);"
 "try{const r=await fetch('/api/config',{method:'POST',"
 "headers:{'Content-Type':'application/json'},body:JSON.stringify(d)});"
 "const j=await r.json();"
-"if(j.ok){msg('已保存并应用 ✓'+(j.restarted?' (热点参数已更新，如 SSID/信道变化请重新连接)':''),true);"
+"if(j.ok){msg('已保存并应用 ✓'+(j.restarted?' (SSID/信道/广播间隔变更会重建热点，连接可能短暂中断，请稍候或重新连接)':''),true);"
 // 保存成功后的地图刷新只是附带 UI 更新：包裹 try + typeof 防护，
 // 无论页面 JS 环境处于什么状态都绝不影响「已保存」的判定与提示
 "try{if(map&&circle){map.removeLayer(circle);circle=null;}"
 "if(typeof drawCircle==='function')drawCircle();}catch(me){}}"
 "else{msg('保存失败: '+(j.err||''),false);}}"
-"catch(e){msg('保存失败: '+e,false);}}"
+"catch(e){msg(e&&e.name==='TypeError'?'热点参数已生效，连接被重置，请重新连接热点后刷新确认':'保存失败: '+e,false);}}"
 "async function resetCfg(){if(!confirm('确认恢复全部初始设定？当前配置将被覆盖。'))return;"
 "try{const r=await fetch('/api/reset',{method:'POST'});const j=await r.json();"
 "if(j.ok){msg('已恢复初始设定 ✓'+(j.restarted?' (热点参数变化，请重新连接热点)':''),true);"
 "await load();}else{msg('恢复失败',false);}}"
-"catch(e){msg('恢复失败: '+e,false);}}"
+"catch(e){msg(e&&e.name==='TypeError'?'已恢复初始设定，连接被重置，请重新连接热点后刷新确认':'恢复失败: '+e,false);}}"
 // ---- 模式切换 UI 与接收监测轮询 ----
 "function getRadio(n){const r=document.querySelector('input[name='+n+']:checked');"
 "return r?r.value:'0';}"
@@ -500,20 +556,33 @@ static const char PAGE_HTML[] =
 "document.querySelectorAll('.newstd').forEach(function(e){e.style.display=newOn?'block':'none';});}"
 "document.querySelectorAll('input[name=std]').forEach(function(r){"
 "r.addEventListener('change',stdUI);});"
-"let rxTimer=null;"
-"function modeUI(){const rx=getRadio('devmode')==='1';"
-"document.getElementById('stdbox').style.display=rx?'none':'block';"
+"let rxTimer=null;let LASTCFG={};"
+// 工作角色：单射频同一时刻只能发或收，页面用二选一拨动开关承载
+"function roleTx(){const r=document.querySelector('input[name=role]:checked');"
+"return r?r.value==='tx':true;}"
+"function setRole(tx){document.querySelectorAll('input[name=role]').forEach(function(r){"
+"r.checked=(r.value===(tx?'tx':'rx'));});}"
+"function bandUI(){const b=getRadio('band');const c=fld('channel');if(!c)return;"
+"const lb=document.getElementById('chlbl');"
+"if(b==='1'){c.value=149;c.disabled=true;"
+"if(lb)lb.textContent='Wi-Fi 信道 (149-165)';}else{c.disabled=false;"
+"if(lb)lb.textContent='Wi-Fi 信道 (1-13)';"
+"if(+c.value>13)c.value=(LASTCFG&&LASTCFG.channel)||6;}}"
+"function modeUI(){const tx=roleTx();const rx=!tx;"
+"document.getElementById('stdbox').style.display=tx?'block':'none';"
 // txonly 恢复显隐用空串（回退样式表 display）：.col 列容器依赖 flex 布局，
 // 若写死 block 会覆盖 flex 导致两列布局塌掉
-"document.querySelectorAll('.txonly').forEach(function(e){e.style.display=rx?'none':'';});"
+"document.querySelectorAll('.txonly').forEach(function(e){e.style.display=tx?'':'none';});"
 "document.getElementById('rxbox').style.display=rx?'block':'none';"
 "if(rx&&!rxTimer){pollRx();rxTimer=setInterval(pollRx,2000);}"
+"if(!rx&&rxTimer){clearInterval(rxTimer);rxTimer=null;}"
 // 接收端地图：进入接收模式时才按需加载独立脚本，且全程 try 保护，
 // 地图出问题绝不会影响模式切换、参数配置与接收列表
 "if(rx){rxMapLoad();try{if(window.RXMAP)RXMAP.resize();}catch(e){}}"
-"if(!rx){if(!ginit&&typeof initMap==='function')initMap();"
-"if(rxTimer){clearInterval(rxTimer);rxTimer=null;}}}"
-"document.querySelectorAll('input[name=devmode]').forEach(function(r){"
+"if(tx&&!ginit&&typeof initMap==='function')initMap();}"
+"document.querySelectorAll('input[name=band]').forEach(function(r){"
+"r.addEventListener('change',bandUI);});"
+"document.querySelectorAll('input[name=role]').forEach(function(r){"
 "r.addEventListener('change',modeUI);});"
 // ---- 接收端地图加载器：仅负责把 /rxmap.js 拉进来，逻辑全在独立脚本里 ----
 "let _rxmAsked=false;"
@@ -861,6 +930,13 @@ static esp_err_t handler_get_config(httpd_req_t *req) {
     cJSON_AddNumberToObject(j, "rid_standard", cfg->rid_standard);
     cJSON_AddStringToObject(j, "realname_id", cfg->realname_id);
     cJSON_AddNumberToObject(j, "ua_category_gb", cfg->ua_category_gb);
+    cJSON_AddNumberToObject(j, "band", cfg->band);
+    cJSON_AddNumberToObject(j, "tx_2g", cfg->tx_2g);
+    cJSON_AddNumberToObject(j, "rx_2g", cfg->rx_2g);
+    cJSON_AddNumberToObject(j, "tx_5g", cfg->tx_5g);
+    cJSON_AddNumberToObject(j, "rx_5g", cfg->rx_5g);
+    cJSON_AddNumberToObject(j, "channel_5g", cfg->channel_5g);
+    cJSON_AddBoolToObject(j, "has5g", CRID_HAS_5G_BAND ? true : false);
 
     const char *s = cJSON_PrintUnformatted(j);
     httpd_resp_set_type(req, "application/json");
@@ -942,8 +1018,10 @@ static esp_err_t handler_post_config(httpd_req_t *req) {
         else { strncpy(next.ssid, s, CRID_SSID_MAX_LEN); next.ssid[CRID_SSID_MAX_LEN] = '\0'; }
     }
     if (err[0] == '\0' && jget_num(j, "channel", &v)) {
-        if (v < 1 || v > 13) snprintf(err, sizeof(err), "信道须在 1-13");
-        else next.channel = (uint8_t)v;
+        if (v >= 1 && v <= 13) next.channel = (uint8_t)v;
+        // 顺手接受 5.8G 信道号，写入独立字段，避免 149 被判成非法
+        else if (v >= CRID_5G_CH_MIN && v <= CRID_5G_CH_MAX) next.channel_5g = (uint8_t)v;
+        else snprintf(err, sizeof(err), "信道须在 1-13 或 149-165");
     }
     if (err[0] == '\0' && jget_num(j, "beacon_interval_ms", &v)) {
         if (v < 200 || v > 60000) snprintf(err, sizeof(err), "广播间隔须在 200-60000ms");
@@ -989,9 +1067,38 @@ static esp_err_t handler_post_config(httpd_req_t *req) {
     }
     if (err[0] == '\0' && jget_num(j, "patrol_radius_lat", &v)) next.patrol_radius_lat = (float)v;
     if (err[0] == '\0' && jget_num(j, "patrol_radius_lon", &v)) next.patrol_radius_lon = (float)v;
-    if (err[0] == '\0' && jget_num(j, "device_mode", &v)) {
+    // 频段与收发开关。老页面只传 device_mode，这里做兼容映射到 2.4G 组。
+    bool has_switch_fields = (cJSON_GetObjectItemCaseSensitive(j, "band") != NULL);
+    if (err[0] == '\0' && has_switch_fields) {
+        if (jget_num(j, "band", &v)) {
+            if (v < 0 || v > 1) snprintf(err, sizeof(err), "频段取值 0-1");
+            else next.band = (uint8_t)v;
+        }
+        if (jget_num(j, "tx_2g", &v)) next.tx_2g = v ? 1 : 0;
+        if (jget_num(j, "rx_2g", &v)) next.rx_2g = v ? 1 : 0;
+        if (jget_num(j, "tx_5g", &v)) next.tx_5g = v ? 1 : 0;
+        if (jget_num(j, "rx_5g", &v)) next.rx_5g = v ? 1 : 0;
+        if (jget_num(j, "channel_5g", &v)) {
+            if (v < CRID_5G_CH_MIN || v > CRID_5G_CH_MAX) {
+                snprintf(err, sizeof(err), "5.8G 信道须在 149-165");
+            } else {
+                next.channel_5g = (uint8_t)v;
+            }
+        }
+#if !CRID_HAS_5G_BAND
+        // 无 5G 射频的芯片：无论页面传什么都强制回落 2.4G
+        if (next.band == CRID_BAND_5G) next.band = CRID_BAND_2G;
+#endif
+        // 单射频互斥：老页面或手工请求若把发射与接收都置 1，这里归一化成二选一
+        crid_config_radio_mutex(&next);
+    } else if (err[0] == '\0' && jget_num(j, "device_mode", &v)) {
         if (v < 0 || v > 1) snprintf(err, sizeof(err), "模式取值 0-1");
-        else next.device_mode = (uint8_t)v;
+        else {
+            next.device_mode = (uint8_t)v;
+            next.band = CRID_BAND_2G;
+            next.tx_2g = (v == DEVICE_MODE_TX) ? 1 : 0;
+            next.rx_2g = (v == DEVICE_MODE_RX) ? 1 : 0;
+        }
     }
     if (err[0] == '\0' && jget_num(j, "rid_standard", &v)) {
         if (v < 0 || v > 1) snprintf(err, sizeof(err), "标准取值 0-1");
@@ -1033,10 +1140,16 @@ static esp_err_t handler_post_config(httpd_req_t *req) {
     }
 
     // 校验通过，应用配置
+    uint8_t old_ch = crid_band_channel(cfg);
+    uint8_t new_ch = crid_band_channel(&next);
+    bool band_changed = (next.band != cfg->band);
     bool ap_changed = (strcmp(next.ssid, cfg->ssid) != 0) ||
-                      (next.channel != cfg->channel) ||
-                      (next.beacon_interval_ms != cfg->beacon_interval_ms);
-    bool mode_changed = (next.device_mode != cfg->device_mode);
+                      (new_ch != old_ch) ||
+                      (next.beacon_interval_ms != cfg->beacon_interval_ms) ||
+                      band_changed;
+    bool mode_changed = (next.device_mode != cfg->device_mode) ||
+                        (next.tx_2g != cfg->tx_2g) || (next.rx_2g != cfg->rx_2g) ||
+                        (next.tx_5g != cfg->tx_5g) || (next.rx_5g != cfg->rx_5g);
     uint8_t saved_counter = cfg->message_counter;   // 计数器不回退
     *cfg = next;
     cfg->message_counter = saved_counter;
@@ -1045,31 +1158,51 @@ static esp_err_t handler_post_config(httpd_req_t *req) {
     cfg->longitude = cfg->base_longitude;
     cfg->altitude_msl = cfg->base_altitude_msl;
 
-    if (ap_changed) {
-        if (crid_wifi_update_ap(cfg->ssid, cfg->channel, cfg->beacon_interval_ms) == ESP_OK) {
-            restarted = true;
-        }
-        // 接收模式下信道变化需重启监听
-        if (cfg->device_mode == DEVICE_MODE_RX && ap_changed) {
-            crid_rx_stop();
-        }
-    }
-
-    // 模式切换：停止/启动接收（发射端 IE 由主任务按 device_mode 自动恢复）
-    if (mode_changed) {
-        crid_app_apply_mode();
-    } else if (cfg->device_mode == DEVICE_MODE_RX && ap_changed) {
-        crid_rx_start(cfg->channel);   // 接收模式换信道，重启监听
-    }
+    restarted = ap_changed;
 
     crid_config_save_nvs(cfg);
     ESP_LOGI(TAG, "Config updated via web: id=%s pos=(%.6f,%.6f) mode=%u std=%u restarted=%d",
              cfg->uas_id, cfg->base_latitude, cfg->base_longitude,
              cfg->device_mode, cfg->rid_standard, restarted);
 
+    // 先回包，再动热点。改 SSID / 信道 / 广播间隔会让 Wi-Fi 驱动重建 softAP，
+    // 已关联的客户端（就是正在提交表单的这个浏览器）会被踢下线；若在回包前应用，
+    // 浏览器拿不到响应，fetch 直接抛 TypeError: Failed to fetch，页面误报"保存失败"。
     httpd_resp_set_type(req, "application/json");
     httpd_resp_sendstr(req, restarted ? "{\"ok\":true,\"restarted\":true}"
                                       : "{\"ok\":true,\"restarted\":false}");
+
+    if (!ap_changed && !mode_changed) {
+        return ESP_OK;
+    }
+
+    // 给 TCP 栈留出把响应真正发出去的时间，再改热点参数
+    vTaskDelay(pdMS_TO_TICKS(300));
+
+    // 接收开启时，换信道/换频段必须先停监听，否则 set_channel 会被正在跑的
+    // 混杂接收顶着，新信道不生效
+    if (ap_changed && crid_band_rx_enabled(cfg)) {
+        crid_rx_stop();
+    }
+
+    if (ap_changed) {
+        esp_err_t ur;
+        if (band_changed) {
+            // 单射频：切频段会重建 AP，手机上必然掉线
+            ur = crid_wifi_switch_band(cfg->band, cfg->ssid,
+                                       crid_band_channel(cfg), cfg->beacon_interval_ms);
+            ESP_LOGW(TAG, "频段切换 -> %s, channel=%u",
+                     cfg->band == CRID_BAND_5G ? "5.8G" : "2.4G", crid_band_channel(cfg));
+        } else {
+            ur = crid_wifi_update_ap(cfg->ssid, crid_band_channel(cfg), cfg->beacon_interval_ms);
+        }
+        if (ur != ESP_OK) {
+            ESP_LOGE(TAG, "apply AP failed: %s", esp_err_to_name(ur));
+        }
+    }
+
+    // 统一按开关重建：发射 IE / 接收监听各自独立
+    crid_app_apply_mode();
     return ESP_OK;
 }
 
@@ -1186,9 +1319,11 @@ static esp_err_t handler_reset(httpd_req_t *req) {
     cn_crid_config_t next;
     crid_config_init_default(&next);
 
+    bool band_changed = (next.band != cfg->band);
     bool ap_changed = (strcmp(next.ssid, cfg->ssid) != 0) ||
                       (next.channel != cfg->channel) ||
-                      (next.beacon_interval_ms != cfg->beacon_interval_ms);
+                      (next.beacon_interval_ms != cfg->beacon_interval_ms) ||
+                      band_changed;
     uint8_t saved_counter = cfg->message_counter;
     *cfg = next;
     cfg->message_counter = saved_counter;
@@ -1196,20 +1331,27 @@ static esp_err_t handler_reset(httpd_req_t *req) {
     cfg->longitude = cfg->base_longitude;
     cfg->altitude_msl = cfg->base_altitude_msl;
 
-    bool restarted = false;
-    if (ap_changed) {
-        if (crid_wifi_update_ap(cfg->ssid, cfg->channel, cfg->beacon_interval_ms) == ESP_OK) {
-            restarted = true;
-        }
-    }
-    // 恢复出厂回到发射模式/旧国标（init_default 已设定），同步运行时状态
-    crid_app_apply_mode();
+    bool restarted = ap_changed;
     crid_config_save_nvs(cfg);
     ESP_LOGW(TAG, "Config reset to factory defaults via web (restarted=%d)", restarted);
 
+    // 同 POST /api/config：先回包再改热点，否则客户端在拿到响应前就被踢下线
     httpd_resp_set_type(req, "application/json");
     httpd_resp_sendstr(req, restarted ? "{\"ok\":true,\"restarted\":true}"
                                       : "{\"ok\":true,\"restarted\":false}");
+    vTaskDelay(pdMS_TO_TICKS(300));
+
+    if (ap_changed) {
+        esp_err_t ur = band_changed
+            ? crid_wifi_switch_band(cfg->band, cfg->ssid, crid_band_channel(cfg),
+                                    cfg->beacon_interval_ms)
+            : crid_wifi_update_ap(cfg->ssid, crid_band_channel(cfg), cfg->beacon_interval_ms);
+        if (ur != ESP_OK) {
+            ESP_LOGE(TAG, "apply AP failed: %s", esp_err_to_name(ur));
+        }
+    }
+    // 恢复出厂回到 2.4G 发射（init_default 已设定），同步运行时状态
+    crid_app_apply_mode();
     return ESP_OK;
 }
 
