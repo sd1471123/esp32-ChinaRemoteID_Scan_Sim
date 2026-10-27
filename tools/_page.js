@@ -204,6 +204,54 @@ function cell(v,unit,label,cls){
 return `<div class="${cls||''}"><b>${v}${unit?`<small>${unit}</small>`:''}</b><span>${label}</span></div>`;}
 function wideCell(v,label){
 return `<div class="wide"><b>${v}</b><span>${label}</span></div>`;}
+const OPT=['实时位置','起飞点位置','自定义位置','未知'];
+const AGLT=['起飞点','地面','自定义','实时 GNSS'];
+const HACC=['未知','<18.5 km','<7.4 km','<3.7 km','<1.85 km','<926 m','<556 m','<185 m',
+'<93 m','<30 m','<10 m','<3 m','<1 m'];
+const VACC=['未知','<150 m','<45 m','<25 m','<10 m','<3 m','<1 m'];
+const SACC=['未知','<10 m/s','<3 m/s','<1 m/s','<0.3 m/s'];
+const TACC=['未知','<=0.2 s','<=0.5 s','<=1 s','<=2 s','<=5 s','<=10 s','<=20 s',
+'<=30 s','<=60 s','>60 s'];
+const s_fold={};
+function updFoldBtn(){const b=q('foldall');if(!b)return;
+const cs=document.querySelectorAll('#rxlist .dcard');
+const allOpen=cs.length>0&&Array.prototype.every.call(cs,function(c){return c.classList.contains('open');});
+b.textContent=allOpen?'全部折叠 ▴':'全部展开 ▾';}
+function foldAll(){const cs=document.querySelectorAll('#rxlist .dcard');
+const anyClosed=Array.prototype.some.call(cs,function(c){return !c.classList.contains('open');});
+Array.prototype.forEach.call(cs,function(c){c.classList.toggle('open',anyClosed);
+s_fold[c.dataset.mac]=anyClosed;});updFoldBtn();}
+function dtlHtml(t){
+const rows=[];const row=function(k,v){if(v!==undefined&&v!==null&&v!=='')rows.push(
+'<tr><td>'+k+'</td><td>'+v+'</td></tr>');};
+row('大地高度 (013)',f1(t.altitude_geo)+' m');
+row('相对高度 (011)',t.altitude_agl===undefined?undefined:
+f1(t.altitude_agl)+' m'+(t.agl_type!==undefined?' · '+AGLT[t.agl_type]:''));
+row('气压高度 (014)',t.altitude_baro===undefined?undefined:f1(t.altitude_baro)+' m');
+row('垂直速度 (012)',f1(t.speed_vertical)+' m/s');
+if(t.has_op_loc)row('飞手海拔 (007)',f1(t.op_altitude_geo)+' m');
+if(t.protocol===4){
+row('遥控站位置类型 (005)',OPT[t.op_loc_type!==undefined?t.op_loc_type:3]);
+row('坐标系 (016)',t.coord_sys===undefined?undefined:
+(t.coord_sys===0?'WGS-84':'类型 '+t.coord_sys));
+row('水平精度 (017)',t.h_acc===undefined?undefined:(HACC[t.h_acc]||('枚举 '+t.h_acc)));
+row('垂直精度 (018)',t.v_acc===undefined?undefined:(VACC[t.v_acc]||('枚举 '+t.v_acc)));
+row('速度精度 (019)',t.spd_acc===undefined?undefined:(SACC[t.spd_acc]||('枚举 '+t.spd_acc)));
+row('报文时间 (020)',t.ts_unix_ms===undefined?undefined:
+new Date(t.ts_unix_ms).toLocaleTimeString());
+row('时间戳精度 (021)',t.ts_acc===undefined?undefined:(TACC[t.ts_acc]||('枚举 '+t.ts_acc)));
+}else{
+row('报文时间 (相对)',t.ts_rel_10s===undefined?undefined:f1(t.ts_rel_10s/10)+' s');
+row('水平精度',t.h_acc===undefined?undefined:(HACC[t.h_acc]||('枚举 '+t.h_acc)));
+row('垂直精度',t.v_acc===undefined?undefined:(VACC[t.v_acc]||('枚举 '+t.v_acc)));
+row('速度精度',t.spd_acc===undefined?undefined:(SACC[t.spd_acc]||('枚举 '+t.spd_acc)));
+row('高度基准',t.agl_type===undefined?undefined:(AGLT[t.agl_type]||('类型 '+t.agl_type)));
+}
+row('第二识别码',t.uas_id2?esc(t.uas_id2):undefined);
+row('已观测时长',t.first_age_ms===undefined?undefined:ageTxt(t.first_age_ms));
+if(!rows.length)return '';
+return '<div class="dtl"><div class="dtl-h">报文详情 ('+rows.length+' 项)<i>▶</i></div>'
++'<div class="dtl-b"><table class="dtab">'+rows.join('')+'</table></div></div>';}
 function rxCard(t){
 const p=rxProto(t.protocol);
 const el=document.createElement('div');
@@ -240,8 +288,11 @@ if(t.has_op_loc)idt.push([f6(t.op_latitude)+', '+f6(t.op_longitude),'飞手位�
 if(t.operator_id)idt.push([esc(t.operator_id),'操作员 ID']);
 if(t.realname_id)idt.push([esc(t.realname_id),'实名登记号']);
 idt.forEach(function(x){h+=wideCell(x[0],x[1]);});
-h+=`</div></div>`;
+h+='</div>'+dtlHtml(t)+'</div>';
 el.innerHTML=h;
+const dh=el.querySelector('.dtl-h');
+if(dh){dh.onclick=function(ev){ev.stopPropagation();
+el.classList.toggle('open');s_fold[t.mac]=el.classList.contains('open');updFoldBtn();};}
 el.onclick=function(){try{if(window.RXMAP)RXMAP.focus(t.mac);}catch(e){}};
 return el;}
 
@@ -275,7 +326,11 @@ if(on.length){sec('在线信号 · '+on.length,false);
 on.forEach(function(t){box.appendChild(rxCard(t));});}
 if(off.length){sec('已离线 · '+off.length+'（10 秒无信号，保留 30 分钟）',true);
 off.forEach(function(t){box.appendChild(rxCard(t));});}
+Array.prototype.forEach.call(box.querySelectorAll('.dcard'),function(c){
+if(s_fold[c.dataset.mac])c.classList.add('open');});
+updFoldBtn();
 }catch(e){q('rxstate').textContent='轮询失败：'+e;}}
+q('foldall').onclick=foldAll;
 let gbase=[0,0],gpick=null;
 function dotIcon(c){return L.divIcon({className:'',
 html:'<div style="width:14px;height:14px;border-radius:50%;background:'+c+
@@ -353,6 +408,12 @@ const t='实时广播位置: '+j.latitude.toFixed(6)+', '+j.longitude.toFixed(6)
 document.getElementById('liveinfo').textContent=t;
 if(live){live.setLatLng([j.latitude,j.longitude]);}
 trailPush(j.latitude,j.longitude);}
-catch(e){}}
+catch(e){}
+if(Date.now()-sT>600000)syncTime();}
+var sT=0;
+function syncTime(){sT=Date.now();try{fetch('/api/time',{method:'POST',
+headers:{'Content-Type':'application/json'},body:JSON.stringify({epoch_ms:sT})})
+.catch(function(){});}catch(e){}}
 setInterval(poll,2000);
+syncTime();
 load();

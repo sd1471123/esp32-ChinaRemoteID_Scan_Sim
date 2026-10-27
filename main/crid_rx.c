@@ -6,7 +6,7 @@
  *         -> 更新航迹表 -> 网页 /api/rx 轮询快照
  *
  * 解析策略（与 main_rx/crid_parser.c 一致）:
- *   1. GB 46750-2025: [counter][0xFF][ver][clen][flags3][content]
+ *   1. GB 46750-2025: [0xFF][ver][dlen][flags 3+N][content...]（IE 类型 0xF0）
  *   2. GB 42590/ASTM 打包: [counter][0xF1][size25][count][messages]
  *      交给 opendroneid 库 odid_message_process_pack() 解码
  */
@@ -33,6 +33,7 @@ typedef struct {
     uint8_t src_mac[6];
     int8_t  rssi;
     uint8_t channel;
+    uint8_t vtype;          // 厂商 IE 类型字节（0x0D=ASTM/GB42590, 0xF0=GB46750）
     uint8_t data[192];      // vendor IE payload（OUI/Type 之后）
     uint8_t data_len;
 } rx_msg_t;
@@ -61,6 +62,15 @@ typedef struct {
         bool op_valid;
         double op_lat, op_lon;
         float op_geo_alt;
+        // 补全项：全部 21 个数据内容项
+        uint8_t op_loc_type;        // 005 遥控站位置类型
+        float   agl_alt;            // 011 相对高度（偏移 9000）
+        float   baro_alt;           // 014 气压高度（编码同 013）
+        bool    has_agl, has_baro, has_vspeed;  // 位图中是否携带
+        uint8_t coord_sys;          // 016 坐标系
+        uint8_t h_acc, v_acc, spd_acc;  // 017-019 精度枚举
+        uint64_t ts_unix_ms;        // 020 报文时间戳（Unix 毫秒）
+        uint8_t ts_acc;             // 021 时间戳精度
     } gb;
 } rx_track_t;
 
@@ -89,9 +99,13 @@ static inline uint16_t le16(const uint8_t *p) {
     return (uint16_t)p[0] | ((uint16_t)p[1] << 8);
 }
 
+static inline uint32_t le32u(const uint8_t *p) {
+    return (uint32_t)p[0] | ((uint32_t)p[1] << 8)
+         | ((uint32_t)p[2] << 16) | ((uint32_t)p[3] << 24);
+}
+
 static inline int32_t le32s(const uint8_t *p) {
-    return (int32_t)((uint32_t)p[0] | ((uint32_t)p[1] << 8)
-                   | ((uint32_t)p[2] << 16) | ((uint32_t)p[3] << 24));
+    return (int32_t)le32u(p);
 }
 
 static inline float decode_alt_2byte(const uint8_t *p) {
@@ -130,19 +144,28 @@ static int decode_gb46750_content(rx_track_t *t,
                         t->gb.realname_id[8] = '\0';
                         offset += 8;
                         break;
+                    case 5:   // 003 UA 类型 1B（预留项：跳过，不再中断后续解析）
+                        offset += 1;
+                        break;
                     case 4:   // 004 无人机分类 1B
                         t->gb.ua_category = content[offset];
                         offset += 1;
                         break;
-                    case 3:   // 005 遥控站位置类型 1B（暂不存储）
+                    case 3:   // 005 遥控站位置类型 1B
+                        t->gb.op_loc_type = content[offset] & 0x03;
                         offset += 1;
                         break;
-                    case 2:   // 006 遥控站位置 8B（飞手经纬度）
+                    case 2:   // 006 遥控站位置 8B（经度|纬度，小端，FFFFFFFF=未知）
                         if (offset + 8 > content_len) return items;
-                        t->gb.op_lat = le32s(&content[offset]) / 1e7;
-                        t->gb.op_lon = le32s(&content[offset + 4]) / 1e7;
-                        if (!(t->gb.op_lat == 0 && t->gb.op_lon == 0)) {
-                            t->gb.op_valid = true;   // (0,0) 表示未知，保持 sticky
+                        {
+                            uint32_t rlon = le32u(&content[offset]);
+                            uint32_t rlat = le32u(&content[offset + 4]);
+                            t->gb.op_lon = (rlon == 0xFFFFFFFF) ? 0.0 : (int32_t)rlon / 1e7;
+                            t->gb.op_lat = (rlat == 0xFFFFFFFF) ? 0.0 : (int32_t)rlat / 1e7;
+                            if (rlon != 0xFFFFFFFF && rlat != 0xFFFFFFFF &&
+                                !(t->gb.op_lat == 0 && t->gb.op_lon == 0)) {
+                                t->gb.op_valid = true;   // 未知时保持 sticky
+                            }
                         }
                         offset += 8;
                         break;
@@ -154,10 +177,16 @@ static int decode_gb46750_content(rx_track_t *t,
                 }
             } else if (byte_idx == 1) {
                 switch (bit) {
-                    case 7:   // 008 无人机位置 8B
+                    case 7:   // 008 无人机位置 8B（经度|纬度，FFFFFFFF=未知）
                         if (offset + 8 > content_len) return items;
-                        t->gb.lat = le32s(&content[offset]) / 1e7;
-                        t->gb.lon = le32s(&content[offset + 4]) / 1e7;
+                        {
+                            uint32_t rlon = le32u(&content[offset]);
+                            uint32_t rlat = le32u(&content[offset + 4]);
+                            if (rlon != 0xFFFFFFFF && rlat != 0xFFFFFFFF) {
+                                t->gb.lon = (int32_t)rlon / 1e7;
+                                t->gb.lat = (int32_t)rlat / 1e7;
+                            }
+                        }
                         offset += 8;
                         break;
                     case 6:   // 009 航迹角 2B x0.1°
@@ -176,14 +205,45 @@ static int decode_gb46750_content(rx_track_t *t,
                         }
                         offset += 2;
                         break;
-                    case 4: offset += 2; break;   // 011 相对高度（跳过）
-                    case 3: offset += 1; break;   // 012 垂直速度（跳过）
+                    case 4:   // 011 相对高度 2B（偏移 9000：(raw/2)-9000，0=未知）
+                        if (offset + 2 > content_len) return items;
+                        {
+                            uint16_t raw = le16(&content[offset]);
+                            if (raw != 0) {
+                                t->gb.agl_alt = (raw / 2.0f) - 9000.0f;
+                                t->gb.has_agl = true;
+                            }
+                        }
+                        offset += 2;
+                        break;
+                    case 3:   // 012 垂直速度 1B（bit8=符号，低7位 |v|x2，0xFF=未知）
+                        if (offset + 1 > content_len) return items;
+                        {
+                            uint8_t raw = content[offset];
+                            if (raw != 0xFF) {
+                                float mag = (raw & 0x7F) / 2.0f;
+                                t->gb.vspeed = (raw & 0x80) ? -mag : mag;
+                                t->gb.has_vspeed = true;
+                            }
+                        }
+                        offset += 1;
+                        break;
                     case 2:   // 013 大地高度 2B
                         if (offset + 2 > content_len) return items;
                         t->gb.geo_alt = decode_alt_2byte(&content[offset]);
                         offset += 2;
                         break;
-                    case 1: offset += 2; break;   // 014 气压高度（跳过）
+                    case 1:   // 014 气压高度 2B（编码同 013）
+                        if (offset + 2 > content_len) return items;
+                        {
+                            uint16_t raw = le16(&content[offset]);
+                            if (raw != 0) {
+                                t->gb.baro_alt = (raw / 2.0f) - 1000.0f;
+                                t->gb.has_baro = true;
+                            }
+                        }
+                        offset += 2;
+                        break;
                     default: return items;
                 }
             } else {   // byte_idx == 2
@@ -192,12 +252,37 @@ static int decode_gb46750_content(rx_track_t *t,
                         t->gb.status = content[offset];
                         offset += 1;
                         break;
-                    case 6: offset += 1; break;   // 016 坐标系（跳过）
-                    case 5: offset += 1; break;   // 017 水平精度（跳过）
-                    case 4: offset += 1; break;   // 018 垂直精度（跳过）
-                    case 3: offset += 1; break;   // 019 速度精度（跳过）
-                    case 2: offset += 6; break;   // 020 时间戳（跳过存储）
-                    case 1: offset += 1; break;   // 021 时间戳精度（跳过）
+                    case 6:   // 016 坐标系 1B（0=WGS-84）
+                        t->gb.coord_sys = content[offset] & 0x0F;
+                        offset += 1;
+                        break;
+                    case 5:   // 017 水平精度 1B（枚举同 ASTM）
+                        t->gb.h_acc = content[offset] & 0x0F;
+                        offset += 1;
+                        break;
+                    case 4:   // 018 垂直精度 1B
+                        t->gb.v_acc = content[offset] & 0x0F;
+                        offset += 1;
+                        break;
+                    case 3:   // 019 速度精度 1B
+                        t->gb.spd_acc = content[offset] & 0x0F;
+                        offset += 1;
+                        break;
+                    case 2:   // 020 时间戳 6B 小端 Unix 毫秒
+                        if (offset + 6 > content_len) return items;
+                        {
+                            uint64_t ms = 0;
+                            for (int k = 0; k < 6; k++) {
+                                ms |= ((uint64_t)content[offset + k]) << (k * 8);
+                            }
+                            t->gb.ts_unix_ms = ms;
+                        }
+                        offset += 6;
+                        break;
+                    case 1:   // 021 时间戳精度 1B
+                        t->gb.ts_acc = content[offset] & 0x0F;
+                        offset += 1;
+                        break;
                     default: return items;
                 }
             }
@@ -276,20 +361,35 @@ static void rx_parse_task(void *pv) {
 
         bool ok = false;
         // 策略 1: GB 46750-2025
-        if (msg.data_len >= 7 && msg.data[1] == 0xFF) {
-            uint8_t ver = msg.data[2];
-            uint8_t major = (ver >> 5) & 0x07;
-            uint8_t clen = msg.data[3];
-            if (major == 0x1 && clen <= (msg.data_len - 7)) {
-                int items = decode_gb46750_content(t, &msg.data[4],
-                                                   &msg.data[7], clen);
+        // 报文 = [0xFF 数据类型][版本号][数据长度][数据标识 3+N][内容]
+        // 正常路径由 IE 类型 0xF0 直接给出起点 0xFF；为兼容早期固件
+        // （0x0D + 计数器 + 0xFF 的旧布局），这里允许在第一个字节之后再找一次。
+        int gb_off = -1;
+        if (msg.data_len >= 4 && msg.data[0] == 0xFF) gb_off = 0;
+        else if (msg.data_len >= 5 && msg.data[1] == 0xFF) gb_off = 1;
+        if (gb_off >= 0) {
+            uint8_t ver   = msg.data[gb_off + 1];
+            uint8_t major = (ver >> 5) & 0x07;              // 高 3 位固定 001
+            uint8_t dlen  = msg.data[gb_off + 2];
+            int     fpos  = gb_off + 3;
+            int     nflags = 0;
+            // 数据标识：bit0 为扩展标志位，1 表示下一字节仍属标识字段
+            while (fpos + nflags < msg.data_len && nflags < 8) {
+                nflags++;
+                if ((msg.data[fpos + nflags - 1] & 0x01) == 0) break;
+            }
+            int coff = fpos + nflags;
+            if (major == 0x1 && dlen >= 1 && nflags >= 1 &&
+                coff + dlen <= msg.data_len) {
+                int items = decode_gb46750_content(t, &msg.data[fpos],
+                                                   &msg.data[coff], dlen);
                 if (items > 0) {
                     t->protocol = RX_PROTO_GB46750;
                     ok = true;
                 }
             }
         }
-        // 策略 2: GB 42590 / ASTM 打包
+        // 策略 2: GB 42590 / ASTM 打包（payload = [计数器][MessagePack 0xF1...]）
         if (!ok && msg.data_len >= 5 && msg.data[1] == 0xF1) {
             if (decode_packed(t, msg.data, msg.data_len)) {
                 t->protocol = RX_PROTO_GB42590;
@@ -333,13 +433,15 @@ static void rx_sniffer_cb(void *buf, wifi_promiscuous_pkt_type_t type) {
 
         if (ie_id == 221 && ie_len >= 8) {               // Vendor Specific
             const uint8_t *v = &pl[off + 2];
-            if (is_rid_oui(v[0], v[1], v[2]) && v[3] == CRID_VENDOR_TYPE) {
+            if (is_rid_oui(v[0], v[1], v[2]) &&
+                (v[3] == CRID_VENDOR_TYPE || v[3] == CRID_VENDOR_TYPE_GB46750)) {
                 s_rid_detect++;
                 rx_msg_t m;
                 memset(&m, 0, sizeof(m));
                 memcpy(m.src_mac, &pl[10], 6);           // addr2 = 发送方 MAC
                 m.rssi = pkt->rx_ctrl.rssi;
                 m.channel = pkt->rx_ctrl.channel;
+                m.vtype = v[3];
                 uint8_t payload = ie_len - 4;            // 去掉 OUI(3)+Type(1)
                 if (payload > sizeof(m.data)) payload = sizeof(m.data);
                 memcpy(m.data, &v[4], payload);
@@ -446,6 +548,7 @@ int crid_rx_get_tracks(crid_rx_track_t *out) {
             o->longitude = t->gb.lon;
             o->altitude_geo = t->gb.geo_alt;
             o->speed_horizontal = t->gb.gspeed;
+            o->speed_vertical = t->gb.vspeed;
             o->direction = t->gb.track;
             o->status = t->gb.status;
             if (t->gb.op_valid) {
@@ -454,11 +557,34 @@ int crid_rx_get_tracks(crid_rx_track_t *out) {
                 o->op_longitude = t->gb.op_lon;
                 o->op_altitude_geo = t->gb.op_geo_alt;
             }
+            // 补全项：005/011/014/016-021
+            o->has_op_loc_type = true;
+            o->op_loc_type = t->gb.op_loc_type;
+            if (t->gb.has_agl) {
+                o->has_agl = true;
+                o->altitude_agl = t->gb.agl_alt;
+            }
+            if (t->gb.has_baro) {
+                o->has_baro = true;
+                o->altitude_baro = t->gb.baro_alt;
+            }
+            o->has_coord = true;
+            o->coord_sys = t->gb.coord_sys;
+            o->has_acc = true;
+            o->h_acc = t->gb.h_acc;
+            o->v_acc = t->gb.v_acc;
+            o->spd_acc = t->gb.spd_acc;
+            o->has_ts = true;
+            o->ts_unix_ms = t->gb.ts_unix_ms;
+            o->ts_acc = t->gb.ts_acc;
         } else {
             // GB42590 / ASTM: 从 opendroneid 数据提取
             if (t->odid.BasicIDValid[0]) {
                 strncpy(o->uas_id, t->odid.BasicID[0].UASID, sizeof(o->uas_id) - 1);
                 o->ua_type = (uint8_t)t->odid.BasicID[0].UAType;
+            }
+            if (t->odid.BasicIDValid[1]) {
+                strncpy(o->uas_id2, t->odid.BasicID[1].UASID, sizeof(o->uas_id2) - 1);
             }
             if (t->odid.SelfIDValid) {
                 strncpy(o->drone_name, t->odid.SelfID.Desc, sizeof(o->drone_name) - 1);
@@ -475,6 +601,22 @@ int crid_rx_get_tracks(crid_rx_track_t *out) {
                 o->speed_vertical = t->odid.Location.SpeedVertical;
                 o->direction = t->odid.Location.Direction;
                 o->status = (uint8_t)t->odid.Location.Status;
+                // 补全项：气压高度 / 相对高度 / 精度 / 相对时间戳
+                if (t->odid.Location.AltitudeBaro > -999.0f) {
+                    o->has_baro = true;
+                    o->altitude_baro = t->odid.Location.AltitudeBaro;
+                }
+                if (t->odid.Location.Height > -999.0f) {
+                    o->has_agl = true;
+                    o->altitude_agl = t->odid.Location.Height;
+                    o->agl_type = (uint8_t)t->odid.Location.HeightType;
+                }
+                o->has_acc = true;
+                o->h_acc = (uint8_t)t->odid.Location.HorizAccuracy;
+                o->v_acc = (uint8_t)t->odid.Location.VertAccuracy;
+                o->spd_acc = (uint8_t)t->odid.Location.SpeedAccuracy;
+                o->has_ts_rel = true;
+                o->ts_rel_10s = (uint32_t)t->odid.Location.TimeStamp;
             }
             // 飞手位置在 System 报文中（广播可选，多数消费机不携带）
             // 注：System 报文无独立遥控站高度字段，op_altitude_geo 置 0

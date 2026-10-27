@@ -55,6 +55,26 @@ typedef struct {
     uint32_t msg_count;               // 累计报文数
     uint32_t last_seen_ms;            // 最后收到报文的系统时间 (esp_log_timestamp)
     uint32_t first_seen_ms;
+    // ---- 补全的报文数据项（协议未携带时对应 valid 为 false） ----
+    char     uas_id2[21];             // 第二 BasicID（ASTM 常带序列号+会话 ID 双 ID）
+    float    altitude_agl;            // 相对高度 m（GB46750 011 / ASTM Height）
+    uint8_t  agl_type;                // 高度基准类型（ASTM HeightType 0-3）
+    float    altitude_baro;           // 气压高度 m（GB46750 014 / ASTM AltitudePressure）
+    bool     has_agl;                 // 相对高度有效
+    bool     has_baro;                // 气压高度有效
+    uint8_t  op_loc_type;             // 遥控站位置类型（GB46750 005，0-3）
+    bool     has_op_loc_type;
+    uint8_t  coord_sys;               // 坐标系（GB46750 016，0=WGS-84）
+    bool     has_coord;
+    uint8_t  h_acc;                   // 水平精度枚举（017 / ASTM HorizontalAccuracy）
+    uint8_t  v_acc;                   // 垂直精度枚举（018 / ASTM VerticalAccuracy）
+    uint8_t  spd_acc;                 // 速度精度枚举（019 / ASTM SpeedAccuracy）
+    bool     has_acc;                 // 精度信息有效
+    uint64_t ts_unix_ms;              // 报文时间戳，Unix 毫秒（GB46750 020）
+    bool     has_ts;
+    uint32_t ts_rel_10s;              // 报文相对时间，0.1s 单位（ASTM Timestamp）
+    bool     has_ts_rel;
+    uint8_t  ts_acc;                  // 时间戳精度枚举（021）
 } crid_rx_track_t;
 
 /**
