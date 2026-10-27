@@ -72,8 +72,11 @@ const FAKE = {
       realname_id:'CN8823AB', ua_type:2,
       latitude:22.543218, longitude:114.057321, altitude_geo:88.4,
       speed_horizontal:12.3, speed_vertical:-0.8, direction:187,
-      status:2, msg_count:57, age_ms:800,
-      has_op_loc:true, op_latitude:22.530001, op_longitude:114.040002, op_altitude_geo:25 },
+      status:2, msg_count:57, age_ms:800, first_age_ms:65000,
+      has_op_loc:true, op_latitude:22.530001, op_longitude:114.040002, op_altitude_geo:25,
+      altitude_agl:60.5, altitude_baro:78.2, agl_type:3,
+      op_loc_type:0, coord_sys:0, h_acc:11, v_acc:4, spd_acc:2,
+      ts_unix_ms:1730000000000, ts_acc:1 },
     { mac:'AA:BB:CC:DD:EE:02', rssi:-71, channel:6, protocol:3,
       uas_id:'1581F8LQ9XYZ9998887', drone_name:'Mavic 4 Pro', operator_id:'OP1234567',
       realname_id:'', ua_type:2,
@@ -96,6 +99,12 @@ api.pollRx().then(() => {
     + ' — ' + store.rxlist.children[0].textContent);
   const c1 = store.rxlist.children[1];
   A('op pos on card1: ' + (c1._html.includes('飞手位置') && c1._html.includes('22.530001') ? 'OK' : 'FAIL'));
+  // ---- 报文详情折叠区：GB46750 全量数据项渲染 ----
+  A('detail block  : ' + (c1._html.includes('报文详情') && c1._html.includes('class="dtl"') ? 'OK' : 'FAIL'));
+  A('detail agl/baro: ' + (c1._html.includes('相对高度 (011)') && c1._html.includes('60.5')
+    && c1._html.includes('气压高度 (014)') && c1._html.includes('78.2') ? 'OK' : 'FAIL'));
+  A('detail acc/ts : ' + (c1._html.includes('水平精度 (017)') && c1._html.includes('<3 m')
+    && c1._html.includes('报文时间 (020)') && c1._html.includes('飞手海拔 (007)') ? 'OK' : 'FAIL'));
   A('no op on card2 : ' + (!store.rxlist.children[2]._html.includes('飞手位置') ? 'OK' : 'FAIL'));
   A('online no gray : ' + (!store.rxlist.children[1].className.includes('off') ? 'OK' : 'FAIL'));
   // ---- 目标 2 转为离线：应有「已离线」分区 + 灰度卡片 ----
