@@ -77,7 +77,8 @@ extern "C" {
 #define CRID_OUI_0 0xFA
 #define CRID_OUI_1 0x0B
 #define CRID_OUI_2 0xBC
-#define CRID_VENDOR_TYPE 0x0D
+#define CRID_VENDOR_TYPE 0x0D           // ASTM / GB42590（OpenDroneID Message Pack）
+#define CRID_VENDOR_TYPE_GB46750 0xF0   // GB46750-2025 新国标（数据类型 255 位图报文）
 
 // --- 设备工作模式 ---
 #define DEVICE_MODE_TX 0            // 发射模式（广播 RID）

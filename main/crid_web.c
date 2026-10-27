@@ -7,6 +7,7 @@
 #include "crid_web.h"
 #include "crid_wifi.h"
 #include "crid_rx.h"
+#include "crid_gb46750.h"
 #include "page_gz.h"
 #include "esp_http_server.h"
 #include "esp_log.h"
@@ -139,6 +140,22 @@ static const char PAGE_HTML[] =
 ".kv .wide{grid-column:span 3;background:#f9fafb}"
 ".kv .wide b{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px;word-break:break-all}"
 ".kv .hl b{color:#0a7d43}"
+// ---- 报文详情折叠区与一键展开/折叠按钮 ----
+".fbtn{flex:none;background:#fff;border:1px solid #d1d5db;border-radius:8px;"
+"padding:6px 10px;font-size:12px;color:#0b3d2e;font-weight:600;cursor:pointer}"
+".fbtn:active{transform:scale(.97)}"
+".dtl{margin-top:8px;border-top:1px dashed #e5e7eb}"
+".dtl-h{display:flex;align-items:center;gap:5px;padding:8px 2px 0;"
+"font-size:11px;font-weight:700;color:#0f8a4d;cursor:pointer;user-select:none}"
+".dtl-h i{font-style:normal;font-size:10px;color:#9ca3af;transition:.15s}"
+".dcard.open .dtl-h i{transform:rotate(90deg)}"
+".dtl-b{display:none;padding:6px 2px 2px}"
+".dcard.open .dtl-b{display:block}"
+".dtab{width:100%;border-collapse:collapse;font-size:11px}"
+".dtab td{padding:4px 6px;border-bottom:1px dashed #f0f1f3;vertical-align:top}"
+".dtab td:first-child{color:#8b95a1;white-space:nowrap;width:38%}"
+".dtab td:last-child{color:#1f2937;font-family:ui-monospace,Menlo,Consolas,monospace;"
+"word-break:break-all}"
 ".rxb0{text-align:center;padding:22px 10px;color:#9ca3af;font-size:13px;"
 "background:#fafbfc;border:1px dashed #d1d5db;border-radius:12px}"
 ".rxb0 b{display:block;font-size:26px;margin-bottom:4px;opacity:.5}"
@@ -283,6 +300,7 @@ static const char PAGE_HTML[] =
 "<div class='chip'><b id='s_total'>0</b><span>总帧数</span></div>"
 "<div class='chip'><b id='s_ok'>0</b><span>解析成功</span></div>"
 "<div class='chip warn' id='s_ovfbox'><b id='s_ovf'>0</b><span>队列溢出</span></div>"
+"<button class='fbtn' id='foldall' type='button'>全部展开 ▾</button>"
 "</div>"
 "<div class='rxbanner'><span class='dot live'></span>"
 "<span id='rxstate'>正在监听…</span></div>"
@@ -542,6 +560,57 @@ static const char PAGE_HTML[] =
 "return `<div class=\"${cls||''}\"><b>${v}${unit?`<small>${unit}</small>`:''}</b><span>${label}</span></div>`;}"
 "function wideCell(v,label){"
 "return `<div class=\"wide\"><b>${v}</b><span>${label}</span></div>`;}"
+// ---- 报文详情折叠：枚举值文本表（国标与 ASTM 兼容枚举） ----
+"const OPT=['实时位置','起飞点位置','自定义位置','未知'];"
+"const AGLT=['起飞点','地面','自定义','实时 GNSS'];"
+"const HACC=['未知','<18.5 km','<7.4 km','<3.7 km','<1.85 km','<926 m','<556 m','<185 m',"
+"'<93 m','<30 m','<10 m','<3 m','<1 m'];"
+"const VACC=['未知','<150 m','<45 m','<25 m','<10 m','<3 m','<1 m'];"
+"const SACC=['未知','<10 m/s','<3 m/s','<1 m/s','<0.3 m/s'];"
+"const TACC=['未知','<=0.2 s','<=0.5 s','<=1 s','<=2 s','<=5 s','<=10 s','<=20 s',"
+"'<=30 s','<=60 s','>60 s'];"
+// 折叠状态按 mac 记忆：轮询每 2 秒重建 DOM 后恢复各卡展开态
+"const s_fold={};"
+"function updFoldBtn(){const b=q('foldall');if(!b)return;"
+"const cs=document.querySelectorAll('#rxlist .dcard');"
+"const allOpen=cs.length>0&&Array.prototype.every.call(cs,function(c){return c.classList.contains('open');});"
+"b.textContent=allOpen?'全部折叠 ▴':'全部展开 ▾';}"
+"function foldAll(){const cs=document.querySelectorAll('#rxlist .dcard');"
+"const anyClosed=Array.prototype.some.call(cs,function(c){return !c.classList.contains('open');});"
+"Array.prototype.forEach.call(cs,function(c){c.classList.toggle('open',anyClosed);"
+"s_fold[c.dataset.mac]=anyClosed;});updFoldBtn();}"
+// 详情块：报文携带的全部数据项（括号内为国标数据项编号）
+"function dtlHtml(t){"
+"const rows=[];const row=function(k,v){if(v!==undefined&&v!==null&&v!=='')rows.push("
+"'<tr><td>'+k+'</td><td>'+v+'</td></tr>');};"
+"row('大地高度 (013)',f1(t.altitude_geo)+' m');"
+"row('相对高度 (011)',t.altitude_agl===undefined?undefined:"
+"f1(t.altitude_agl)+' m'+(t.agl_type!==undefined?' · '+AGLT[t.agl_type]:''));"
+"row('气压高度 (014)',t.altitude_baro===undefined?undefined:f1(t.altitude_baro)+' m');"
+"row('垂直速度 (012)',f1(t.speed_vertical)+' m/s');"
+"if(t.has_op_loc)row('飞手海拔 (007)',f1(t.op_altitude_geo)+' m');"
+"if(t.protocol===4){"
+"row('遥控站位置类型 (005)',OPT[t.op_loc_type!==undefined?t.op_loc_type:3]);"
+"row('坐标系 (016)',t.coord_sys===undefined?undefined:"
+"(t.coord_sys===0?'WGS-84':'类型 '+t.coord_sys));"
+"row('水平精度 (017)',t.h_acc===undefined?undefined:(HACC[t.h_acc]||('枚举 '+t.h_acc)));"
+"row('垂直精度 (018)',t.v_acc===undefined?undefined:(VACC[t.v_acc]||('枚举 '+t.v_acc)));"
+"row('速度精度 (019)',t.spd_acc===undefined?undefined:(SACC[t.spd_acc]||('枚举 '+t.spd_acc)));"
+"row('报文时间 (020)',t.ts_unix_ms===undefined?undefined:"
+"new Date(t.ts_unix_ms).toLocaleTimeString());"
+"row('时间戳精度 (021)',t.ts_acc===undefined?undefined:(TACC[t.ts_acc]||('枚举 '+t.ts_acc)));"
+"}else{"
+"row('报文时间 (相对)',t.ts_rel_10s===undefined?undefined:f1(t.ts_rel_10s/10)+' s');"
+"row('水平精度',t.h_acc===undefined?undefined:(HACC[t.h_acc]||('枚举 '+t.h_acc)));"
+"row('垂直精度',t.v_acc===undefined?undefined:(VACC[t.v_acc]||('枚举 '+t.v_acc)));"
+"row('速度精度',t.spd_acc===undefined?undefined:(SACC[t.spd_acc]||('枚举 '+t.spd_acc)));"
+"row('高度基准',t.agl_type===undefined?undefined:(AGLT[t.agl_type]||('类型 '+t.agl_type)));"
+"}"
+"row('第二识别码',t.uas_id2?esc(t.uas_id2):undefined);"
+"row('已观测时长',t.first_age_ms===undefined?undefined:ageTxt(t.first_age_ms));"
+"if(!rows.length)return '';"
+"return '<div class=\"dtl\"><div class=\"dtl-h\">报文详情 ('+rows.length+' 项)<i>▶</i></div>'"
+"+'<div class=\"dtl-b\"><table class=\"dtab\">'+rows.join('')+'</table></div></div>';}"
 "function rxCard(t){"
 "const p=rxProto(t.protocol);"
 "const el=document.createElement('div');"
@@ -579,8 +648,12 @@ static const char PAGE_HTML[] =
 "if(t.operator_id)idt.push([esc(t.operator_id),'操作员 ID']);"
 "if(t.realname_id)idt.push([esc(t.realname_id),'实名登记号']);"
 "idt.forEach(function(x){h+=wideCell(x[0],x[1]);});"
-"h+=`</div></div>`;"
+"h+='</div>'+dtlHtml(t)+'</div>';"
 "el.innerHTML=h;"
+// 折叠头点击：切换展开态（阻断冒泡，不触发卡片本身的地图聚焦）
+"const dh=el.querySelector('.dtl-h');"
+"if(dh){dh.onclick=function(ev){ev.stopPropagation();"
+"el.classList.toggle('open');s_fold[t.mac]=el.classList.contains('open');updFoldBtn();};}"
 // 点击卡片聚焦地图：仅调用已加载的独立模块，未加载或报错都不影响卡片本身
 "el.onclick=function(){try{if(window.RXMAP)RXMAP.focus(t.mac);}catch(e){}};"
 "return el;}"
@@ -617,7 +690,12 @@ static const char PAGE_HTML[] =
 "on.forEach(function(t){box.appendChild(rxCard(t));});}"
 "if(off.length){sec('已离线 · '+off.length+'（10 秒无信号，保留 30 分钟）',true);"
 "off.forEach(function(t){box.appendChild(rxCard(t));});}"
+// 轮询重建 DOM 后：恢复各卡展开态 + 同步折叠按钮文字
+"Array.prototype.forEach.call(box.querySelectorAll('.dcard'),function(c){"
+"if(s_fold[c.dataset.mac])c.classList.add('open');});"
+"updFoldBtn();"
 "}catch(e){q('rxstate').textContent='轮询失败：'+e;}}"
+"q('foldall').onclick=foldAll;"
 // ---- 在线地图（Leaflet）与离线网格双模式 ----
 // map/opMarker/circle 等变量已在脚本开头统一声明
 "let gbase=[0,0],gpick=null;"
@@ -701,8 +779,15 @@ static const char PAGE_HTML[] =
 "document.getElementById('liveinfo').textContent=t;"
 "if(live){live.setLatLng([j.latitude,j.longitude]);}"
 "trailPush(j.latitude,j.longitude);}"
-"catch(e){}}"
+"catch(e){}"
+"if(Date.now()-sT>600000)syncTime();}"
+// ---- 设备授时：GB46750 数据项 020 需要真实 Unix 毫秒，设备本身无 RTC/不联网 ----
+"var sT=0;"
+"function syncTime(){sT=Date.now();try{fetch('/api/time',{method:'POST',"
+"headers:{'Content-Type':'application/json'},body:JSON.stringify({epoch_ms:sT})})"
+".catch(function(){});}catch(e){}}"
 "setInterval(poll,2000);"
+"syncTime();"
 "load();"
 "</script></body></html>";
 
@@ -1029,6 +1114,32 @@ static esp_err_t handler_rx(httpd_req_t *req) {
         cJSON_AddNumberToObject(t, "op_altitude_geo", tracks[i].op_altitude_geo);
         cJSON_AddNumberToObject(t, "msg_count", tracks[i].msg_count);
         cJSON_AddNumberToObject(t, "age_ms", esp_log_timestamp() - tracks[i].last_seen_ms);
+        cJSON_AddNumberToObject(t, "first_age_ms",
+                                esp_log_timestamp() - tracks[i].first_seen_ms);
+        // 补全的报文数据项
+        if (tracks[i].uas_id2[0])
+            cJSON_AddStringToObject(t, "uas_id2", tracks[i].uas_id2);
+        if (tracks[i].has_agl)
+            cJSON_AddNumberToObject(t, "altitude_agl", tracks[i].altitude_agl);
+        if (tracks[i].has_baro)
+            cJSON_AddNumberToObject(t, "altitude_baro", tracks[i].altitude_baro);
+        if (tracks[i].has_agl)
+            cJSON_AddNumberToObject(t, "agl_type", tracks[i].agl_type);
+        if (tracks[i].has_op_loc_type)
+            cJSON_AddNumberToObject(t, "op_loc_type", tracks[i].op_loc_type);
+        if (tracks[i].has_coord)
+            cJSON_AddNumberToObject(t, "coord_sys", tracks[i].coord_sys);
+        if (tracks[i].has_acc) {
+            cJSON_AddNumberToObject(t, "h_acc", tracks[i].h_acc);
+            cJSON_AddNumberToObject(t, "v_acc", tracks[i].v_acc);
+            cJSON_AddNumberToObject(t, "spd_acc", tracks[i].spd_acc);
+        }
+        if (tracks[i].has_ts) {
+            cJSON_AddNumberToObject(t, "ts_unix_ms", (double)tracks[i].ts_unix_ms);
+            cJSON_AddNumberToObject(t, "ts_acc", tracks[i].ts_acc);
+        }
+        if (tracks[i].has_ts_rel)
+            cJSON_AddNumberToObject(t, "ts_rel_10s", tracks[i].ts_rel_10s);
         cJSON_AddItemToArray(arr, t);
     }
 
@@ -1109,6 +1220,32 @@ static esp_err_t handler_favicon(httpd_req_t *req) {
     return ESP_OK;
 }
 
+// 浏览器授时：设备无 RTC/不联网，用网页的 Unix 毫秒校准 GB46750 数据项 020
+static esp_err_t handler_time(httpd_req_t *req) {
+    char buf[128];
+    int len = httpd_req_recv(req, buf, sizeof(buf) - 1);
+    if (len <= 0) {
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "no body");
+        return ESP_FAIL;
+    }
+    buf[len] = '\0';
+
+    cJSON *j = cJSON_Parse(buf);
+    uint64_t ms = 0;
+    if (j != NULL) {
+        cJSON *it = cJSON_GetObjectItem(j, "epoch_ms");
+        if (cJSON_IsNumber(it) && it->valuedouble > 0) {
+            ms = (uint64_t)it->valuedouble;
+        }
+        cJSON_Delete(j);
+    }
+    crid_gb46750_set_epoch_ms(ms);   // 0 = 清除校准
+
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_sendstr(req, ms ? "{\"ok\":true}" : "{\"ok\":false}");
+    return ESP_OK;
+}
+
 static const httpd_uri_t uris[] = {
     { .uri = "/",          .method = HTTP_GET,  .handler = handler_page,      .user_ctx = NULL },
     { .uri = "/rxmap.js",  .method = HTTP_GET,  .handler = handler_rxmapjs,   .user_ctx = NULL },
@@ -1117,6 +1254,7 @@ static const httpd_uri_t uris[] = {
     { .uri = "/api/status",.method = HTTP_GET,  .handler = handler_status,    .user_ctx = NULL },
     { .uri = "/api/rx",    .method = HTTP_GET,  .handler = handler_rx,        .user_ctx = NULL },
     { .uri = "/api/reset", .method = HTTP_POST, .handler = handler_reset,     .user_ctx = NULL },
+    { .uri = "/api/time",  .method = HTTP_POST, .handler = handler_time,      .user_ctx = NULL },
     { .uri = "/favicon.ico",.method = HTTP_GET, .handler = handler_favicon,   .user_ctx = NULL },
 };
 
@@ -1126,7 +1264,9 @@ esp_err_t crid_web_start(cn_crid_config_t *config) {
 
     httpd_handle_t server = NULL;
     httpd_config_t http_cfg = HTTPD_DEFAULT_CONFIG();
-    http_cfg.max_uri_handlers = 8;
+    // 槽位数必须覆盖 uris[] 全部条目（IDF 6.1 默认为 8，路由表已 9 条），
+    // 否则超出部分会以 ESP_ERR_HTTPD_HANDLERS_FULL 静默失败、对应接口 404。
+    http_cfg.max_uri_handlers = sizeof(uris) / sizeof(uris[0]) + 2;
     http_cfg.lru_purge_enable = true;
 
     esp_err_t ret = httpd_start(&server, &http_cfg);
@@ -1135,7 +1275,10 @@ esp_err_t crid_web_start(cn_crid_config_t *config) {
         return ret;
     }
     for (size_t i = 0; i < sizeof(uris) / sizeof(uris[0]); i++) {
-        httpd_register_uri_handler(server, &uris[i]);
+        esp_err_t r = httpd_register_uri_handler(server, &uris[i]);
+        if (r != ESP_OK) {
+            ESP_LOGE(TAG, "register uri %s failed: %s", uris[i].uri, esp_err_to_name(r));
+        }
     }
 
     ESP_LOGI(TAG, "Web config server started: http://192.168.4.1");

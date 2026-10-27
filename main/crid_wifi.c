@@ -8,6 +8,17 @@
 
 static const char *TAG = "CN_C-RID_WIFI";
 
+// 毫秒 -> 802.11 时间单元（TU）。ESP-IDF 的 beacon_interval 以 TU 为单位
+// （1 TU = 1024 µs），若直接把毫秒数写进去，实际间隔会放大约 2.4%。
+// 这里向下取整，使实际间隔略短于设定值，避免 1000ms 被取整成 1000.4ms
+// 而跌破 GB 42590 表 A.11「固定信道 ≥1Hz」的下限。
+static uint16_t crid_ms_to_tu(uint16_t ms) {
+    uint32_t tu = (uint32_t)((float)ms / 1.024f);
+    if (tu < 15) tu = 15;          // 802.11 规定 Beacon 间隔下限 15 TU
+    if (tu > 65535) tu = 65535;
+    return (uint16_t)tu;
+}
+
 esp_err_t crid_wifi_init(uint8_t channel) {
     esp_err_t ret;
 
@@ -89,7 +100,8 @@ esp_err_t crid_wifi_init_ap(uint8_t channel, const char *ssid, uint16_t beacon_i
     ap_config.ap.max_connection = 4;
     ap_config.ap.ssid_hidden = 0;
     // Beacon 间隔与 RID 帧更新周期一致，保证每帧携带最新计数器
-    ap_config.ap.beacon_interval = beacon_interval_ms;
+    // 注意：ESP-IDF 的 beacon_interval 单位是 TU（1 TU = 1.024 ms），不是毫秒
+    ap_config.ap.beacon_interval = crid_ms_to_tu(beacon_interval_ms);
 
     ret = esp_wifi_set_config(WIFI_IF_AP, &ap_config);
     if (ret != ESP_OK) {
@@ -103,8 +115,8 @@ esp_err_t crid_wifi_init_ap(uint8_t channel, const char *ssid, uint16_t beacon_i
         return ret;
     }
 
-    ESP_LOGI(TAG, "Wi-Fi AP initialized: ssid=%s, channel=%u, beacon=%ums",
-             ssid, channel, beacon_interval_ms);
+    ESP_LOGI(TAG, "Wi-Fi AP initialized: ssid=%s, channel=%u, beacon=%ums (%u TU)",
+             ssid, channel, beacon_interval_ms, crid_ms_to_tu(beacon_interval_ms));
     return ESP_OK;
 }
 
@@ -121,12 +133,12 @@ esp_err_t crid_wifi_update_ap(const char *ssid, uint8_t channel, uint16_t beacon
     memcpy(ap_config.ap.ssid, ssid, ssid_len);
     ap_config.ap.ssid_len = (uint8_t)ssid_len;
     ap_config.ap.channel = channel;
-    ap_config.ap.beacon_interval = beacon_interval_ms;
+    ap_config.ap.beacon_interval = crid_ms_to_tu(beacon_interval_ms);
 
     ret = esp_wifi_set_config(WIFI_IF_AP, &ap_config);
     if (ret == ESP_OK) {
-        ESP_LOGI(TAG, "Wi-Fi AP config updated: ssid=%s, channel=%u, beacon=%ums",
-                 ssid, channel, beacon_interval_ms);
+        ESP_LOGI(TAG, "Wi-Fi AP config updated: ssid=%s, channel=%u, beacon=%ums (%u TU)",
+                 ssid, channel, beacon_interval_ms, crid_ms_to_tu(beacon_interval_ms));
     }
     return ret;
 }

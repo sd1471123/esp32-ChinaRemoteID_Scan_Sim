@@ -33,8 +33,9 @@ static const char *TAG = "ESP32_CRID_STD";
 
 // --- 全局 RID 厂商 IE 缓冲区 ---
 #define RID_IE_BUF_SIZE 160
-static uint8_t g_rid_ie_42590[RID_IE_BUF_SIZE];   // 槽位0: GB42590 打包报文
-static uint8_t g_rid_ie_46750[RID_IE_BUF_SIZE];   // 槽位1: GB46750 位图报文
+static uint8_t g_rid_ie_42590[RID_IE_BUF_SIZE];   // 槽位1: GB42590 打包报文
+static uint8_t g_rid_ie_46750[RID_IE_BUF_SIZE];   // 槽位0: GB46750 位图报文
+static bool    s_gb_ie_logged = false;            // 报文头是否已打印（每次切换标准重置）
 
 // --- 全局配置 ---
 static cn_crid_config_t g_config;
@@ -59,6 +60,7 @@ static bool apply_tx_ie(void) {
         crid_wifi_clear_rid_ie(0);
         crid_wifi_clear_rid_ie(1);
         s_applied_standard = std;
+        s_gb_ie_logged = false;
         ESP_LOGI(TAG, "广播标准切换: %s",
                  std == RID_STD_GB42590 ? "GB42590 旧国标" : "GB46750 新国标");
     }
@@ -66,11 +68,20 @@ static bool apply_tx_ie(void) {
     bool ok = false;
     if (std == RID_STD_GB42590) {
         uint16_t len = crid_build_vendor_ie(&g_config, g_rid_ie_42590, RID_IE_BUF_SIZE);
-        if (len > 0 && crid_wifi_set_rid_ie(0, g_rid_ie_42590, len) == ESP_OK) ok = true;
+        if (len > 0 && crid_wifi_set_rid_ie(1, g_rid_ie_42590, len) == ESP_OK) ok = true;
     }
     if (std == RID_STD_GB46750) {
         uint16_t len = crid_build_gb46750_ie(&g_config, g_rid_ie_46750, RID_IE_BUF_SIZE);
-        if (len > 0 && crid_wifi_set_rid_ie(1, g_rid_ie_46750, len) == ESP_OK) ok = true;
+        if (len > 0 && crid_wifi_set_rid_ie(0, g_rid_ie_46750, len) == ESP_OK) {
+            ok = true;
+            // 首次挂载时打印完整报文，便于与 GB 46750-2025 表1/表2/表3 逐字节核对
+            if (!s_gb_ie_logged) {
+                ESP_LOGI(TAG, "GB46750 IE %uB: [DD][len][FA 0B BC][F0][FF][ver][dlen][flags x3][content]",
+                         len);
+                ESP_LOG_BUFFER_HEX(TAG, g_rid_ie_46750, len);
+                s_gb_ie_logged = true;
+            }
+        }
     }
     return ok;
 }
@@ -198,4 +209,14 @@ void app_main(void) {
     ESP_LOGI(TAG, "  Position: %.6f, %.6f", g_config.latitude, g_config.longitude);
     ESP_LOGI(TAG, "  Channel: %u, Interval: %ums", g_config.channel, g_config.beacon_interval_ms);
     ESP_LOGI(TAG, "  Web config: http://192.168.4.1");
+
+    // 临时校验用：构建一份 GB46750 报文并打印（不改变当前广播标准）
+    {
+        static uint8_t dbg[160];
+        uint16_t n = crid_build_gb46750_ie(&g_config, dbg, sizeof(dbg));
+        if (n) {
+            ESP_LOGI(TAG, "GB46750 IE preview %uB", n);
+            ESP_LOG_BUFFER_HEX(TAG, dbg, n);
+        }
+    }
 }

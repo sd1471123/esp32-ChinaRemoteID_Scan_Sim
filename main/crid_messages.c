@@ -36,16 +36,17 @@ static inline void write_le32_u32(uint8_t *buf, uint32_t val) {
     }
 }
 
-// --- 编码地速 (符合 ASTM F3411-22a 表) ---
-// 速度 < 63.75 m/s: encoded = speed / 0.25
-// 速度 >= 63.75 m/s 且 <= 254.25 m/s: encoded = 255 + (speed - 63.75) / 0.75
-// 速度 > 254.25 m/s: encoded = 254 (max)
+// --- 编码地速 (GB 42590-2023 表 A.9 / ASTM F3411-22a) ---
+// 速度 < 63.75 m/s（SpeedMult=0）: encoded = speed / 0.25，取值 0~254
+// 速度 >= 63.75 m/s（SpeedMult=1）: encoded = (speed - 63.75) / 0.75，取值 0~254
+// 解码：mult=0 -> code*0.25；mult=1 -> code*0.75 + 63.75
+// 速度 > 254.25 m/s: encoded = 254 (上限饱和)
 static uint8_t encode_ground_speed(float speed_ms) {
     if (speed_ms < 0.0f) speed_ms = 0.0f;
     if (speed_ms < 63.75f) {
-        return (uint8_t)(speed_ms / 0.25f);
+        return (uint8_t)(speed_ms / 0.25f + 0.5f);
     } else if (speed_ms <= 254.25f) {
-        return (uint8_t)(255 + (speed_ms - 63.75f) / 0.75f);
+        return (uint8_t)((speed_ms - 63.75f) / 0.75f + 0.5f);
     } else {
         return 254;
     }
@@ -95,37 +96,37 @@ void crid_build_location_message(const cn_crid_config_t *config, uint8_t *messag
     // EWDirection: 0 = 航向 0-179°, 1 = 航向 180-359°（字节2 存减 180 后的值）
     uint8_t speed_mult = (config->speed_horizontal >= 63.75f) ? 1 : 0;
     uint8_t height_type = config->height_type & 0x01;
-    uint8_t ew_dir = (config->heading >= 180.0f && config->heading < 360.0f) ? 1 : 0;
-    // OpenDroneID 位序: [Status(4)][Reserved(1)][HeightType(1)][EWDirection(1)][SpeedMult(1)]
-    message[1] = (config->status << 4) | (height_type << 2) | (ew_dir << 1) | speed_mult;
-
-    // 字节2: 航迹角（0-179 + EWDirection 标志位组合表示 0-359°，与 OpenDroneID
-    // encodeDirection 及 GB 42590 布局一致；此前直接写 0-360°，≥180° 时报文错误）
-    // 255 = Invalid/Unknown
-    // 注：ASTM F3411 标准为 0.5°/LSB，但此接收端按 1°/LSB 解码
+    uint8_t ew_dir;
     uint8_t track_angle;
-    if (config->heading < 0 || config->heading >= 360.0f) {
-        track_angle = 255; // Invalid
+
+    // 字节2: 航迹角（0-179，配合 EWDirection 表示 0-359°）
+    // 无效值：GB 42590 表 A.9 规定航迹角报到 361°，即 E/W=1 且编码值 181
+    if (config->heading < 0.0f || config->heading >= 360.0f) {
+        ew_dir = 1;
+        track_angle = 181;
     } else if (config->heading >= 180.0f) {
+        ew_dir = 1;
         track_angle = (uint8_t)(config->heading - 180.0f + 0.5f);
         if (track_angle > 179) track_angle = 179;
     } else {
+        ew_dir = 0;
         track_angle = (uint8_t)(config->heading + 0.5f);
         if (track_angle > 179) track_angle = 179;
     }
+    // OpenDroneID 位序: [Status(4)][Reserved(1)][HeightType(1)][EWDirection(1)][SpeedMult(1)]
+    message[1] = (config->status << 4) | (height_type << 2) | (ew_dir << 1) | speed_mult;
     message[2] = track_angle;
 
     // 字节3: 地速
     message[3] = encode_ground_speed(config->speed_horizontal);
 
-    // 字节4: 垂直速度 (0.5m/s 精度, 偏移 +63)
-    // 编码: (speed_vertical / 0.5) + 63 = speed_vertical * 2 + 63
-    // 范围: -62 ~ +62 m/s -> 编码值 1 ~ 187 (uint8_t)
-    // 无效值: 255 (0xFF)
-    int16_t vs_enc = (int16_t)(config->speed_vertical * 2.0f + 63.0f);
-    if (vs_enc > 187) vs_enc = 187;
-    if (vs_enc < 1) vs_enc = 1;
-    message[4] = (uint8_t)vs_enc;
+    // 字节4: 垂直速度（GB 42590-2023 表 A.9：8 位有符号数，0.5 m/s 精度，无偏移）
+    // 编码: code = speed_vertical / 0.5 = speed_vertical * 2
+    // 取值 -124 ~ +124 对应 -62 ~ +62 m/s；饱和到 ±124，避开 0xFF 无效码
+    int16_t vs_enc = (int16_t)lroundf(config->speed_vertical * 2.0f);
+    if (vs_enc > 124) vs_enc = 124;
+    if (vs_enc < -124) vs_enc = -124;
+    message[4] = (uint8_t)(int8_t)vs_enc;
 
     // 字节5-8: 纬度 (小端序, 1E-7 度单位)
     write_le32(&message[5], (int32_t)(config->latitude * 1e7));
@@ -188,8 +189,8 @@ void crid_build_system_message(const cn_crid_config_t *config, uint8_t *message)
     // 字节10-11: 运行区域计数
     write_le16(&message[10], 1);
 
-    // 字节12: 运行区域半径 (m * 10)
-    message[12] = 0x64; // 100m
+    // 字节12: 运行区域半径（1 LSB = 10 m，与 opendroneid encodeAreaRadius 一致）
+    message[12] = 10; // 100 m
 
     // 字节13-14: 运行区域高度上限 (0.5m 精度, 偏移 -1000m)
     write_le16(&message[13], encode_altitude(100.0f));
@@ -197,8 +198,8 @@ void crid_build_system_message(const cn_crid_config_t *config, uint8_t *message)
     // 字节15-16: 运行区域高度下限 (0.5m 精度, 偏移 -1000m)
     write_le16(&message[15], encode_altitude(50.0f));
 
-    // 字节17: [ClassEU(4)][CategoryEU(4)]
-    message[17] = (config->class_eu << 4) | (config->category_eu & 0x0F);
+    // 字节17: [UA运行类别(7-4位)][UA等级(3-0位)] —— GB 42590 表 A.7
+    message[17] = ((config->category_eu & 0x0F) << 4) | (config->class_eu & 0x0F);
 
     // 字节18-19: 操作员高度 (0.5m 精度, 偏移 -1000m)
     write_le16(&message[18], encode_altitude(config->operator_alt));
@@ -403,8 +404,8 @@ bool crid_build_beacon_frame(cn_crid_config_t *config,
     memset(&frame[pos], 0, 8);
     pos += 8;
 
-    // Beacon Interval (100ms)
-    write_le16(&frame[pos], 100);
+    // Beacon Interval: 100 ms ≈ 98 TU（802.11 时间单元 1.024 ms）
+    write_le16(&frame[pos], 98);
     pos += 2;
 
     // Capability Information
