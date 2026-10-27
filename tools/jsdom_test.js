@@ -92,4 +92,9 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
   console.log('=== 运行后错误 ===');
   console.log(w._pageErrors.length ? w._pageErrors : '(none)');
   console.log('DONE');
+
+  // 页面里有常驻轮询/授时定时器，显式关闭窗口并退出，避免 node 事件循环挂住
+  const failed = w._pageErrors.length > 0;
+  try { dom.window.close(); } catch (e) {}
+  process.exit(failed ? 1 : 0);
 })();
