@@ -325,3 +325,15 @@ GB 42590-2023 附录 A.1.3.1.3 允许 **5725–5829 MHz**，对应 Wi-Fi 信道 
 ## 许可证
 
 本项目基于 [MIT License](LICENSE) 开源。内置的 OpenDroneID 库沿用其原许可证（Apache-2.0）。
+
+
+
+## Star History
+
+<a href="https://www.star-history.com/?repos=sd1471123%2Fesp32-chinaremoteid_scan_sim&type=date&legend=top-left">
+ <picture>
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=sd1471123/esp32-chinaremoteid_scan_sim&type=date&theme=dark&legend=top-left" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=sd1471123/esp32-chinaremoteid_scan_sim&type=date&legend=top-left" />
+   <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=sd1471123/esp32-chinaremoteid_scan_sim&type=date&legend=top-left" />
+ </picture>
+</a>
