@@ -51,6 +51,11 @@ void crid_config_init_default(cn_crid_config_t *config) {
     config->speed_horizontal = 1.0f;
     config->speed_vertical = 0.0f;
     config->heading = 45.0f;
+    // 默认「自动」：航向跟随巡游轨迹、垂直速度跟随高度波动，行为与旧固件一致
+    config->heading_mode = 0;
+    config->vspd_mode = 0;
+    // 气压高度默认与海拔同值（起飞点即气压基准），用户可单独声明
+    config->baro_altitude = config->altitude_msl;
     config->status = STATUS_AIRBORNE;
 
     config->operator_lat = 23.14f;
@@ -217,7 +222,7 @@ typedef struct __attribute__((packed)) {
 } crid_persist_v3_t;
 
 #define CRID_PERSIST_MAGIC   0x44495243UL
-#define CRID_PERSIST_VERSION 4
+#define CRID_PERSIST_VERSION 5
 
 // v4: 在 v3 之后追加「地面海拔」与「高度波动幅度」。
 // 直接内嵌 v3 结构体，避免再抄一遍三十个字段；两者都是 packed，长度确定。
@@ -227,40 +232,51 @@ typedef struct __attribute__((packed)) {
     float altitude_wave;                         // 高度波动幅度 (m)
 } crid_persist_v4_t;
 
+// v5: 追加「气压高度」与两个运动参数来源开关（航向 / 垂直速度）
+typedef struct __attribute__((packed)) {
+    crid_persist_v4_t v4;
+    float baro_altitude;                         // 气压高度 (m)
+    uint8_t heading_mode;                        // 0=跟随巡游 1=固定
+    uint8_t vspd_mode;                           // 0=跟随高度波动 1=固定
+} crid_persist_v5_t;
+
 esp_err_t crid_config_save_nvs(const cn_crid_config_t *config) {
     if (config == NULL) return ESP_ERR_INVALID_ARG;
 
-    crid_persist_v4_t p;
+    crid_persist_v5_t p;
     memset(&p, 0, sizeof(p));
-    p.v3.magic = CRID_PERSIST_MAGIC;
-    p.v3.version = CRID_PERSIST_VERSION;
-    strncpy(p.v3.uas_id, config->uas_id, CRID_UAS_ID_MAX_LEN);
-    strncpy(p.v3.drone_name, config->drone_name, CRID_UAS_ID_MAX_LEN);
-    strncpy(p.v3.operator_id, config->operator_id, CRID_UAS_ID_MAX_LEN);
-    strncpy(p.v3.ssid, config->ssid, CRID_SSID_MAX_LEN);
-    p.v3.base_latitude = config->base_latitude;
-    p.v3.base_longitude = config->base_longitude;
-    p.v3.base_altitude_msl = config->base_altitude_msl;
-    p.v3.altitude_agl = config->altitude_agl;
-    p.v3.speed_horizontal = config->speed_horizontal;
-    p.v3.patrol_radius_lat = config->patrol_radius_lat;
-    p.v3.patrol_radius_lon = config->patrol_radius_lon;
-    p.v3.patrol_speed = config->patrol_speed;
-    p.v3.beacon_interval_ms = config->beacon_interval_ms;
-    p.v3.status = config->status;
-    p.v3.channel = config->channel;
-    p.v3.device_mode = config->device_mode;
-    p.v3.rid_standard = config->rid_standard;
-    strncpy(p.v3.realname_id, config->realname_id, sizeof(p.v3.realname_id) - 1);
-    p.v3.ua_category_gb = config->ua_category_gb;
-    p.v3.band = (config->band == CRID_BAND_5G) ? CRID_BAND_5G : CRID_BAND_2G;
-    p.v3.tx_2g = config->tx_2g ? 1 : 0;
-    p.v3.rx_2g = config->rx_2g ? 1 : 0;
-    p.v3.tx_5g = config->tx_5g ? 1 : 0;
-    p.v3.rx_5g = config->rx_5g ? 1 : 0;
-    p.v3.channel_5g = config->channel_5g;
-    p.ground_altitude = config->ground_altitude;
-    p.altitude_wave = config->altitude_wave;
+    p.v4.v3.magic = CRID_PERSIST_MAGIC;
+    p.v4.v3.version = CRID_PERSIST_VERSION;
+    strncpy(p.v4.v3.uas_id, config->uas_id, CRID_UAS_ID_MAX_LEN);
+    strncpy(p.v4.v3.drone_name, config->drone_name, CRID_UAS_ID_MAX_LEN);
+    strncpy(p.v4.v3.operator_id, config->operator_id, CRID_UAS_ID_MAX_LEN);
+    strncpy(p.v4.v3.ssid, config->ssid, CRID_SSID_MAX_LEN);
+    p.v4.v3.base_latitude = config->base_latitude;
+    p.v4.v3.base_longitude = config->base_longitude;
+    p.v4.v3.base_altitude_msl = config->base_altitude_msl;
+    p.v4.v3.altitude_agl = config->altitude_agl;
+    p.v4.v3.speed_horizontal = config->speed_horizontal;
+    p.v4.v3.patrol_radius_lat = config->patrol_radius_lat;
+    p.v4.v3.patrol_radius_lon = config->patrol_radius_lon;
+    p.v4.v3.patrol_speed = config->patrol_speed;
+    p.v4.v3.beacon_interval_ms = config->beacon_interval_ms;
+    p.v4.v3.status = config->status;
+    p.v4.v3.channel = config->channel;
+    p.v4.v3.device_mode = config->device_mode;
+    p.v4.v3.rid_standard = config->rid_standard;
+    strncpy(p.v4.v3.realname_id, config->realname_id, sizeof(p.v4.v3.realname_id) - 1);
+    p.v4.v3.ua_category_gb = config->ua_category_gb;
+    p.v4.v3.band = (config->band == CRID_BAND_5G) ? CRID_BAND_5G : CRID_BAND_2G;
+    p.v4.v3.tx_2g = config->tx_2g ? 1 : 0;
+    p.v4.v3.rx_2g = config->rx_2g ? 1 : 0;
+    p.v4.v3.tx_5g = config->tx_5g ? 1 : 0;
+    p.v4.v3.rx_5g = config->rx_5g ? 1 : 0;
+    p.v4.v3.channel_5g = config->channel_5g;
+    p.v4.ground_altitude = config->ground_altitude;
+    p.v4.altitude_wave = config->altitude_wave;
+    p.baro_altitude = config->baro_altitude;
+    p.heading_mode = config->heading_mode ? 1 : 0;
+    p.vspd_mode = config->vspd_mode ? 1 : 0;
 
     nvs_handle_t handle;
     esp_err_t ret = nvs_open(CRID_NVS_NAMESPACE, NVS_READWRITE, &handle);
@@ -388,6 +404,22 @@ bool crid_config_load_nvs(cn_crid_config_t *config) {
     if (!(config->altitude_wave >= 0.0f)) config->altitude_wave = 0.0f;
     if (config->altitude_wave > 100.0f) config->altitude_wave = 100.0f;
 
+    // v5 新增：气压高度 + 两个运动参数来源开关。
+    // 旧存档（v1~v4）没有这三项：气压高度按「等于海拔」补齐（最自洽的默认），
+    // 两个来源开关补 0（自动），行为与升级前完全一致。
+    if (p1->version >= 5 && len >= sizeof(crid_persist_v5_t)) {
+        const crid_persist_v5_t *p5 = (const crid_persist_v5_t *)raw;
+        config->baro_altitude = p5->baro_altitude;
+        config->heading_mode = p5->heading_mode ? 1 : 0;
+        config->vspd_mode = p5->vspd_mode ? 1 : 0;
+    } else {
+        config->baro_altitude = config->base_altitude_msl;
+        config->heading_mode = 0;
+        config->vspd_mode = 0;
+    }
+    if (!(config->baro_altitude > -1000.0f)) config->baro_altitude = config->base_altitude_msl;
+    if (config->baro_altitude > 20000.0f) config->baro_altitude = 20000.0f;
+
     // 相对高度一律由「海拔 - 地面海拔」推导，避免存档里的旧值自相矛盾
     config->altitude_msl = config->base_altitude_msl;
     config->altitude_agl = config->altitude_msl - config->ground_altitude;
@@ -435,9 +467,10 @@ void crid_config_radio_mutex(cn_crid_config_t *config) {
 
 uint8_t crid_band_normalize_channel(uint8_t band, uint8_t channel) {
     if (band == CRID_BAND_5G) {
-        // 5.8 GHz 只允许 149-165，且必须落在 20 MHz 网格上（步进 4）
+        // 5.8 GHz 允许 149-165，且必须落在 20 MHz 网格上（步进 4）。
+        // 保存接口已前置校验，这里只兜底 NVS 里的历史脏值
         if (channel < CRID_5G_CH_MIN || channel > CRID_5G_CH_MAX ||
-            ((channel - CRID_5G_CH_MIN) % 4) != 0) {
+            ((channel - CRID_5G_CH_MIN) % CRID_5G_CH_STEP) != 0) {
             return CRID_5G_CH_DEFAULT;
         }
         return channel;

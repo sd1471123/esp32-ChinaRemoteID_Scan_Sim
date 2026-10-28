@@ -340,6 +340,15 @@ static const char PAGE_HTML[] =
 "<div><label id='chlbl'>Wi-Fi 信道 (1-13)</label><input id='channel' type='number' min='1' max='13'></div>"
 "<div><label>广播间隔 (ms)</label><input id='beacon_interval_ms' type='number' min='200' max='60000'></div>"
 "</div></div>"
+// 飞手位置放左列：飞行参数加了高度/航向/垂直速度后右列变长，把这项挪过来两列才齐平
+"<div class='card txonly'><h3>飞手位置</h3><div class='g'>"
+"<div><label>飞手纬度</label><input id='operator_latitude' type='number' step='0.0000001'></div>"
+"<div><label>飞手经度</label><input id='operator_longitude' type='number' step='0.0000001'></div>"
+"</div>"
+"<label>飞手海拔高度 m</label><input id='operator_altitude' type='number'>"
+"<details class='tip'><summary>说明：飞手坐标与无人机位置</summary><div>"
+"改动飞手坐标后，无人机位置会按默认相对偏移自动生成（约正北 319 m、正东 27 m）；"
+"单独修改无人机位置不会影响飞手。若已调好巡游圆心，再改飞手坐标会把圆心一并平移。</div></details></div>"
 "</div>"
 "<div class='col txonly'>"
 "<div class='card txonly'><h3>飞行参数</h3><div class='g'>"
@@ -348,27 +357,52 @@ static const char PAGE_HTML[] =
 "<div><label>海拔高度 m (MSL)</label><input id='base_altitude_msl' type='number'></div>"
 "<div><label>地面海拔 m</label><input id='ground_altitude' type='number' step='0.1'></div>"
 "<div><label>相对高度 m (AGL)</label><input id='altitude_agl' type='number'></div>"
+"<div><label>气压高度 m</label><input id='baro_altitude' type='number' step='0.1'></div>"
 "<div><label>水平速度 m/s</label><input id='speed_horizontal' type='number' step='0.1'></div>"
-"<div class='full'><label>运行状态</label>"
+"<div><label>运行状态</label>"
 "<div class='dd' id='dd3'>"
 "<div class='dd-btn' id='dd3btn'><span class='dd-txt ph' id='dd3txt'>-- 选择状态 --</span>"
 "<span class='dd-car'>&#9662;</span></div>"
 "<div class='dd-panel'><div class='dd-list' id='dd3list'></div></div></div>"
 "<input type='hidden' id='status'></div>"
-"</div><p class='note'>相对高度 = 海拔 − 地面海拔。改动其中任意两个，第三个自动换算；"
-"相对高度会原样广播，不再被巡游改写。</p></div>"
-"<div class='card txonly'><h3>飞手位置</h3><div class='g'>"
-"<div><label>飞手纬度</label><input id='operator_latitude' type='number' step='0.0000001'></div>"
-"<div><label>飞手经度</label><input id='operator_longitude' type='number' step='0.0000001'></div>"
-"</div>"
-"<label>飞手海拔高度 m</label><input id='operator_altitude' type='number'>"
-"<p class='note'>修改飞手坐标后，无人机位置自动按默认相对偏移生成；单独修改无人机位置不影响飞手。</p></div>"
+"<div><label>航向 °</label><input id='heading' type='number' min='0' max='359' step='0.1'></div>"
+"<div><label>航向来源</label>"
+"<div class='dd' id='dd5'>"
+"<div class='dd-btn' id='dd5btn'><span class='dd-txt ph' id='dd5txt'>-- 选择来源 --</span>"
+"<span class='dd-car'>&#9662;</span></div>"
+"<div class='dd-panel'><div class='dd-list' id='dd5list'></div></div></div>"
+"<input type='hidden' id='heading_mode'></div>"
+"<div><label>垂直速度 m/s</label><input id='speed_vertical' type='number' step='0.1'></div>"
+"<div><label>垂直速度来源</label>"
+"<div class='dd' id='dd6'>"
+"<div class='dd-btn' id='dd6btn'><span class='dd-txt ph' id='dd6txt'>-- 选择来源 --</span>"
+"<span class='dd-car'>&#9662;</span></div>"
+"<div class='dd-panel'><div class='dd-list' id='dd6list'></div></div></div>"
+"<input type='hidden' id='vspd_mode'></div>"
+"<div class='full oldstd'><label>高度基准（相对高度参考）</label>"
+"<div class='dd' id='dd7'>"
+"<div class='dd-btn' id='dd7btn'><span class='dd-txt ph' id='dd7txt'>-- 选择高度基准 --</span>"
+"<span class='dd-car'>&#9662;</span></div>"
+"<div class='dd-panel'><div class='dd-list' id='dd7list'></div></div></div>"
+"<input type='hidden' id='height_type'></div>"
+"<div class='full newstd'><label>遥控站位置类型</label>"
+"<div class='dd' id='dd8'>"
+"<div class='dd-btn' id='dd8btn'><span class='dd-txt ph' id='dd8txt'>-- 选择位置类型 --</span>"
+"<span class='dd-car'>&#9662;</span></div>"
+"<div class='dd-panel'><div class='dd-list' id='dd8list'></div></div></div>"
+"<input type='hidden' id='operator_location_type'></div>"
+"</div><details class='tip'><summary>说明：高度换算与航向/垂直速度来源</summary><div>"
+"相对高度 = 海拔 − 地面海拔，改任意两个第三个自动换算。气压高度默认跟随海拔，"
+"有真实气压计时可单独声明。两者都会随「高度波动幅度」在基准值上下摆动（幅度填 0 则完全恒定）。"
+"航向与垂直速度选「自动」时由巡游推算，选「固定」则原样广播、巡游不再改写；"
+"直接在数值框里输入会自动切到「固定」。</div></details></div>"
 "<div class='card txonly'><h3>巡游参数</h3><div class='g'>"
 "<div><label>巡游速度系数</label><input id='patrol_speed' type='number' step='0.01'></div>"
 "<div><label>高度波动幅度 m</label><input id='altitude_wave' type='number' step='0.5'></div>"
 "<div><label>纬度半径 (度)</label><input id='patrol_radius_lat' type='number' step='0.00001'></div>"
 "<div><label>经度半径 (度)</label><input id='patrol_radius_lon' type='number' step='0.00001'></div>"
-"</div><p class='note' id='patrolCalc'></p></div>"
+"</div><details class='tip'><summary>说明：轨迹速度与报文速度</summary>"
+"<div><p id='patrolCalc' style='margin:0'></p></div></details></div>"
 "</div>"
 "<div class='card span2 txonly'><h3>地图选点</h3>"
 "<div class='seg'>"
@@ -454,9 +488,11 @@ static const char PAGE_HTML[] =
 "let map=null,opMarker=null,dMarker=null,live=null,circle=null,ginit=false;"
 "let trailPts=[],trailLine=null;"   // 飞行轨迹：poll 每 2 秒记录广播位置连成线
 "const F=['uas_id','drone_name','operator_id','realname_id','ssid','channel','beacon_interval_ms','ua_type',"
-"'base_latitude','base_longitude','base_altitude_msl','ground_altitude','altitude_agl','speed_horizontal',"
+"'base_latitude','base_longitude','base_altitude_msl','ground_altitude','altitude_agl','baro_altitude',"
+"'speed_horizontal','heading','heading_mode','speed_vertical','vspd_mode',"
 "'operator_latitude','operator_longitude','operator_altitude',"
-"'status','patrol_speed','altitude_wave','patrol_radius_lat','patrol_radius_lon','ua_category_gb'];"
+"'status','height_type','operator_location_type',"
+"'patrol_speed','altitude_wave','patrol_radius_lat','patrol_radius_lon','ua_category_gb'];"
 "function msg(t,ok){const m=document.getElementById('msg');m.textContent=t;"
 "m.style.color=ok?'#0a7d43':'#c0392b';}"
 "function fld(k){return document.getElementById(k);}"
@@ -500,23 +536,49 @@ static const char PAGE_HTML[] =
 "const v=Math.sqrt(vx*vx+vy*vy);"
 "const rep=parseFloat(fld('speed_horizontal').value);"
 "const wv=parseFloat(fld('altitude_wave').value);"
+"const hm=String(fld('heading_mode')?fld('heading_mode').value:'0');"
+"const vm=String(fld('vspd_mode')?fld('vspd_mode').value:'0');"
+"const hd=parseFloat(fld('heading')?fld('heading').value:'');"
+"const vv=parseFloat(fld('speed_vertical')?fld('speed_vertical').value:'');"
 "const el=fld('patrolCalc');if(!el)return;"
 "let s='轨迹真实线速度约 '+v.toFixed(2)+' m/s；报文上报的「水平速度」为 '"
 "+(isNaN(rep)?'--':rep.toFixed(1))+' m/s（由飞行参数里的输入决定，巡游不会改写它）';"
-"if(!isNaN(wv)){"
+"s+='。两者差距过大时，接收端用坐标序列反算的速度会与报文对不上，容易被判为伪造';"
+"if(vm==='1'){s+='。垂直速度固定为 '+(isNaN(vv)?'--':vv.toFixed(1))+' m/s，不随高度波动变化';}"
+"else if(!isNaN(wv)){"
 "if(wv>0)s+='。高度在基准值上下 ±'+wv.toFixed(1)+' m 摆动，约 10.5 分钟一轮，峰值垂直速度 '+"
 "(wv*0.01).toFixed(2)+' m/s；填 0 可固定高度';"
 "else s+='。高度波动幅度为 0：高度固定，垂直速度恒为 0';}"
+"if(hm==='1')s+='。航向固定为 '+(isNaN(hd)?'--':hd.toFixed(1))+'°，不随轨迹切线变化';"
+"else s+='。航向由轨迹切线自动推算';"
 "el.textContent=s;}"
-"['patrol_speed','patrol_radius_lat','patrol_radius_lon','base_latitude','speed_horizontal','altitude_wave']"
-".forEach(function(id){fld(id).addEventListener('input',patrolCalc);});"
-// 高度三联动：相对高度 = 海拔 − 地面海拔。改海拔或地面海拔则重算相对高度，
-// 改相对高度则反推海拔，保证三者永远自洽（固件保存时也会按同一公式重算一次）
+"['patrol_speed','patrol_radius_lat','patrol_radius_lon','base_latitude','speed_horizontal',"
+"'altitude_wave','heading','heading_mode','speed_vertical','vspd_mode']"
+".forEach(function(id){const e=fld(id);if(e)e.addEventListener('input',patrolCalc);});"
+// 手动在数值框里输入航向/垂直速度 = 用户就是要这个值：自动把来源下拉切到「固定」，
+// 否则巡游会在下一个 10 秒步进把它改回自动推算值（与旧版水平速度被覆盖同一类坑）。
+// 只是 .value 赋值不会触发 input 事件，所以加载配置时不会被误切。
+"function bindFixVal(id,modeId){const e=fld(id),m=fld(modeId);"
+"if(!e||!m)return;e.addEventListener('input',function(){"
+"if(m.value!=='1'){m.value='1';ddSync(modeId);}"
+"if(typeof patrolCalc==='function')patrolCalc();});}"
+"bindFixVal('heading','heading_mode');bindFixVal('speed_vertical','vspd_mode');"
+// 高度四联动：相对高度 = 海拔 − 地面海拔。改海拔或地面海拔则重算相对高度，
+// 改相对高度则反推海拔，保证三者永远自洽（固件保存时也会按同一公式重算一次）。
+// 气压高度默认「跟随海拔」：只有它当前仍等于改动前的海拔值时才同步，
+// 用户单独声明过气压高度（例如气压计基准与起飞点不同）就不再动它。
+"let lastMsl=NaN;"
 "function altSync(src){"
 "const m=fld('base_altitude_msl'),g=fld('ground_altitude'),a=fld('altitude_agl');"
+"const b=fld('baro_altitude');"
 "const M=parseFloat(m.value),G=parseFloat(g.value),A=parseFloat(a.value);"
+"const B=b?parseFloat(b.value):NaN;"
 "if(src==='altitude_agl'){if(!isNaN(A)&&!isNaN(G))m.value=(A+G).toFixed(1);}"
 "else{if(!isNaN(M)&&!isNaN(G))a.value=(M-G).toFixed(1);}"
+"if(b&&src!=='load'){const nM=parseFloat(m.value);"
+"if(!isNaN(nM)&&!isNaN(B)&&!isNaN(lastMsl)&&Math.abs(B-lastMsl)<0.05)b.value=nM.toFixed(1);"
+"if(isNaN(B)||isNaN(lastMsl))b.value=nM.toFixed(1);}"
+"lastMsl=parseFloat(m.value);"
 "if(typeof patrolCalc==='function')patrolCalc();}"
 "['base_altitude_msl','ground_altitude','altitude_agl'].forEach(function(id){"
 "fld(id).addEventListener('input',function(){altSync(id);});});"
@@ -605,6 +667,31 @@ static const char PAGE_HTML[] =
 "bt.onclick=function(e){e.stopPropagation();dd.classList.toggle('open');};"
 "ls.onclick=function(e){e.stopPropagation();};"
 "document.addEventListener('click',function(){dd.classList.remove('open');});})();"
+// ---- 通用下拉：新增的来源/基准选择沿用「机型代码 / 运行状态」那套点击展开面板 ----
+// 与原生 select 的区别：样式统一（灰底圆角 + 箭头旋转 + 悬浮高亮），选中后面板自动收起
+"var DDS={};"
+"function ddMake(n,hid,items,ph){var dd=fld('dd'+n),bt=fld('dd'+n+'btn'),"
+"ls=fld('dd'+n+'list'),tx=fld('dd'+n+'txt');"
+"if(!dd||!bt||!ls||!tx)return;"
+"function sync(){var v=String(fld(hid).value),lb='';"
+"items.forEach(function(u){if(u[0]===v)lb=u[1];});"
+"if(lb){tx.textContent=lb;tx.classList.remove('ph');}"
+"else{tx.textContent=ph;tx.classList.add('ph');}}"
+"items.forEach(function(u){var it=document.createElement('div');it.className='dd-item';"
+"it.textContent=u[1];"
+"it.onclick=function(){fld(hid).value=u[0];sync();dd.classList.remove('open');"
+"if(typeof patrolCalc==='function')patrolCalc();};"
+"ls.appendChild(it);});"
+"bt.onclick=function(e){e.stopPropagation();dd.classList.toggle('open');};"
+"ls.onclick=function(e){e.stopPropagation();};"
+"document.addEventListener('click',function(){dd.classList.remove('open');});"
+"DDS[hid]=sync;sync();}"
+"function ddSync(id){if(DDS[id])DDS[id]();}"
+"ddMake('5','heading_mode',[['0','自动（跟随巡游）'],['1','固定（用左侧值）']],'-- 选择来源 --');"
+"ddMake('6','vspd_mode',[['0','自动（跟高度波动）'],['1','固定（用左侧值）']],'-- 选择来源 --');"
+"ddMake('7','height_type',[['0','起飞点高度'],['1','地面高度']],'-- 选择高度基准 --');"
+"ddMake('8','operator_location_type',[['0','起飞点'],['1','实时 GNSS'],['2','固定位置']],"
+"'-- 选择位置类型 --');"
 "async function load(){try{const r=await fetch('/api/config');const j=await r.json();"
 "F.forEach(k=>{if(j[k]!==undefined&&j[k]!==null)fld(k).value=j[k];});"
 "LASTCFG=j;"
@@ -613,13 +700,15 @@ static const char PAGE_HTML[] =
 "setRole((+j.band===1)?!!j.tx_5g:!!j.tx_2g);"
 "document.querySelectorAll('input[name=std]').forEach(function(r){r.checked=(+r.value===j.rid_standard);});"
 "uatSync();statusSync();gbcSync();bandUI();modeUI();stdUI();"
+"ddSync('heading_mode');ddSync('vspd_mode');ddSync('height_type');ddSync('operator_location_type');"
 "if(typeof altSync==='function')altSync('load');"
 "if(typeof patrolCalc==='function')patrolCalc();"
 "if(roleTx()&&typeof initMap==='function')initMap();}"
 "catch(e){msg('加载失败: '+e,false);}}"
 "const NUM=['channel','beacon_interval_ms','ua_type','base_latitude','base_longitude',"
-"'base_altitude_msl','ground_altitude','operator_latitude','operator_longitude','operator_altitude',"
-"'altitude_agl','speed_horizontal','status',"
+"'base_altitude_msl','ground_altitude','baro_altitude','operator_latitude','operator_longitude',"
+"'operator_altitude','altitude_agl','speed_horizontal','speed_vertical','heading','heading_mode',"
+"'vspd_mode','height_type','operator_location_type','status',"
 "'patrol_speed','altitude_wave','patrol_radius_lat','patrol_radius_lon','ua_category_gb'];"
 "async function save(){const d={};F.forEach(function(k){"
 "const v=fld(k).value;"
@@ -631,7 +720,9 @@ static const char PAGE_HTML[] =
 "d.rx_2g=_b===0?_rx:(_L.rx_2g!==undefined?_L.rx_2g:0);"
 "d.tx_5g=_b===1?_tx:(_L.tx_5g!==undefined?_L.tx_5g:1);"
 "d.rx_5g=_b===1?_rx:(_L.rx_5g!==undefined?_L.rx_5g:0);"
-"d.channel_5g=149;"
+// 信道输入框在 5.8G 下承载的就是 5.8G 信道：先把它存进 channel_5g，
+// 再把 d.channel 还原成 2.4G 的旧值，避免切频段互相污染
+"d.channel_5g=_b===1?d.channel:(_L.channel_5g||149);"
 "if(_b===1)d.channel=(_L.channel||6);"
 "try{const r=await fetch('/api/config',{method:'POST',"
 "headers:{'Content-Type':'application/json'},body:JSON.stringify(d)});"
@@ -664,12 +755,17 @@ static const char PAGE_HTML[] =
 "return r?r.value==='tx':true;}"
 "function setRole(tx){document.querySelectorAll('input[name=role]').forEach(function(r){"
 "r.checked=(r.value===(tx?'tx':'rx'));});}"
+// 两个频段都允许自由选信道：2.4G 取 1-13，5.8G 取 149-165 且落在 20 MHz
+// 网格上（149/153/157/161/165）。国标 A.1.3.1.3 的「固定信道取 6 / 149」
+// 只作默认值，不限制用户改（测图传干扰、错开多机都用得上）
 "function bandUI(){const b=getRadio('band');const c=fld('channel');if(!c)return;"
 "const lb=document.getElementById('chlbl');"
-"if(b==='1'){c.value=149;c.disabled=true;"
-"if(lb)lb.textContent='Wi-Fi 信道 (149-165)';}else{c.disabled=false;"
-"if(lb)lb.textContent='Wi-Fi 信道 (1-13)';"
-"if(+c.value>13)c.value=(LASTCFG&&LASTCFG.channel)||6;}}"
+"if(b==='1'){c.disabled=false;c.min=149;c.max=165;c.step=4;"
+"if(!(+c.value>=149&&+c.value<=165))c.value=(LASTCFG&&LASTCFG.channel_5g)||149;"
+"if(lb)lb.textContent='Wi-Fi 信道 (149/153/157/161/165)';}"
+"else{c.disabled=false;c.min=1;c.max=13;c.step=1;"
+"if(!(+c.value>=1&&+c.value<=13))c.value=(LASTCFG&&LASTCFG.channel)||6;"
+"if(lb)lb.textContent='Wi-Fi 信道 (1-13)';}}"
 "function modeUI(){const tx=roleTx();const rx=!tx;"
 "document.getElementById('stdbox').style.display=tx?'block':'none';"
 // txonly 恢复显隐用空串（回退样式表 display）：.col 列容器依赖 flex 布局，
@@ -1147,12 +1243,19 @@ static esp_err_t handler_get_config(httpd_req_t *req) {
     cJSON_AddNumberToObject(j, "base_longitude", cfg->base_longitude);
     cJSON_AddNumberToObject(j, "base_altitude_msl", cfg->base_altitude_msl);
     cJSON_AddNumberToObject(j, "ground_altitude", cfg->ground_altitude);
+    cJSON_AddNumberToObject(j, "baro_altitude", cfg->baro_altitude);
     cJSON_AddNumberToObject(j, "altitude_wave", cfg->altitude_wave);
     cJSON_AddNumberToObject(j, "operator_latitude", cfg->operator_lat);
     cJSON_AddNumberToObject(j, "operator_longitude", cfg->operator_lon);
     cJSON_AddNumberToObject(j, "operator_altitude", cfg->operator_alt);
     cJSON_AddNumberToObject(j, "altitude_agl", cfg->altitude_agl);
     cJSON_AddNumberToObject(j, "speed_horizontal", cfg->speed_horizontal);
+    cJSON_AddNumberToObject(j, "speed_vertical", cfg->speed_vertical);
+    cJSON_AddNumberToObject(j, "heading", cfg->heading);
+    cJSON_AddNumberToObject(j, "heading_mode", cfg->heading_mode);
+    cJSON_AddNumberToObject(j, "vspd_mode", cfg->vspd_mode);
+    cJSON_AddNumberToObject(j, "height_type", cfg->height_type);
+    cJSON_AddNumberToObject(j, "operator_location_type", cfg->operator_location_type);
     cJSON_AddNumberToObject(j, "status", cfg->status);
     cJSON_AddNumberToObject(j, "patrol_speed", cfg->patrol_speed);
     cJSON_AddNumberToObject(j, "patrol_radius_lat", cfg->patrol_radius_lat);
@@ -1250,9 +1353,12 @@ static esp_err_t handler_post_config(httpd_req_t *req) {
     }
     if (err[0] == '\0' && jget_num(j, "channel", &v)) {
         if (v >= 1 && v <= 13) next.channel = (uint8_t)v;
-        // 顺手接受 5.8G 信道号，写入独立字段，避免 149 被判成非法
-        else if (v >= CRID_5G_CH_MIN && v <= CRID_5G_CH_MAX) next.channel_5g = (uint8_t)v;
-        else snprintf(err, sizeof(err), "信道须在 1-13 或 149-165");
+        // 兼容：老页面把 5.8G 信道塞在 channel 里，这里转存到独立字段
+        else if (v >= CRID_5G_CH_MIN && v <= CRID_5G_CH_MAX) {
+            if (((int)v - CRID_5G_CH_MIN) % CRID_5G_CH_STEP != 0)
+                snprintf(err, sizeof(err), "5.8G 信道须为 149/153/157/161/165");
+            else next.channel_5g = (uint8_t)v;
+        } else snprintf(err, sizeof(err), "信道须在 1-13（2.4G）或 149-165（5.8G）");
     }
     if (err[0] == '\0' && jget_num(j, "beacon_interval_ms", &v)) {
         if (v < 200 || v > 60000) snprintf(err, sizeof(err), "广播间隔须在 200-60000ms");
@@ -1296,6 +1402,35 @@ static esp_err_t handler_post_config(httpd_req_t *req) {
         if (v < 0 || v > 254) snprintf(err, sizeof(err), "速度须在 0~254 m/s");
         else next.speed_horizontal = (float)v;
     }
+    if (err[0] == '\0' && jget_num(j, "baro_altitude", &v)) {
+        if (v < -1000 || v > 20000) snprintf(err, sizeof(err), "气压高度须在 -1000~20000m");
+        else next.baro_altitude = (float)v;
+    }
+    if (err[0] == '\0' && jget_num(j, "heading", &v)) {
+        // 359.9 也允许（编码时 0.1° 步进会落到 3599），360 视为 0 不方便，直接拒绝
+        if (v < 0 || v > 359.9) snprintf(err, sizeof(err), "航向须在 0~359.9°");
+        else next.heading = (float)v;
+    }
+    if (err[0] == '\0' && jget_num(j, "heading_mode", &v)) {
+        if (v < 0 || v > 1) snprintf(err, sizeof(err), "航向来源取值 0-1");
+        else next.heading_mode = (uint8_t)v;
+    }
+    if (err[0] == '\0' && jget_num(j, "speed_vertical", &v)) {
+        if (v < -62 || v > 62) snprintf(err, sizeof(err), "垂直速度须在 -62~62 m/s");
+        else next.speed_vertical = (float)v;
+    }
+    if (err[0] == '\0' && jget_num(j, "vspd_mode", &v)) {
+        if (v < 0 || v > 1) snprintf(err, sizeof(err), "垂直速度来源取值 0-1");
+        else next.vspd_mode = (uint8_t)v;
+    }
+    if (err[0] == '\0' && jget_num(j, "height_type", &v)) {
+        if (v < 0 || v > 1) snprintf(err, sizeof(err), "高度基准取值 0-1");
+        else next.height_type = (uint8_t)v;
+    }
+    if (err[0] == '\0' && jget_num(j, "operator_location_type", &v)) {
+        if (v < 0 || v > 2) snprintf(err, sizeof(err), "遥控站位置类型取值 0-2");
+        else next.operator_location_type = (uint8_t)v;
+    }
     if (err[0] == '\0' && jget_num(j, "status", &v)) {
         if (v < 0 || v > 4) snprintf(err, sizeof(err), "状态取值 0-4");
         else next.status = (uint8_t)v;
@@ -1318,8 +1453,9 @@ static esp_err_t handler_post_config(httpd_req_t *req) {
         if (jget_num(j, "tx_5g", &v)) next.tx_5g = v ? 1 : 0;
         if (jget_num(j, "rx_5g", &v)) next.rx_5g = v ? 1 : 0;
         if (jget_num(j, "channel_5g", &v)) {
-            if (v < CRID_5G_CH_MIN || v > CRID_5G_CH_MAX) {
-                snprintf(err, sizeof(err), "5.8G 信道须在 149-165");
+            if (v < CRID_5G_CH_MIN || v > CRID_5G_CH_MAX ||
+                ((int)v - CRID_5G_CH_MIN) % CRID_5G_CH_STEP != 0) {
+                snprintf(err, sizeof(err), "5.8G 信道须为 149/153/157/161/165");
             } else {
                 next.channel_5g = (uint8_t)v;
             }

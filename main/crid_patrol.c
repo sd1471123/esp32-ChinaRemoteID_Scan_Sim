@@ -34,18 +34,27 @@ void crid_patrol_step(cn_crid_config_t *config) {
     // （旧实现固定写成 1.5 + 0.5*sin，会每 10 秒把用户设置覆盖成 1.0~2.0 m/s，
     //   页面上填 15.166 而接收端只看到 1.4 就是这个原因）
     float new_speed_h = config->speed_horizontal;
-    // 垂直速度 = 高度对时间的导数：d/dt[amp*sin(0.1t)] = amp*0.1*cos(0.1t)，t 以 10 秒为单位
-    // => 峰值 = amp × 0.01 m/s。旧实现写死 0.5*cos，与 5 m 幅度实际 0.05 m/s 的速率差 10 倍
-    float new_speed_v = config->altitude_wave * 0.1f * cosf(phase) / 10.0f;
+    // 垂直速度：默认按高度对时间的导数自动推导
+    // d/dt[amp*sin(0.1t)] = amp*0.1*cos(0.1t)，t 以 10 秒为单位 => 峰值 = amp × 0.01 m/s
+    // （旧实现写死 0.5*cos，与 5 m 幅度实际 0.05 m/s 的速率差 10 倍）
+    // 用户把「垂直速度来源」切成固定值时，巡游不再改写，原样广播
+    float new_speed_v = config->speed_vertical;
+    if (config->vspd_mode == 0) {
+        new_speed_v = config->altitude_wave * 0.01f * cosf(phase);
+    }
 
     // 航向（基于运动切线方向，正北为0°，顺时针增加）
     // 位置: lat = base + r_lat*cos(angle), lon = base + r_lon*sin(angle)
     // d(lat)/dt = -r_lat*sin(angle)*omega, d(lon)/dt = r_lon*cos(angle)*omega
     // 航向 = atan2(dlon, dlat) （注意：atan2(x, y) 给出从y轴顺时针的角度）
-    float dlat = -config->patrol_radius_lat * sinf(angle) * config->patrol_speed;
-    float dlon = config->patrol_radius_lon * cosf(angle) * config->patrol_speed;
-    float new_heading = atan2f(dlon, dlat) * 180.0f / M_PI;
-    if (new_heading < 0.0f) new_heading += 360.0f;
+    // 用户把「航向来源」切成固定值时，保留填写的航向，不按轨迹切线改写
+    float new_heading = config->heading;
+    if (config->heading_mode == 0) {
+        float dlat = -config->patrol_radius_lat * sinf(angle) * config->patrol_speed;
+        float dlon = config->patrol_radius_lon * cosf(angle) * config->patrol_speed;
+        new_heading = atan2f(dlon, dlat) * 180.0f / M_PI;
+        if (new_heading < 0.0f) new_heading += 360.0f;
+    }
 
     crid_config_update_position(config, new_lat, new_lon,
                                 new_alt_msl, new_alt_agl,

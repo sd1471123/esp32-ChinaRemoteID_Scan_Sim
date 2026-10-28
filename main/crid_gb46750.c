@@ -18,6 +18,7 @@
  *   011 相对高度         2B 小端 (值+9000)x2，0=未知
  *   012 垂直速度         1B（bit8=符号，低7位 |值|x2，0xFF=未知）
  *   013 大地高度         2B 小端 (值+1000)x2，0=未知
+ *   014 气压高度         2B 小端 (值+1000)x2，0=未知（可选）
  *   015 运行状态         1B（0=未报告 1=地面 2=空中 3=紧急 4/5=识别失效）
  *   016 坐标系类型       1B（0=WGS-84）
  *   017 水平精度         1B（11=<3m 12=<1m）
@@ -186,6 +187,14 @@ uint16_t crid_build_gb46750_ie(cn_crid_config_t *config,
     // 013 大地高度 (2B)
     w_le16(&content[clen], enc_alt(config->altitude_msl));
     clen += 2;
+    // 014 气压高度 (2B，编码同 013)
+    // 气压计以起飞点为基准，自身不随几何高度变化；这里按「用户声明的气压高度 +
+    // 巡游带来的高度偏移」输出，保证高度波动时两者的差值（气压/几何差）保持不变
+    {
+        float alt_off = config->altitude_msl - config->base_altitude_msl;
+        w_le16(&content[clen], enc_alt(config->baro_altitude + alt_off));
+        clen += 2;
+    }
 
     // ===== 标识字节3 =====
     // 015 运行状态 (1B)

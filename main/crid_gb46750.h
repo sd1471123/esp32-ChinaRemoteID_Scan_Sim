@@ -14,8 +14,8 @@
  *   - 数据标识每字节 bit7..bit1 为内容标志位，bit0 为扩展标志位（1=下一字节继续）；
  *   - 006/008 位置字段为「32 位经度 | 32 位纬度」，小端，未知取 0xFFFFFFFF。
  *
- * 本实现发送 13 项必选（001/002/004/005/006/007/008/009/010/013/015/016/017/
- * 018/019/020/021）以及 011 相对高度、012 垂直速度两项可选数据。
+ * 本实现发送 17 项必选（001/002/004/005/006/007/008/009/010/013/015/016/017/
+ * 018/019/020/021）以及 011 相对高度、012 垂直速度、014 气压高度三项可选数据。
  */
 
 #ifndef CRID_GB46750_H
@@ -66,7 +66,7 @@ extern "C" {
 #define GB46750_FLAGS_BYTE1 (GB46750_BIT_UAV_LOCATION | GB46750_BIT_TRACK_ANGLE | \
                              GB46750_BIT_GROUND_SPEED | GB46750_BIT_REL_HEIGHT | \
                              GB46750_BIT_VERT_SPEED | GB46750_BIT_GEO_ALTITUDE | \
-                             GB46750_EXT_NEXT)
+                             GB46750_BIT_BARO_ALTITUDE | GB46750_EXT_NEXT)
 #define GB46750_FLAGS_BYTE2 (GB46750_BIT_OP_STATUS | GB46750_BIT_COORD_SYSTEM | \
                              GB46750_BIT_H_ACCURACY | GB46750_BIT_V_ACCURACY | \
                              GB46750_BIT_SPEED_ACCURACY | GB46750_BIT_TIMESTAMP | \

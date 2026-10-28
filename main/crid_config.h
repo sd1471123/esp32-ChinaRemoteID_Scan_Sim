@@ -96,10 +96,12 @@ extern "C" {
 #define CRID_BAND_2G 0              // 2.4 GHz（GB42590: 2400-2476 MHz）
 #define CRID_BAND_5G 1              // 5.8 GHz（GB42590: 5725-5829 MHz）
 
-// GB 42590 A.1.3.1.3：5.8 GHz 固定信道应使用 149（中心频点 5745 MHz）
+// GB 42590 A.1.3.1.3：采用固定信道时 5.8 GHz 应为 149（中心频点 5745 MHz）。
+// 149 只作为默认值；页面允许在 149-165 内自由选（20 MHz 网格，步进 4）。
 #define CRID_5G_CH_DEFAULT 149
 #define CRID_5G_CH_MIN     149      // 5725-5829 MHz 对应 149-165
 #define CRID_5G_CH_MAX     165
+#define CRID_5G_CH_STEP    4        // 相邻 20 MHz 信道的编号差（149/153/157/161/165）
 
 // 单射频约束：2.4G 与 5.8G 不能同时工作，同一时刻只有一个频段是「活跃」的。
 // 两个频段的开关各自独立保存，但只有活跃频段那一组真正生效。
@@ -169,6 +171,14 @@ typedef struct {
     // 高度模型：相对高度不再写死为「海拔 - 5」，改由地面海拔推导
     float ground_altitude;                   // 起飞点地面海拔 (m)，相对高度 = 海拔 - 该值
     float altitude_wave;                     // 高度波动幅度 (m)，0 = 高度完全固定
+
+    // 气压高度（GB46750 数据项 014 / GB42590 Location 字节13）：
+    // 默认与海拔一致（起飞点做气压基准的常见情形），可单独声明成真实气压高度
+    float baro_altitude;
+    // 运动参数来源：0 = 自动（航向跟随巡游轨迹、垂直速度跟随高度波动），
+    // 1 = 采用用户填写的固定值，巡游不再改写
+    uint8_t heading_mode;                    // 航向来源
+    uint8_t vspd_mode;                       // 垂直速度来源
 } cn_crid_config_t;
 
 /**
@@ -223,12 +233,12 @@ void crid_config_radio_mutex(cn_crid_config_t *config);
 /**
  * @brief 当前活跃频段对应的 Wi-Fi 信道
  *
- * 2.4G 用 config->channel；5.8G 固定映射到 149-165 区间（国标允许的唯一 5.8G 段）。
+ * 2.4G 用 config->channel（1-13）；5.8G 用 config->channel_5g（149-165，默认 149）。
  */
 uint8_t crid_band_channel(const cn_crid_config_t *config);
 
 /**
- * @brief 把 5.8G 信道规整到 149-165（其他值一律回落到 149）
+ * @brief 把 5.8G 信道规整到 149-165 的 20 MHz 网格（越界或非网格值回落 149）
  */
 uint8_t crid_band_normalize_channel(uint8_t band, uint8_t channel);
 

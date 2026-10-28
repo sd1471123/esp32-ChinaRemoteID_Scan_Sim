@@ -135,7 +135,12 @@ void crid_build_location_message(const cn_crid_config_t *config, uint8_t *messag
     write_le32(&message[9], (int32_t)(config->longitude * 1e7));
 
     // 字节13-14: 气压高度 (小端序, 0.5m 精度, 偏移 -1000m)
-    write_le16(&message[13], encode_altitude(config->altitude_msl));
+    // 独立参数「气压高度」+ 巡游带来的高度偏移，使气压/几何高度差保持不变
+    // （旧实现直接把海拔写进这里，等于宣称气压高度永远等于几何高度）
+    {
+        float alt_off = config->altitude_msl - config->base_altitude_msl;
+        write_le16(&message[13], encode_altitude(config->baro_altitude + alt_off));
+    }
 
     // 字节15-16: 几何高度 (小端序, 0.5m 精度, 偏移 -1000m)
     write_le16(&message[15], encode_altitude(config->altitude_msl));
