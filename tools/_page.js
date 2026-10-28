@@ -230,22 +230,30 @@ return `<div class="wide"><b>${v}</b><span>${label}</span></div>`;}
 function posOk(la,lo){la=Number(la);lo=Number(lo);
 return isFinite(la)&&isFinite(lo)&&Math.abs(la)<=90&&Math.abs(lo)<=180
 &&!(Math.abs(la)<1e-6&&Math.abs(lo)<1e-6);}
-function navProvider(){const s=q('navmap');try{
-const v=s&&s.value?s.value:(localStorage.getItem('crid_navmap')||'amap');
-return v==='bd'?'bd':'amap';}catch(e){return (s&&s.value==='bd')?'bd':'amap';}}
-function navUrl(kind,la,lo,nm){
+function navUrl(kind,la,lo,nm,prov){
 la=Number(la);lo=Number(lo);
 const tag=(kind==='op')?'飞手':'无人机';
 const name=((nm?nm+' ':'')+tag).slice(0,40);
-if(navProvider()==='bd'){
+if(prov==='bd'){
 return 'https://api.map.baidu.com/mobile/direction?destination=latlng:'
 +la.toFixed(6)+','+lo.toFixed(6)+'|name:'+encodeURIComponent(name)
 +'&mode=driving&output=html&coord_type=wgs84&src=webapp.crid.nav';}
 return 'https://uri.amap.com/navigation?to='+lo.toFixed(6)+','+la.toFixed(6)+','
 +encodeURIComponent(name)+'&mode=car&policy=1&coordinate=wgs84&src=crid&callnative=1';}
-function navTo(kind,la,lo,nm){
+function navTo(kind,la,lo,nm,prov){
 if(!posOk(la,lo)){msg('该目标暂未上报有效坐标，无法导航',false);return;}
-try{location.href=navUrl(kind,la,lo,nm);}catch(e){msg('无法唤起地图：'+e,false);}}
+try{location.href=navUrl(kind,la,lo,nm,prov);}catch(e){msg('无法唤起地图：'+e,false);}}
+const NP={kind:'drone',la:0,lo:0,nm:''};
+function navClose(){const m=q('navpick');if(m)m.classList.remove('on');}
+function navPick(kind,la,lo,nm){
+if(!posOk(la,lo)){msg('该目标暂未上报有效坐标，无法导航',false);return;}
+NP.kind=kind;NP.la=Number(la);NP.lo=Number(lo);NP.nm=nm||'';
+const t=q('navpick_t');if(t)t.textContent='导航到'+((kind==='op')?'飞手位置':'无人机位置');
+const p=q('navpick_p');
+if(p)p.textContent=(NP.nm?NP.nm+' · ':'')+NP.la.toFixed(6)+', '+NP.lo.toFixed(6);
+const m=q('navpick');if(m)m.classList.add('on');}
+function navGo(prov){navClose();
+navTo(NP.kind,NP.la,NP.lo,NP.nm,prov);}
 function navBtn(kind,la,lo,nm){
 const tag=(kind==='op')?'飞手':'无人机';
 return '<button type="button" class="navbtn" data-nav="'+kind+'"'
@@ -350,7 +358,7 @@ if(dh){dh.onclick=function(ev){ev.stopPropagation();
 el.classList.toggle('open');s_fold[t.mac]=el.classList.contains('open');updFoldBtn();};}
 Array.prototype.forEach.call(el.querySelectorAll('.navbtn'),function(b){
 b.onclick=function(ev){ev.stopPropagation();
-navTo(b.dataset.nav,b.dataset.la,b.dataset.lo,b.dataset.nm);};});
+navPick(b.dataset.nav,b.dataset.la,b.dataset.lo,b.dataset.nm);};});
 el.onclick=function(){try{if(window.RXMAP)RXMAP.focus(t.mac);}catch(e){}};
 return el;}
 
@@ -389,9 +397,13 @@ if(s_fold[c.dataset.mac])c.classList.add('open');});
 updFoldBtn();
 }catch(e){q('rxstate').textContent='轮询失败：'+e;}}
 q('foldall').onclick=foldAll;
-try{const nmSel=q('navmap');if(nmSel){
-const sv=localStorage.getItem('crid_navmap');if(sv==='bd'||sv==='amap')nmSel.value=sv;
-nmSel.onchange=function(){try{localStorage.setItem('crid_navmap',nmSel.value);}catch(e){}};}}catch(e){}
+(function(){
+const m=q('navpick');if(!m)return;
+m.onclick=function(ev){if(ev.target===m)navClose();};
+Array.prototype.forEach.call(m.querySelectorAll('.navopt'),function(b){
+b.onclick=function(ev){ev.stopPropagation();navGo(b.getAttribute('data-prov'));};});
+const c=q('navpick_c');if(c)c.onclick=navClose;
+})();
 let gbase=[0,0],gpick=null;
 function dotIcon(c){return L.divIcon({className:'',
 html:'<div style="width:14px;height:14px;border-radius:50%;background:'+c+

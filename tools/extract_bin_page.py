@@ -45,10 +45,12 @@ else:
         "角色拨动开关在": "name='role'" in page and "name='tx_en'" not in page,
         # 说明信息默认折叠（details 无 open 属性）
         "说明默认折叠": page.count("details class='tip'") >= 4,
-        # 接收卡片导航按钮（跳手机地图 App）与地图选择下拉都在
+        # 接收卡片导航按钮（跳手机地图 App）+ 点击后弹出的高德/百度选择层，
+        # 且页面不再有常驻的地图下拉（id='navmap'）
         "导航按钮在": "class=\\\"navbtn\\\"" in page or 'class="navbtn"' in page,
-        "导航地图选择在": "id='navmap'" in page and "uri.amap.com" in page
-                          and "api.map.baidu.com" in page,
+        "导航选择层在": "id='navpick'" in page and "data-prov='amap'" in page
+                        and "uri.amap.com" in page and "api.map.baidu.com" in page,
+        "无常驻地图下拉": "id='navmap'" not in page and "class='navsel'" not in page,
     }.items():
         print(("OK   " if cond else "FAIL ") + name)
         ok = ok and cond

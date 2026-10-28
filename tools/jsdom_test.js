@@ -104,38 +104,54 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
     if (txCards !== 'none') console.log('ROLE SWITCH FAIL (tx cards still visible)');
   } catch (e) { console.log('rx role THREW:', e.message); }
 
-  // 导航按钮：按目标实际坐标给出「导航到无人机 / 导航到飞手」，跳手机地图 App
+  // 导航按钮：按目标实际坐标给出「导航到无人机 / 导航到飞手」，点击后弹地图选择层
   try {
     const btns = w.document.querySelectorAll('#rxlist .navbtn');
     const kinds = Array.prototype.map.call(btns, b => b.dataset.nav);
     console.log('nav buttons:', btns.length, JSON.stringify(kinds), '(expect 2: drone,op)');
     if (btns.length !== 2 || kinds.join(',') !== 'drone,op') console.log('NAV BTN FAIL');
 
-    // 默认高德：to=经度,纬度,名称，并声明坐标为 wgs84
-    const ua = w.navUrl('drone', 22.54, 114.05, 'TEST');
+    // 页面不再有常驻的地图下拉
+    if (w.document.getElementById('navmap')) console.log('NAV STALE SELECT FAIL');
+
+    // URL 生成：高德 to=经度,纬度,名称 + wgs84；百度 destination=latlng:纬度,经度 + wgs84
+    const ua = w.navUrl('drone', 22.54, 114.05, 'TEST', 'amap');
     console.log('amap url:', ua);
     if (!/^https:\/\/uri\.amap\.com\/navigation\?to=114\.050000,22\.540000,/.test(ua)
         || !/coordinate=wgs84/.test(ua) || !/callnative=1/.test(ua)) console.log('NAV AMAP URL FAIL');
 
-    // 切百度：destination=latlng:纬度,经度，coord_type=wgs84
-    const sel = w.document.getElementById('navmap');
-    sel.value = 'bd';
-    sel.dispatchEvent(new w.Event('change', { bubbles: true }));
-    const ub = w.navUrl('op', 22.53, 114.04, 'TEST');
+    const ub = w.navUrl('op', 22.53, 114.04, 'TEST', 'bd');
     console.log('baidu url:', ub);
     if (!/api\.map\.baidu\.com/.test(ub) || !/latlng:22\.530000,114\.040000/.test(ub)
         || !/coord_type=wgs84/.test(ub)) console.log('NAV BAIDU URL FAIL');
-    sel.value = 'amap';
-    sel.dispatchEvent(new w.Event('change', { bubbles: true }));
 
-    // 点击按钮只调 navTo，不得冒泡触发卡片的地图聚焦
+    // 点按钮：只弹选择层，不直接跳转，也不冒泡触发卡片地图聚焦
+    const sheet = w.document.getElementById('navpick');
     let hit = null;
-    const orig = w.navTo;
-    w.navTo = (k, la, lo, nm) => { hit = [k, la, lo, nm]; };
+    const origTo = w.navTo;
+    w.navTo = (k, la, lo, nm, prov) => { hit = [k, la, lo, prov]; };
     btns[0].onclick({ stopPropagation() {}, target: btns[0] });
-    console.log('nav click ->', JSON.stringify(hit));
-    if (!hit || hit[0] !== 'drone') console.log('NAV CLICK FAIL');
-    w.navTo = orig;
+    console.log('sheet open:', sheet.classList.contains('on'),
+                '| title:', w.document.getElementById('navpick_t').textContent,
+                '| coord:', w.document.getElementById('navpick_p').textContent);
+    if (!sheet.classList.contains('on')) console.log('NAV SHEET FAIL');
+    if (hit) console.log('NAV SHEET FAIL (jumped before choosing)');
+
+    // 选高德 -> 带 prov=amap 调 navTo，并关闭弹层
+    w.document.querySelector('#navpick .navopt[data-prov="amap"]')
+      .onclick({ stopPropagation() {} });
+    console.log('after amap pick ->', JSON.stringify(hit), '| sheet open:',
+                sheet.classList.contains('on'), '(expect false)');
+    if (!hit || hit[0] !== 'drone' || hit[3] !== 'amap' || sheet.classList.contains('on'))
+      console.log('NAV PICK FAIL');
+
+    // 选百度同样透传 prov
+    btns[1].onclick({ stopPropagation() {}, target: btns[1] });
+    w.document.querySelector('#navpick .navopt[data-prov="bd"]')
+      .onclick({ stopPropagation() {} });
+    console.log('after bd pick ->', JSON.stringify(hit));
+    if (!hit || hit[0] !== 'op' || hit[3] !== 'bd') console.log('NAV BD PICK FAIL');
+    w.navTo = origTo;
 
     // 未上报坐标（0,0）必须拒绝导航
     if (w.posOk(0, 0) || !w.posOk(22.54, 114.05)) console.log('NAV POSOK FAIL');

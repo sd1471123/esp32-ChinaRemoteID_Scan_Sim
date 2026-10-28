@@ -12,6 +12,7 @@ mock /api/config、/api/status、/api/rx、/api/time，再用 Edge headless 截�
 import http.server
 import json
 import os
+import re
 import socketserver
 import subprocess
 import sys
@@ -144,6 +145,34 @@ window.addEventListener('load', function () {
 </script>
 """
 
+# 截图高度自适应：先加载一次把 documentElement.scrollHeight 写进 body 属性，
+# 用 --dump-dom 读回来，再按真实高度截图。固定高度会随页面改动被截断（或留白）。
+INJECT_MEASURE = """
+<script>
+(function () {
+  function mark() {
+    var h = Math.ceil(document.documentElement.scrollHeight);
+    if (h > 0) document.body.setAttribute('data-pageh', String(h));
+  }
+  mark();
+  setInterval(mark, 400);
+  window.addEventListener('load', function () { setTimeout(mark, 1500); });
+})();
+</script>
+"""
+
+
+# 人工核对导航选择层样式用：加 ?pick=1 时页面加载后自动弹出弹层
+INJECT_PICK = """
+<script>
+window.addEventListener('load', function () {
+  setTimeout(function () {
+    try { navPick('drone', 22.541820, 113.954800, 'DJI Air 3S'); } catch (e) {}
+  }, 1200);
+});
+</script>
+"""
+
 
 class Handler(http.server.BaseHTTPRequestHandler):
     protocol_version = 'HTTP/1.1'
@@ -165,12 +194,17 @@ class Handler(http.server.BaseHTTPRequestHandler):
             pass
 
     def do_GET(self):
-        path = urlparse(self.path).path
+        parsed = urlparse(self.path)
+        path = parsed.path
         if path in ('/', '/index.html'):
             with open(PAGE, encoding='utf-8') as f:
                 html = f.read()
             if STATE['mode'] == 'rx':
                 html = html.replace('</body>', INJECT_RX + '</body>')
+            if 'measure=1' in (parsed.query or ''):
+                html = html.replace('</body>', INJECT_MEASURE + '</body>')
+            if 'pick=1' in (parsed.query or ''):
+                html = html.replace('</body>', INJECT_PICK + '</body>')
             self._send(200, html, 'text/html; charset=utf-8')
         elif path == '/api/config':
             cfg = CFG_RX if STATE['mode'] == 'rx' else CFG_TX
@@ -200,11 +234,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
         self._send(200, json.dumps({'ok': True}), 'application/json')
 
 
-def shoot(port, mode, out_name, height, width=1160):
-    STATE['mode'] = mode
-    out = os.path.join(DOCS, out_name)
-    profile = os.path.join(ROOT, 'build', '_shot_profile_%s' % mode)
-    cmd = [
+def _edge_base(profile, width, height):
+    return [
         EDGE,
         '--headless=new',
         '--disable-gpu',
@@ -214,11 +245,46 @@ def shoot(port, mode, out_name, height, width=1160):
         '--user-data-dir=' + profile,
         '--proxy-server=' + PROXY,
         '--window-size=%d,%d' % (width, height),
+    ]
+
+
+def measure_height(port, mode, width=1160):
+    """用 --dump-dom 读回整页 scrollHeight，供截图按真实内容高度出图。"""
+    STATE['mode'] = mode
+    profile = os.path.join(ROOT, 'build', '_shot_measure_%s' % mode)
+    cmd = _edge_base(profile, width, 900) + [
+        '--virtual-time-budget=22000',
+        '--dump-dom',
+        'http://127.0.0.1:%d/?measure=1' % port,
+    ]
+    try:
+        r = subprocess.run(cmd, capture_output=True, timeout=180,
+                           text=True, encoding='utf-8', errors='replace')
+        m = re.findall(r'data-pageh="(\d+)"', r.stdout or '')
+        if m:
+            return int(m[-1])
+        print('    !! 高度探测失败（DOM 里没有 data-pageh）')
+    except subprocess.TimeoutExpired:
+        print('    !! 高度探测超时')
+    return None
+
+
+def shoot(port, mode, out_name, height=None, width=1160, query=''):
+    STATE['mode'] = mode
+    out = os.path.join(DOCS, out_name)
+    profile = os.path.join(ROOT, 'build', '_shot_profile_%s' % mode)
+    if height is None:
+        height = measure_height(port, mode, width)
+        if not height:
+            print('    !! 跳过 %s（无法确定高度）' % out_name)
+            return
+        print('    页面高度 = %d px' % height)
+    cmd = _edge_base(profile, width, height) + [
         '--virtual-time-budget=25000',
         '--screenshot=' + out,
-        'http://127.0.0.1:%d/' % port,
+        'http://127.0.0.1:%d/%s' % (port, query),
     ]
-    print('>>> %s -> %s' % (mode, out))
+    print('>>> %s -> %s  (%dx%d)' % (mode, out, width, height))
     subprocess.run(cmd, check=False, timeout=180)
     if os.path.exists(out):
         print('    %d bytes' % os.path.getsize(out))
@@ -235,10 +301,9 @@ def main():
     print('mock server on 127.0.0.1:%d' % port)
     try:
         if 'tx' in want:
-            # 高度按整页内容定：说明折叠后仍保持 1960，改小会截掉地图卡片
-            shoot(port, 'tx', 'webui_tx.png', 1960)
+            shoot(port, 'tx', 'webui_tx.png', width=1160)
         if 'rx' in want:
-            shoot(port, 'rx', 'webui_rx.png', 1560, width=1000)
+            shoot(port, 'rx', 'webui_rx.png', width=1000)
     finally:
         httpd.shutdown()
 
