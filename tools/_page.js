@@ -225,8 +225,6 @@ h+=`<i class="${on?'on '+(lv>0?cls:''):''}" style="height:${4+i*2.5}px"></i>`;}
 return h+'</div>';}
 function cell(v,unit,label,cls){
 return `<div class="${cls||''}"><b>${v}${unit?`<small>${unit}</small>`:''}</b><span>${label}</span></div>`;}
-function wideCell(v,label){
-return `<div class="wide"><b>${v}</b><span>${label}</span></div>`;}
 function posOk(la,lo){la=Number(la);lo=Number(lo);
 return isFinite(la)&&isFinite(lo)&&Math.abs(la)<=90&&Math.abs(lo)<=180
 &&!(Math.abs(la)<1e-6&&Math.abs(lo)<1e-6);}
@@ -315,14 +313,35 @@ const anyClosed=Array.prototype.some.call(cs,function(c){return !c.classList.con
 Array.prototype.forEach.call(cs,function(c){c.classList.toggle('open',anyClosed);
 s_fold[c.dataset.mac]=anyClosed;});updFoldBtn();}
 function dtlHtml(t){
+const p=rxProto(t.protocol);
 const rows=[];const row=function(k,v){if(v!==undefined&&v!==null&&v!=='')rows.push(
 '<tr><td>'+k+'</td><td>'+v+'</td></tr>');};
+const txt=function(k,v){row(k,(v===undefined||v===null||v==='')?undefined:esc(v));};
+txt('MAC 地址',t.mac);
+txt('UAS ID (序列号)',t.uas_id);
+txt('机型 / 描述',t.drone_name);
+row('标准 / 协议',p.t+' · 协议号 '+t.protocol);
+row('机型分类',t.protocol===4
+?('新国标分类 '+t.ua_type+' · '+(GBCN[t.ua_type]||'未定义'))
+:('机型代码 '+t.ua_type+' · '+(UATN[t.ua_type]||'未定义')));
+txt('第二识别码',t.uas_id2);
+txt('操作员 ID',t.operator_id);
+txt('实名登记号',t.realname_id);
+row('运行状态',RXST[t.status]||('状态 '+t.status));
+row('纬度',f6(t.latitude));
+row('经度',f6(t.longitude));
 row('大地高度 (013)',f1(t.altitude_geo)+' m');
 row('相对高度 (011)',t.altitude_agl===undefined?undefined:
 f1(t.altitude_agl)+' m'+(t.agl_type!==undefined?' · '+AGLT[t.agl_type]:''));
 row('气压高度 (014)',t.altitude_baro===undefined?undefined:f1(t.altitude_baro)+' m');
+row('水平速度',f1(t.speed_horizontal)+' m/s');
 row('垂直速度 (012)',f1(t.speed_vertical)+' m/s');
-if(t.has_op_loc)row('飞手海拔 (007)',f1(t.op_altitude_geo)+' m');
+row('航向',f1(t.direction)+' °');
+if(t.has_op_loc){
+row('飞手纬度',f6(t.op_latitude));
+row('飞手经度',f6(t.op_longitude));
+row('飞手海拔 (007)',f1(t.op_altitude_geo)+' m');
+}
 if(t.protocol===4){
 row('遥控站位置类型 (005)',OPT[t.op_loc_type!==undefined?t.op_loc_type:3]);
 row('坐标系 (016)',t.coord_sys===undefined?undefined:
@@ -340,7 +359,11 @@ row('垂直精度',t.v_acc===undefined?undefined:(VACC[t.v_acc]||('枚举 '+t.v_
 row('速度精度',t.spd_acc===undefined?undefined:(SACC[t.spd_acc]||('枚举 '+t.spd_acc)));
 row('高度基准',t.agl_type===undefined?undefined:(AGLT[t.agl_type]||('类型 '+t.agl_type)));
 }
-row('第二识别码',t.uas_id2?esc(t.uas_id2):undefined);
+row('信道',t.channel);
+row('信号强度 (RSSI)',t.rssi===undefined?undefined:t.rssi+' dBm');
+row('累计帧数',t.msg_count===undefined?undefined:t.msg_count+' 帧');
+row('最后收到',t.age_ms===undefined?undefined:ageTxt(t.age_ms));
+row('在线状态',t.active===false?'已离线（10 秒无信号，保留 30 分钟）':'在线');
 row('已观测时长',t.first_age_ms===undefined?undefined:ageTxt(t.first_age_ms));
 if(!rows.length)return '';
 return '<div class="dtl"><div class="dtl-h">报文详情 ('+rows.length+' 项)<i>▶</i></div>'
@@ -352,21 +375,15 @@ el.className='dcard'+(t.active===false?' off':'');
 el.dataset.mac=t.mac;
 const stTxt=RXST[t.status]||('状态'+t.status);
 const air=(t.status===2);
-let name=t.drone_name||'',sub='';
-if(t.protocol===4){
-if(!name)name='新国标 '+(GBCN[t.ua_type]||('分类'+t.ua_type));
-sub='新国标分类 '+t.ua_type+' · '+(GBCN[t.ua_type]||'');
-}else if(t.protocol===3){
-sub='机型代码 '+t.ua_type+' · '+(UATN[t.ua_type]||'');
-}else{
-sub='机型代码 '+t.ua_type+' · '+(UATN[t.ua_type]||'');
-}
+let name=t.drone_name||'';
+if(!name)name=(t.protocol===4)?('新国标 '+(GBCN[t.ua_type]||('分类'+t.ua_type))):'未广播机型名';
+const lnk=esc(t.mac)+' · '+t.rssi+' dBm · '+t.msg_count+' 帧 · '+ageTxt(t.age_ms);
 let h=`<div class="dh"><span class="id" title="${esc(t.uas_id)}">${esc(t.uas_id||'(无 UAS ID)')}</span>`
 +`<span class="tag ${p.c}">${p.t}</span>`
 +`<span class="tag ${air?'air':'pend'}">${esc(stTxt)}</span>`
 +sigBar(t.rssi)+`</div><div class="db">`;
-if(name)h+=`<div class="dname">${esc(name)}</div>`;
-h+=`<div class="dmac">${esc(sub)} · 信道 ${t.channel} · 点击卡片在地图上定位</div>`;
+h+=`<div class="dname"><span class="nm" title="${esc(name)}">${esc(name)}</span>`
++`<span class="lnk" title="链路与统计：MAC · 信号强度 · 累计帧数 · 最后收到">${lnk}</span></div>`;
 h+=`<div class="kv">`
 +cell(f6(t.latitude),'','纬度','hl')
 +cell(f6(t.longitude),'','经度','hl')
@@ -374,21 +391,19 @@ h+=`<div class="kv">`
 +cell(f1(t.speed_horizontal),'m/s','水平速度')
 +cell(f1(t.direction),'°','航向')
 +cell(f1(t.speed_vertical),'m/s','垂直速度')
-+`</div><div class="kv">`
-+wideCell(`${esc(t.mac)} &nbsp;|&nbsp; ${t.rssi} dBm &nbsp;|&nbsp; ${t.msg_count} 帧 &nbsp;|&nbsp; ${ageTxt(t.age_ms)}`,'链路与统计');
++`</div>`;
+const idt=[];
+if(t.has_op_loc)idt.push([f6(t.op_latitude)+', '+f6(t.op_longitude),'飞手位置 (遥控站)']);
+if(t.realname_id)idt.push([esc(t.realname_id),'实名登记号']);
+if(idt.length){h+='<div class="kv2">';
+idt.forEach(function(x){
+h+='<div'+(idt.length===1?' class="wide"':'')+'><b>'+x[0]+'</b><span>'+x[1]+'</span></div>';});
+h+='</div>';}
 let nb='';
 if(posOk(t.latitude,t.longitude))nb+=navBtn('drone',t.latitude,t.longitude,t.drone_name);
 if(t.has_op_loc&&posOk(t.op_latitude,t.op_longitude))
 nb+=navBtn('op',t.op_latitude,t.op_longitude,'');
-h+='</div>';
 if(nb)h+='<div class="navrow">'+nb+'</div>';
-const idt=[];
-if(t.has_op_loc)idt.push([f6(t.op_latitude)+', '+f6(t.op_longitude),'飞手位置 (遥控站)']);
-if(t.operator_id)idt.push([esc(t.operator_id),'操作员 ID']);
-if(t.realname_id)idt.push([esc(t.realname_id),'实名登记号']);
-if(idt.length){h+='<div class="kv">';
-idt.forEach(function(x){h+=wideCell(x[0],x[1]);});
-h+='</div>';}
 h+=dtlHtml(t)+'</div>';
 el.innerHTML=h;
 const dh=el.querySelector('.dtl-h');

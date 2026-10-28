@@ -105,6 +105,19 @@ api.pollRx().then(() => {
     && c1._html.includes('气压高度 (014)') && c1._html.includes('78.2') ? 'OK' : 'FAIL'));
   A('detail acc/ts : ' + (c1._html.includes('水平精度 (017)') && c1._html.includes('<3 m')
     && c1._html.includes('报文时间 (020)') && c1._html.includes('飞手海拔 (007)') ? 'OK' : 'FAIL'));
+  // ---- 卡面精简：链路统计并进机型标题行、飞手+实名同一行、操作员 ID 收进详情 ----
+  const c2 = store.rxlist.children[2];
+  const dtlAt = (h) => h.indexOf('class="dtl"');
+  A('link in title  : ' + (c1._html.includes('class="lnk"')
+    && c1._html.includes('AA:BB:CC:DD:EE:01') && c1._html.includes('57 帧') ? 'OK' : 'FAIL'));
+  A('op+realname row: ' + (c1._html.includes('class="kv2"')
+    && c1._html.includes('飞手位置 (遥控站)') && c1._html.includes('实名登记号') ? 'OK' : 'FAIL'));
+  A('op id in detail: ' + (c2._html.indexOf('操作员 ID') > dtlAt(c2._html)
+    && c2._html.includes('OP1234567') ? 'OK' : 'FAIL'));
+  A('detail complete : ' + (['MAC 地址', 'UAS ID (序列号)', '标准 / 协议', '机型分类', '信道',
+    '信号强度 (RSSI)', '累计帧数', '在线状态', '纬度', '经度', '水平速度', '航向']
+    .every(k => c1._html.includes(k)) ? 'OK' : 'FAIL'));
+  A('compact body    : ' + ((c1._html.match(/class="kv"/g) || []).length === 1 ? 'OK' : 'FAIL'));
   A('no op on card2 : ' + (!store.rxlist.children[2]._html.includes('飞手位置') ? 'OK' : 'FAIL'));
   // ---- 导航按钮：有飞手坐标给 2 个，没有则只给「导航到无人机」 ----
   const navN = (h) => (h.match(/class="navbtn"/g) || []).length;
