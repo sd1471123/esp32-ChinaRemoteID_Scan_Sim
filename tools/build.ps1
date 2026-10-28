@@ -83,8 +83,13 @@ $__descObj = Join-Path $buildDir 'esp-idf\esp_app_format\CMakeFiles\__idf_esp_ap
 if (Test-Path $__descObj) { Remove-Item -Force $__descObj }
 
 $t = [System.Diagnostics.Stopwatch]::StartNew()
+# 同 export.ps1 的问题：idf.py 及其子进程会往 stderr 打 NOTE / 编译告警（例如
+# BT_NIMBLE_MESH_PROVISIONER 的 Kconfig 提示），在 Stop 下会被当成终止错误，
+# 导致「构建其实成功了却提前退出」。这里放开 stderr，成败一律由退出码判断。
+$ErrorActionPreference = 'Continue'
 idf.py @IDFArgs
 $rc = $LASTEXITCODE
+$ErrorActionPreference = $__eap
 $t.Stop()
 
 if ($cc -and ($IDFArgs -notcontains 'fullclean') -and ($IDFArgs -notcontains 'menuconfig')) {

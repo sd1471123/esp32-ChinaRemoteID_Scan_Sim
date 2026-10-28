@@ -227,6 +227,30 @@ function cell(v,unit,label,cls){
 return `<div class="${cls||''}"><b>${v}${unit?`<small>${unit}</small>`:''}</b><span>${label}</span></div>`;}
 function wideCell(v,label){
 return `<div class="wide"><b>${v}</b><span>${label}</span></div>`;}
+function posOk(la,lo){la=Number(la);lo=Number(lo);
+return isFinite(la)&&isFinite(lo)&&Math.abs(la)<=90&&Math.abs(lo)<=180
+&&!(Math.abs(la)<1e-6&&Math.abs(lo)<1e-6);}
+function navProvider(){const s=q('navmap');try{
+const v=s&&s.value?s.value:(localStorage.getItem('crid_navmap')||'amap');
+return v==='bd'?'bd':'amap';}catch(e){return (s&&s.value==='bd')?'bd':'amap';}}
+function navUrl(kind,la,lo,nm){
+la=Number(la);lo=Number(lo);
+const tag=(kind==='op')?'飞手':'无人机';
+const name=((nm?nm+' ':'')+tag).slice(0,40);
+if(navProvider()==='bd'){
+return 'https://api.map.baidu.com/mobile/direction?destination=latlng:'
++la.toFixed(6)+','+lo.toFixed(6)+'|name:'+encodeURIComponent(name)
++'&mode=driving&output=html&coord_type=wgs84&src=webapp.crid.nav';}
+return 'https://uri.amap.com/navigation?to='+lo.toFixed(6)+','+la.toFixed(6)+','
++encodeURIComponent(name)+'&mode=car&policy=1&coordinate=wgs84&src=crid&callnative=1';}
+function navTo(kind,la,lo,nm){
+if(!posOk(la,lo)){msg('该目标暂未上报有效坐标，无法导航',false);return;}
+try{location.href=navUrl(kind,la,lo,nm);}catch(e){msg('无法唤起地图：'+e,false);}}
+function navBtn(kind,la,lo,nm){
+const tag=(kind==='op')?'飞手':'无人机';
+return '<button type="button" class="navbtn" data-nav="'+kind+'"'
++' data-la="'+Number(la).toFixed(6)+'" data-lo="'+Number(lo).toFixed(6)+'"'
++' data-nm="'+esc(nm||'')+'">导航到'+tag+'</button>';}
 const OPT=['实时位置','起飞点位置','自定义位置','未知'];
 const AGLT=['起飞点','地面','自定义','实时 GNSS'];
 const HACC=['未知','<18.5 km','<7.4 km','<3.7 km','<1.85 km','<926 m','<556 m','<185 m',
@@ -306,16 +330,27 @@ h+=`<div class="kv">`
 +cell(f1(t.speed_vertical),'m/s','垂直速度')
 +`</div><div class="kv">`
 +wideCell(`${esc(t.mac)} &nbsp;|&nbsp; ${t.rssi} dBm &nbsp;|&nbsp; ${t.msg_count} 帧 &nbsp;|&nbsp; ${ageTxt(t.age_ms)}`,'链路与统计');
+let nb='';
+if(posOk(t.latitude,t.longitude))nb+=navBtn('drone',t.latitude,t.longitude,t.uas_id);
+if(t.has_op_loc&&posOk(t.op_latitude,t.op_longitude))
+nb+=navBtn('op',t.op_latitude,t.op_longitude,t.uas_id);
+h+='</div>';
+if(nb)h+='<div class="navrow">'+nb+'</div>';
 const idt=[];
 if(t.has_op_loc)idt.push([f6(t.op_latitude)+', '+f6(t.op_longitude),'飞手位置 (遥控站)']);
 if(t.operator_id)idt.push([esc(t.operator_id),'操作员 ID']);
 if(t.realname_id)idt.push([esc(t.realname_id),'实名登记号']);
+if(idt.length){h+='<div class="kv">';
 idt.forEach(function(x){h+=wideCell(x[0],x[1]);});
-h+='</div>'+dtlHtml(t)+'</div>';
+h+='</div>';}
+h+=dtlHtml(t)+'</div>';
 el.innerHTML=h;
 const dh=el.querySelector('.dtl-h');
 if(dh){dh.onclick=function(ev){ev.stopPropagation();
 el.classList.toggle('open');s_fold[t.mac]=el.classList.contains('open');updFoldBtn();};}
+Array.prototype.forEach.call(el.querySelectorAll('.navbtn'),function(b){
+b.onclick=function(ev){ev.stopPropagation();
+navTo(b.dataset.nav,b.dataset.la,b.dataset.lo,b.dataset.nm);};});
 el.onclick=function(){try{if(window.RXMAP)RXMAP.focus(t.mac);}catch(e){}};
 return el;}
 
@@ -354,6 +389,9 @@ if(s_fold[c.dataset.mac])c.classList.add('open');});
 updFoldBtn();
 }catch(e){q('rxstate').textContent='轮询失败：'+e;}}
 q('foldall').onclick=foldAll;
+try{const nmSel=q('navmap');if(nmSel){
+const sv=localStorage.getItem('crid_navmap');if(sv==='bd'||sv==='amap')nmSel.value=sv;
+nmSel.onchange=function(){try{localStorage.setItem('crid_navmap',nmSel.value);}catch(e){}};}}catch(e){}
 let gbase=[0,0],gpick=null;
 function dotIcon(c){return L.divIcon({className:'',
 html:'<div style="width:14px;height:14px;border-radius:50%;background:'+c+

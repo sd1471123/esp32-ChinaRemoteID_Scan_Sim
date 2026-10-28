@@ -166,6 +166,17 @@ static const char PAGE_HTML[] =
 ".kv .wide{grid-column:span 3;background:#f9fafb}"
 ".kv .wide b{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px;word-break:break-all}"
 ".kv .hl b{color:#0a7d43}"
+// ---- 导航按钮：跳转手机地图 App（高德/百度），点卡片自身仍做地图聚焦 ----
+".navrow{display:flex;gap:8px;margin-top:10px;flex-wrap:wrap}"
+".navbtn{flex:1;min-width:118px;padding:9px 10px;font-size:12px;font-weight:700;"
+"font-family:inherit;color:#0b3d2e;background:#eefaf3;border:1px solid #bbe6cf;"
+"border-radius:9px;cursor:pointer;line-height:1.3}"
+".navbtn:active{transform:scale(.98);background:#dff5e9}"
+".navbtn[data-nav=op]{color:#7c2d12;background:#fff5ec;border-color:#f5cfae}"
+".navbtn[data-nav=op]:active{background:#ffe9d5}"
+".navsel{flex:none;width:auto;margin-top:0;background:#fff;border:1px solid #d1d5db;"
+"border-radius:8px;padding:6px 8px;font-size:12px;font-weight:600;color:#0b3d2e;"
+"font-family:inherit}"
 // ---- 报文详情折叠区与一键展开/折叠按钮 ----
 ".fbtn{flex:none;background:#fff;border:1px solid #d1d5db;border-radius:8px;"
 "padding:6px 10px;font-size:12px;color:#0b3d2e;font-weight:600;cursor:pointer}"
@@ -345,6 +356,9 @@ static const char PAGE_HTML[] =
 "<div class='chip'><b id='s_ok'>0</b><span>解析成功</span></div>"
 "<div class='chip warn' id='s_ovfbox'><b id='s_ovf'>0</b><span>队列溢出</span></div>"
 "<button class='fbtn' id='foldall' type='button'>全部展开 ▾</button>"
+// 导航地图选择：卡片内导航按钮按此跳转，选择存 localStorage，默认高德
+"<select class='navsel' id='navmap' title='卡片内导航按钮跳转的地图'>"
+"<option value='amap'>导航用高德</option><option value='bd'>导航用百度</option></select>"
 "</div>"
 "<div class='rxbanner'><span class='dot live'></span>"
 "<span id='rxstate'>正在监听…</span></div>"
@@ -366,7 +380,10 @@ static const char PAGE_HTML[] =
 "<details class='tip'><summary>说明：接收列表与离线规则</summary><div>"
 "监听信道跟随上方「Wi-Fi 信道」设置（保存后生效），只能收到与本机同信道的广播。"
 "卡片按信号强度排序，<b>绿色标题</b>为机型/描述，<b>格内小字</b>为字段名；"
-"10 秒无信号标记为已离线（灰度显示，保留 30 分钟），列表 2 秒刷新。</div></details>"
+"10 秒无信号标记为已离线（灰度显示，保留 30 分钟），列表 2 秒刷新。"
+"<br>卡片内「导航到无人机 / 导航到飞手」按钮会带着该点坐标跳转到手机地图 App"
+"（面板顶部「导航用高德 / 百度」可切换），坐标按 WGS-84 原始值传递，由地图自行纠偏；"
+"手机需能访问互联网，未装地图 App 时会打开对应的网页版。</div></details>"
 "</div>"
 "<div class='actions span2'>"
 "<button onclick='save()'>保存并应用</button>"
@@ -629,6 +646,33 @@ static const char PAGE_HTML[] =
 "return `<div class=\"${cls||''}\"><b>${v}${unit?`<small>${unit}</small>`:''}</b><span>${label}</span></div>`;}"
 "function wideCell(v,label){"
 "return `<div class=\"wide\"><b>${v}</b><span>${label}</span></div>`;}"
+// ---- 导航到目标位置：调起手机地图 App（高德 / 百度），坐标按 WGS-84 原样传递 ----
+// RID 广播的经纬度是 GNSS 原始坐标（WGS-84）。高德 coordinate=wgs84、百度 coord_type=wgs84
+// 都由地图端自行纠偏到 GCJ-02，因此页面不做坐标转换，避免自实现偏移算法引入误差。
+"function posOk(la,lo){la=Number(la);lo=Number(lo);"
+"return isFinite(la)&&isFinite(lo)&&Math.abs(la)<=90&&Math.abs(lo)<=180"
+"&&!(Math.abs(la)<1e-6&&Math.abs(lo)<1e-6);}"   // 0,0 视为未上报
+"function navProvider(){const s=q('navmap');try{"
+"const v=s&&s.value?s.value:(localStorage.getItem('crid_navmap')||'amap');"
+"return v==='bd'?'bd':'amap';}catch(e){return (s&&s.value==='bd')?'bd':'amap';}}"
+"function navUrl(kind,la,lo,nm){"
+"la=Number(la);lo=Number(lo);"
+"const tag=(kind==='op')?'飞手':'无人机';"
+"const name=((nm?nm+' ':'')+tag).slice(0,40);"
+"if(navProvider()==='bd'){"
+"return 'https://api.map.baidu.com/mobile/direction?destination=latlng:'"
+"+la.toFixed(6)+','+lo.toFixed(6)+'|name:'+encodeURIComponent(name)"
+"+'&mode=driving&output=html&coord_type=wgs84&src=webapp.crid.nav';}"
+"return 'https://uri.amap.com/navigation?to='+lo.toFixed(6)+','+la.toFixed(6)+','"
+"+encodeURIComponent(name)+'&mode=car&policy=1&coordinate=wgs84&src=crid&callnative=1';}"
+"function navTo(kind,la,lo,nm){"
+"if(!posOk(la,lo)){msg('该目标暂未上报有效坐标，无法导航',false);return;}"
+"try{location.href=navUrl(kind,la,lo,nm);}catch(e){msg('无法唤起地图：'+e,false);}}"
+"function navBtn(kind,la,lo,nm){"
+"const tag=(kind==='op')?'飞手':'无人机';"
+"return '<button type=\"button\" class=\"navbtn\" data-nav=\"'+kind+'\"'"
+"+' data-la=\"'+Number(la).toFixed(6)+'\" data-lo=\"'+Number(lo).toFixed(6)+'\"'"
+"+' data-nm=\"'+esc(nm||'')+'\">导航到'+tag+'</button>';}"
 // ---- 报文详情折叠：枚举值文本表（国标与 ASTM 兼容枚举） ----
 "const OPT=['实时位置','起飞点位置','自定义位置','未知'];"
 "const AGLT=['起飞点','地面','自定义','实时 GNSS'];"
@@ -712,17 +756,30 @@ static const char PAGE_HTML[] =
 "+cell(f1(t.speed_vertical),'m/s','垂直速度')"
 "+`</div><div class=\"kv\">`"
 "+wideCell(`${esc(t.mac)} &nbsp;|&nbsp; ${t.rssi} dBm &nbsp;|&nbsp; ${t.msg_count} 帧 &nbsp;|&nbsp; ${ageTxt(t.age_ms)}`,'链路与统计');"
+// 导航按钮：分别导航到无人机当前位置 / 飞手（遥控站）位置，无有效坐标则不显示
+"let nb='';"
+"if(posOk(t.latitude,t.longitude))nb+=navBtn('drone',t.latitude,t.longitude,t.uas_id);"
+"if(t.has_op_loc&&posOk(t.op_latitude,t.op_longitude))"
+"nb+=navBtn('op',t.op_latitude,t.op_longitude,t.uas_id);"
+"h+='</div>';"                                   // 关闭「链路与统计」区块
+"if(nb)h+='<div class=\"navrow\">'+nb+'</div>';"
 "const idt=[];"
 "if(t.has_op_loc)idt.push([f6(t.op_latitude)+', '+f6(t.op_longitude),'飞手位置 (遥控站)']);"
 "if(t.operator_id)idt.push([esc(t.operator_id),'操作员 ID']);"
 "if(t.realname_id)idt.push([esc(t.realname_id),'实名登记号']);"
+"if(idt.length){h+='<div class=\"kv\">';"          // 身份/位置区块：无内容则整块不渲染
 "idt.forEach(function(x){h+=wideCell(x[0],x[1]);});"
-"h+='</div>'+dtlHtml(t)+'</div>';"
+"h+='</div>';}"
+"h+=dtlHtml(t)+'</div>';"
 "el.innerHTML=h;"
 // 折叠头点击：切换展开态（阻断冒泡，不触发卡片本身的地图聚焦）
 "const dh=el.querySelector('.dtl-h');"
 "if(dh){dh.onclick=function(ev){ev.stopPropagation();"
 "el.classList.toggle('open');s_fold[t.mac]=el.classList.contains('open');updFoldBtn();};}"
+// 导航按钮：必须阻断冒泡，否则会连带触发下面卡片的地图聚焦
+"Array.prototype.forEach.call(el.querySelectorAll('.navbtn'),function(b){"
+"b.onclick=function(ev){ev.stopPropagation();"
+"navTo(b.dataset.nav,b.dataset.la,b.dataset.lo,b.dataset.nm);};});"
 // 点击卡片聚焦地图：仅调用已加载的独立模块，未加载或报错都不影响卡片本身
 "el.onclick=function(){try{if(window.RXMAP)RXMAP.focus(t.mac);}catch(e){}};"
 "return el;}"
@@ -765,6 +822,10 @@ static const char PAGE_HTML[] =
 "updFoldBtn();"
 "}catch(e){q('rxstate').textContent='轮询失败：'+e;}}"
 "q('foldall').onclick=foldAll;"
+// 导航地图：恢复上次选择（localStorage 不可用时静默降级为高德）
+"try{const nmSel=q('navmap');if(nmSel){"
+"const sv=localStorage.getItem('crid_navmap');if(sv==='bd'||sv==='amap')nmSel.value=sv;"
+"nmSel.onchange=function(){try{localStorage.setItem('crid_navmap',nmSel.value);}catch(e){}};}}catch(e){}"
 // ---- 在线地图（Leaflet）与离线网格双模式 ----
 // map/opMarker/circle 等变量已在脚本开头统一声明
 "let gbase=[0,0],gpick=null;"

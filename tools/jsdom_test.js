@@ -104,6 +104,43 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
     if (txCards !== 'none') console.log('ROLE SWITCH FAIL (tx cards still visible)');
   } catch (e) { console.log('rx role THREW:', e.message); }
 
+  // 导航按钮：按目标实际坐标给出「导航到无人机 / 导航到飞手」，跳手机地图 App
+  try {
+    const btns = w.document.querySelectorAll('#rxlist .navbtn');
+    const kinds = Array.prototype.map.call(btns, b => b.dataset.nav);
+    console.log('nav buttons:', btns.length, JSON.stringify(kinds), '(expect 2: drone,op)');
+    if (btns.length !== 2 || kinds.join(',') !== 'drone,op') console.log('NAV BTN FAIL');
+
+    // 默认高德：to=经度,纬度,名称，并声明坐标为 wgs84
+    const ua = w.navUrl('drone', 22.54, 114.05, 'TEST');
+    console.log('amap url:', ua);
+    if (!/^https:\/\/uri\.amap\.com\/navigation\?to=114\.050000,22\.540000,/.test(ua)
+        || !/coordinate=wgs84/.test(ua) || !/callnative=1/.test(ua)) console.log('NAV AMAP URL FAIL');
+
+    // 切百度：destination=latlng:纬度,经度，coord_type=wgs84
+    const sel = w.document.getElementById('navmap');
+    sel.value = 'bd';
+    sel.dispatchEvent(new w.Event('change', { bubbles: true }));
+    const ub = w.navUrl('op', 22.53, 114.04, 'TEST');
+    console.log('baidu url:', ub);
+    if (!/api\.map\.baidu\.com/.test(ub) || !/latlng:22\.530000,114\.040000/.test(ub)
+        || !/coord_type=wgs84/.test(ub)) console.log('NAV BAIDU URL FAIL');
+    sel.value = 'amap';
+    sel.dispatchEvent(new w.Event('change', { bubbles: true }));
+
+    // 点击按钮只调 navTo，不得冒泡触发卡片的地图聚焦
+    let hit = null;
+    const orig = w.navTo;
+    w.navTo = (k, la, lo, nm) => { hit = [k, la, lo, nm]; };
+    btns[0].onclick({ stopPropagation() {}, target: btns[0] });
+    console.log('nav click ->', JSON.stringify(hit));
+    if (!hit || hit[0] !== 'drone') console.log('NAV CLICK FAIL');
+    w.navTo = orig;
+
+    // 未上报坐标（0,0）必须拒绝导航
+    if (w.posOk(0, 0) || !w.posOk(22.54, 114.05)) console.log('NAV POSOK FAIL');
+  } catch (e) { console.log('nav check THREW:', e.message); }
+
   // 模拟：切到 5.8G 频段（单射频互斥，信道应自动锁到 149 并禁用输入）
   try {
     const b5 = w.document.querySelector('input[name=band][value="1"]');

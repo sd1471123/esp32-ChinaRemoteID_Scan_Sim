@@ -106,6 +106,14 @@ api.pollRx().then(() => {
   A('detail acc/ts : ' + (c1._html.includes('水平精度 (017)') && c1._html.includes('<3 m')
     && c1._html.includes('报文时间 (020)') && c1._html.includes('飞手海拔 (007)') ? 'OK' : 'FAIL'));
   A('no op on card2 : ' + (!store.rxlist.children[2]._html.includes('飞手位置') ? 'OK' : 'FAIL'));
+  // ---- 导航按钮：有飞手坐标给 2 个，没有则只给「导航到无人机」 ----
+  const navN = (h) => (h.match(/class="navbtn"/g) || []).length;
+  A('nav btns card1 : ' + (navN(c1._html) === 2 && c1._html.includes('导航到飞手')
+    && c1._html.includes('data-la="22.530001"') ? 'OK' : 'FAIL')
+    + ' (' + navN(c1._html) + ' 个)');
+  A('nav btns card2 : ' + (navN(store.rxlist.children[2]._html) === 1
+    && !store.rxlist.children[2]._html.includes('导航到飞手') ? 'OK' : 'FAIL')
+    + ' (' + navN(store.rxlist.children[2]._html) + ' 个)');
   A('online no gray : ' + (!store.rxlist.children[1].className.includes('off') ? 'OK' : 'FAIL'));
   // ---- 目标 2 转为离线：应有「已离线」分区 + 灰度卡片 ----
   FAKE.tracks[1].active = false;
