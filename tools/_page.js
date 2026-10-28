@@ -230,19 +230,57 @@ return `<div class="wide"><b>${v}</b><span>${label}</span></div>`;}
 function posOk(la,lo){la=Number(la);lo=Number(lo);
 return isFinite(la)&&isFinite(lo)&&Math.abs(la)<=90&&Math.abs(lo)<=180
 &&!(Math.abs(la)<1e-6&&Math.abs(lo)<1e-6);}
+function isIOS(){return /iPad|iPhone|iPod/.test(navigator.userAgent||'');}
+function navDestName(kind,nm){
+const tag=(kind==='op')?'飞手':'无人机';
+const base=(nm?nm:tag);
+return base.slice(0,40);}
+function navScheme(kind,la,lo,nm,prov,alt){
+la=Number(la);lo=Number(lo);
+const dn=encodeURIComponent(navDestName(kind,nm));
+if(prov==='bd'){
+const dest='latlng:'+la.toFixed(6)+','+lo.toFixed(6)+'|name:'+dn;
+const ios=isIOS();
+const head=alt?(ios?'bdapp://map/direction?':'baidumap://map/direction?')
+:(ios?'baidumap://map/direction?':'bdapp://map/direction?');
+return head+'destination='+dest+
+'&mode=driving&coord_type=wgs84&src=webapp.crid.nav';}
+return (isIOS()?'iosamap://path?':'amapuri://route/plan/?')
++'sourceApplication=crid&dlat='+la.toFixed(6)+'&dlon='+lo.toFixed(6)
++'&dname='+dn+'&dev=1&t=0';}
+function navSchemes(kind,la,lo,nm,prov){
+const a=navScheme(kind,la,lo,nm,prov,0);
+if(prov==='bd')return [a,navScheme(kind,la,lo,nm,prov,1)];
+return [a];}
 function navUrl(kind,la,lo,nm,prov){
 la=Number(la);lo=Number(lo);
-const tag=(kind==='op')?'飞手':'无人机';
-const name=((nm?nm+' ':'')+tag).slice(0,40);
+const name=navDestName(kind,nm);
 if(prov==='bd'){
 return 'https://api.map.baidu.com/mobile/direction?destination=latlng:'
 +la.toFixed(6)+','+lo.toFixed(6)+'|name:'+encodeURIComponent(name)
 +'&mode=driving&output=html&coord_type=wgs84&src=webapp.crid.nav';}
 return 'https://uri.amap.com/navigation?to='+lo.toFixed(6)+','+la.toFixed(6)+','
-+encodeURIComponent(name)+'&mode=car&policy=1&coordinate=wgs84&src=crid&callnative=1';}
++encodeURIComponent(name)+'&mode=car&policy=1&coordinate=wgs84&src=crid';}
 function navTo(kind,la,lo,nm,prov){
 if(!posOk(la,lo)){msg('该目标暂未上报有效坐标，无法导航',false);return;}
-try{location.href=navUrl(kind,la,lo,nm,prov);}catch(e){msg('无法唤起地图：'+e,false);}}
+const list=navSchemes(kind,la,lo,nm,prov);
+const web=navUrl(kind,la,lo,nm,prov);
+let i=0,jumped=false,tm=null;
+const stop=function(){jumped=true;if(tm){clearTimeout(tm);tm=null;}
+document.removeEventListener('visibilitychange',stop);
+window.removeEventListener('blur',stop);
+window.removeEventListener('pagehide',stop);};
+document.addEventListener('visibilitychange',stop);
+window.addEventListener('blur',stop);
+window.addEventListener('pagehide',stop);
+const next=function(){
+if(jumped)return;
+if(i>=list.length){
+if(document.visibilityState!=='hidden'){try{location.href=web;}catch(e){}}
+return;}
+try{location.href=list[i++];}catch(e){}
+tm=setTimeout(next,900);};
+next();}
 const NP={kind:'drone',la:0,lo:0,nm:''};
 function navClose(){const m=q('navpick');if(m)m.classList.remove('on');}
 function navPick(kind,la,lo,nm){
@@ -250,7 +288,7 @@ if(!posOk(la,lo)){msg('该目标暂未上报有效坐标，无法导航',false);
 NP.kind=kind;NP.la=Number(la);NP.lo=Number(lo);NP.nm=nm||'';
 const t=q('navpick_t');if(t)t.textContent='导航到'+((kind==='op')?'飞手位置':'无人机位置');
 const p=q('navpick_p');
-if(p)p.textContent=(NP.nm?NP.nm+' · ':'')+NP.la.toFixed(6)+', '+NP.lo.toFixed(6);
+if(p)p.textContent=navDestName(kind,nm)+' · '+NP.la.toFixed(6)+', '+NP.lo.toFixed(6)+'（WGS-84）';
 const m=q('navpick');if(m)m.classList.add('on');}
 function navGo(prov){navClose();
 navTo(NP.kind,NP.la,NP.lo,NP.nm,prov);}
@@ -339,9 +377,9 @@ h+=`<div class="kv">`
 +`</div><div class="kv">`
 +wideCell(`${esc(t.mac)} &nbsp;|&nbsp; ${t.rssi} dBm &nbsp;|&nbsp; ${t.msg_count} 帧 &nbsp;|&nbsp; ${ageTxt(t.age_ms)}`,'链路与统计');
 let nb='';
-if(posOk(t.latitude,t.longitude))nb+=navBtn('drone',t.latitude,t.longitude,t.uas_id);
+if(posOk(t.latitude,t.longitude))nb+=navBtn('drone',t.latitude,t.longitude,t.drone_name);
 if(t.has_op_loc&&posOk(t.op_latitude,t.op_longitude))
-nb+=navBtn('op',t.op_latitude,t.op_longitude,t.uas_id);
+nb+=navBtn('op',t.op_latitude,t.op_longitude,'');
 h+='</div>';
 if(nb)h+='<div class="navrow">'+nb+'</div>';
 const idt=[];

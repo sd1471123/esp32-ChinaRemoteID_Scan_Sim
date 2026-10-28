@@ -114,14 +114,60 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
     // 页面不再有常驻的地图下拉
     if (w.document.getElementById('navmap')) console.log('NAV STALE SELECT FAIL');
 
-    // URL 生成：高德 to=经度,纬度,名称 + wgs84；百度 destination=latlng:纬度,经度 + wgs84
+    // 原生 scheme（调起 App）：高德 amapuri://route/plan（dev=1 = 传的是 WGS-84）
+    const sa = w.navScheme('drone', 22.54, 114.05, 'DJI Air 3S', 'amap');
+    console.log('amap scheme:', sa);
+    if (!/^amapuri:\/\/route\/plan\/\?/.test(sa)
+        || !/dlat=22\.540000/.test(sa) || !/dlon=114\.050000/.test(sa)
+        || !/dev=1/.test(sa) || !/t=0/.test(sa)) console.log('NAV AMAP SCHEME FAIL');
+
+    // 百度 scheme（Android 浏览器用 bdapp://）：latlng 是 纬度,经度 + coord_type=wgs84
+    const sb = w.navScheme('op', 22.53, 114.04, '', 'bd');
+    console.log('baidu scheme:', sb);
+    if (!/^bdapp:\/\/map\/direction\?/.test(sb)
+        || !/latlng:22\.530000,114\.040000/.test(sb) || !/coord_type=wgs84/.test(sb)) {
+      console.log('NAV BAIDU SCHEME FAIL');
+    }
+
+    // 百度在 Android 上两种协议头都要试（bdapp 失败再 baidumap）
+    const sb2 = w.navSchemes('op', 22.53, 114.04, '', 'bd');
+    console.log('baidu schemes:', sb2.length, sb2.map(s => s.slice(0, 26)).join(' | '));
+    if (sb2.length !== 2 || !/^bdapp:/.test(sb2[0]) || !/^baidumap:/.test(sb2[1])) {
+      console.log('NAV BAIDU CASCADE FAIL');
+    }
+
+    // iOS 走另一套 scheme（iosamap://path / baidumap://map/direction）
+    let savedUA = null;
+    try {
+      savedUA = w.navigator.userAgent;
+      Object.defineProperty(w.navigator, 'userAgent',
+        { value: 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X)', configurable: true });
+      const ia = w.navScheme('drone', 22.54, 114.05, '', 'amap');
+      const ib = w.navScheme('drone', 22.54, 114.05, '', 'bd');
+      console.log('ios amap:', ia.slice(0, 32), '| ios baidu:', ib.slice(0, 34));
+      if (!/^iosamap:\/\/path\?/.test(ia) || !/^baidumap:\/\/map\/direction\?/.test(ib)) {
+        console.log('NAV IOS SCHEME FAIL');
+      }
+    } catch (e) { console.log('ios UA switch skipped:', e.message); }
+    finally {
+      try {
+        Object.defineProperty(w.navigator, 'userAgent', { value: savedUA, configurable: true });
+      } catch (e) {}
+    }
+
+    // 目的地名称：用机型/固定文案，不能是 20 位序列号
+    console.log('dest name drone:', w.navDestName('drone', 'DJI Air 3S'),
+                '| empty:', w.navDestName('drone', ''), '/', w.navDestName('op', ''));
+    if (w.navDestName('drone', '') !== '无人机') console.log('NAV NAME FALLBACK FAIL');
+
+    // 网页兜底 URL：高德 to=经度,纬度,name；百度 destination=latlng:纬度,经度
     const ua = w.navUrl('drone', 22.54, 114.05, 'TEST', 'amap');
-    console.log('amap url:', ua);
+    console.log('amap web url:', ua);
     if (!/^https:\/\/uri\.amap\.com\/navigation\?to=114\.050000,22\.540000,/.test(ua)
-        || !/coordinate=wgs84/.test(ua) || !/callnative=1/.test(ua)) console.log('NAV AMAP URL FAIL');
+        || !/coordinate=wgs84/.test(ua)) console.log('NAV AMAP URL FAIL');
 
     const ub = w.navUrl('op', 22.53, 114.04, 'TEST', 'bd');
-    console.log('baidu url:', ub);
+    console.log('baidu web url:', ub);
     if (!/api\.map\.baidu\.com/.test(ub) || !/latlng:22\.530000,114\.040000/.test(ub)
         || !/coord_type=wgs84/.test(ub)) console.log('NAV BAIDU URL FAIL');
 

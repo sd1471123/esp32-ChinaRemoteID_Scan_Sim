@@ -49,8 +49,10 @@ else:
         # 且页面不再有常驻的地图下拉（id='navmap'）
         "导航按钮在": "class=\\\"navbtn\\\"" in page or 'class="navbtn"' in page,
         "导航选择层在": "id='navpick'" in page and "data-prov='amap'" in page
-                        and "uri.amap.com" in page and "api.map.baidu.com" in page,
+                        and "amapuri://route/plan" in page and "bdapp://map/direction" in page,
         "无常驻地图下拉": "id='navmap'" not in page and "class='navsel'" not in page,
+        "网页兜底在": "uri.amap.com" in page and "api.map.baidu.com" in page,
+        "iOS scheme 在": "iosamap://path" in page and "baidumap://map/direction" in page,
     }.items():
         print(("OK   " if cond else "FAIL ") + name)
         ok = ok and cond
