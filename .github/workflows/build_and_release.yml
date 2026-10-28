@@ -76,7 +76,7 @@ jobs:
         name: Release ${{ github.ref_name }}
         fail_on_unmatched_files: true
         body: |
-          ESP32-ChinaRemoteID_Scan_Sim 统一收发固件 v${{ github.ref_name }}
+          ESP32-ChinaRemoteID_Scan_Sim 统一收发固件 ${{ github.ref_name }}
 
           单固件双模式：发射（GB 42590 / GB 46750 两档）+ 接收监测，
           连接设备热点访问 http://192.168.4.1 在线配置与切换。
