@@ -225,6 +225,20 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
     console.log('save under tx role OK');
   } catch (e) { console.log('tx role THREW:', e.message); }
 
+  // 巡游实况换算：填 15.166 m/s 时，报文应按用户值上报，且提示轨迹真实线速度
+  try {
+    const f = (k) => w.document.getElementById(k);
+    f('base_latitude').value = '22.54';
+    f('patrol_radius_lat').value = '0.00005';
+    f('patrol_radius_lon').value = '0.00004';
+    f('patrol_speed').value = '0.2';
+    f('speed_horizontal').value = '15.166';
+    f('patrol_speed').dispatchEvent(new w.Event('input', { bubbles: true }));
+    const txt = f('patrolCalc').textContent;
+    console.log('patrol calc:', txt);
+    if (!txt.includes('0.14') || !txt.includes('15.2')) console.log('PATROL CALC FAIL');
+  } catch (e) { console.log('patrol calc THREW:', e.message); }
+
   console.log('=== 运行后错误 ===');
   console.log(w._pageErrors.length ? w._pageErrors : '(none)');
   console.log('DONE');

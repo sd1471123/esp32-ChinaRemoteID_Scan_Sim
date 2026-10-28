@@ -34,6 +34,19 @@ const la=parseFloat(fld('operator_latitude').value);
 const lo=parseFloat(fld('operator_longitude').value);
 if(!isNaN(la)&&!isNaN(lo)){autoDrone(la,lo);syncMarkers();}});}
 bindAuto('operator_latitude');bindAuto('operator_longitude');
+function patrolCalc(){
+const R=111320,la=parseFloat(fld('base_latitude').value)||0;
+const rl=parseFloat(fld('patrol_radius_lat').value)||0;
+const ro=parseFloat(fld('patrol_radius_lon').value)||0;
+const om=(parseFloat(fld('patrol_speed').value)||0)/10;
+const vy=rl*R*om,vx=ro*R*Math.cos(la*Math.PI/180)*om;
+const v=Math.sqrt(vx*vx+vy*vy);
+const rep=parseFloat(fld('speed_horizontal').value);
+const el=fld('patrolCalc');if(!el)return;
+el.textContent='轨迹真实线速度约 '+v.toFixed(2)+' m/s；报文上报的「水平速度」为 '
++(isNaN(rep)?'--':rep.toFixed(1))+' m/s（由飞行参数里的输入决定，巡游不会改写它）';}
+['patrol_speed','patrol_radius_lat','patrol_radius_lon','base_latitude','speed_horizontal']
+.forEach(function(id){fld(id).addEventListener('input',patrolCalc);});
 const DJI=[
 ['消费级',[['1581F8LQ','Mavic 4 Pro'],['1581F67Q','Mavic 3 Pro'],['1581F5Y8','Mavic 3 Classic'],
 ['1581F45Q','Mavic 3'],['1581F45T','Mavic 3'],['1581F895','Air 3S'],['1581F6N8','Air 3'],
@@ -124,6 +137,7 @@ if(!j.has5g){const b5=document.getElementById('b5gl');if(b5)b5.style.display='no
 setRole((+j.band===1)?!!j.tx_5g:!!j.tx_2g);
 document.querySelectorAll('input[name=std]').forEach(function(r){r.checked=(+r.value===j.rid_standard);});
 uatSync();statusSync();gbcSync();bandUI();modeUI();stdUI();
+if(typeof patrolCalc==='function')patrolCalc();
 if(roleTx()&&typeof initMap==='function')initMap();}
 catch(e){msg('加载失败: '+e,false);}}
 const NUM=['channel','beacon_interval_ms','ua_type','base_latitude','base_longitude',

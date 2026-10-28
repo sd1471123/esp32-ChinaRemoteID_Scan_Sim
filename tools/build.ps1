@@ -25,9 +25,25 @@ if ($Port) { $IDFArgs = @('-p', $Port) + $IDFArgs }
 Write-Host "idf.py $($IDFArgs -join ' ')" -ForegroundColor DarkGray
 
 # 每次编译前重新生成内置网页的 gzip 版（页面改动后自动同步）
-$py = Get-ChildItem 'C:\Users\pc1\.workbuddy\binaries\python\versions' -Recurse -Filter python.exe -ErrorAction SilentlyContinue |
-      Where-Object { $_.FullName -match '3\.13' } | Select-Object -First 1 -ExpandProperty FullName
-if (-not $py) { $py = 'python' }
+# 注意：binaries\python\versions\3.13.12 现在是 junction（链接到 WorkBuddy vendor\python），
+# PowerShell 5.1 的 Get-ChildItem -Recurse 默认不跟进 junction，会一个 python.exe 都找不到，
+# 于是静默退回 'python' 命令——宿主 PATH 里没有 python 时就报「无法将 python 项识别」。
+# 因此改为「显式候选路径优先（Test-Path 能穿透 junction）」，最后才退回 PATH 里的 python。
+$pyCands = @('C:\Users\pc1\.workbuddy\binaries\python\versions\3.13.12\python.exe')
+$pyCands += Get-ChildItem 'C:\Users\pc1\.workbuddy\binaries\python\versions' -Directory -ErrorAction SilentlyContinue |
+            ForEach-Object { Join-Path $_.FullName 'python.exe' }
+$pyCands += Get-ChildItem 'C:\Users\pc1\.espressif\python_env' -Directory -ErrorAction SilentlyContinue |
+            ForEach-Object { Join-Path $_.FullName 'Scripts\python.exe' }
+$py = $pyCands | Where-Object { Test-Path $_ } | Select-Object -First 1
+if (-not $py) {
+  $cmdPy = Get-Command python -ErrorAction SilentlyContinue
+  if ($cmdPy) { $py = $cmdPy.Source }
+}
+if (-not $py) {
+  Write-Host '*** 找不到 python 解释器（页面 gzip 生成需要它） ***' -ForegroundColor Red
+  Write-Host "    请检查 C:\Users\pc1\.workbuddy\binaries\python 或 C:\Users\pc1\.espressif\python_env" -ForegroundColor Yellow
+  exit 3
+}
 
 # 火绒 HIPS 会在上一个进程刚写完 page_gz.h 时短暂持有句柄，
 # 此时 gen_gzpage.py 覆盖写会抛 PermissionError(13)。重试几次即可，不必让整次构建失败。
@@ -78,9 +94,18 @@ for ($i = 0; $i -lt $IDFArgs.Count - 1; $i++) {
   if ($IDFArgs[$i] -eq '-B') { $buildDir = $IDFArgs[$i + 1]; break }
 }
 # 先 Test-Path 再删：管道为空时 Remove-Item 会报 missing path operand，
-# 而部分环境的安全删除钩子会把它变成终止错误
+# 而部分环境的安全删除钩子会把它变成终止错误。
+# 本机的 safe-delete 钩子走「回收站」，回收站不可用时会 fail-closed 抛错
+# （SAFE_DELETE_FAIL_CLOSED），直接导致整次构建中止——所以这里失败就退回 .NET 直接删，
+# 删不掉也不影响构建（最多 Compile time 是旧值）。
 $__descObj = Join-Path $buildDir 'esp-idf\esp_app_format\CMakeFiles\__idf_esp_app_format.dir\esp_app_desc.c.obj'
-if (Test-Path $__descObj) { Remove-Item -Force $__descObj }
+if (Test-Path $__descObj) {
+  try {
+    Remove-Item -Force $__descObj -ErrorAction Stop
+  } catch {
+    try { [System.IO.File]::Delete($__descObj) } catch { Write-Host "警告：无法删除 $__descObj（Compile time 可能是旧值）" -ForegroundColor Yellow }
+  }
+}
 
 $t = [System.Diagnostics.Stopwatch]::StartNew()
 # 同 export.ps1 的问题：idf.py 及其子进程会往 stderr 打 NOTE / 编译告警（例如

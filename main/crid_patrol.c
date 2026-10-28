@@ -27,10 +27,13 @@ void crid_patrol_step(cn_crid_config_t *config) {
     float new_alt_msl = config->base_altitude_msl + alt_offset;
     float new_alt_agl = new_alt_msl - 5.0f;
 
-    // 速度变化
-    float new_speed_h = 1.5f + 0.5f * sinf(config->time_counter * 0.1f);
+    // 水平速度：巡游不再改写，保留用户在页面「水平速度」里填的值
+    // （旧实现固定写成 1.5 + 0.5*sin，会每 10 秒把用户设置覆盖成 1.0~2.0 m/s，
+    //   页面上填 15.166 而接收端只看到 1.4 就是这个原因）
+    float new_speed_h = config->speed_horizontal;
     // 垂直速度 = 高度对时间的导数：d/dt[5*sin(0.1*t)] = 0.5*cos(0.1*t)
-    // 幅度 ±0.5 m/s，符合低速飞行特征
+    // 幅度 ±0.5 m/s。页面上没有垂直速度输入项，所以这里仍由高度波动推导，
+    // 保证「高度在变」与「垂直速度非零」自洽
     float new_speed_v = 0.5f * cosf(config->time_counter * 0.1f);
 
     // 航向（基于运动切线方向，正北为0°，顺时针增加）
