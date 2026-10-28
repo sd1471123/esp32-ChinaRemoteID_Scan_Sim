@@ -2,9 +2,11 @@
 let map=null,opMarker=null,dMarker=null,live=null,circle=null,ginit=false;
 let trailPts=[],trailLine=null;
 const F=['uas_id','drone_name','operator_id','realname_id','ssid','channel','beacon_interval_ms','ua_type',
-'base_latitude','base_longitude','base_altitude_msl','ground_altitude','altitude_agl','speed_horizontal',
+'base_latitude','base_longitude','base_altitude_msl','ground_altitude','altitude_agl','baro_altitude',
+'speed_horizontal','heading','heading_mode','speed_vertical','vspd_mode',
 'operator_latitude','operator_longitude','operator_altitude',
-'status','patrol_speed','altitude_wave','patrol_radius_lat','patrol_radius_lon','ua_category_gb'];
+'status','height_type','operator_location_type',
+'patrol_speed','altitude_wave','patrol_radius_lat','patrol_radius_lon','ua_category_gb'];
 function msg(t,ok){const m=document.getElementById('msg');m.textContent=t;
 m.style.color=ok?'#0a7d43':'#c0392b';}
 function fld(k){return document.getElementById(k);}
@@ -43,21 +45,42 @@ const vy=rl*R*om,vx=ro*R*Math.cos(la*Math.PI/180)*om;
 const v=Math.sqrt(vx*vx+vy*vy);
 const rep=parseFloat(fld('speed_horizontal').value);
 const wv=parseFloat(fld('altitude_wave').value);
+const hm=String(fld('heading_mode')?fld('heading_mode').value:'0');
+const vm=String(fld('vspd_mode')?fld('vspd_mode').value:'0');
+const hd=parseFloat(fld('heading')?fld('heading').value:'');
+const vv=parseFloat(fld('speed_vertical')?fld('speed_vertical').value:'');
 const el=fld('patrolCalc');if(!el)return;
 let s='轨迹真实线速度约 '+v.toFixed(2)+' m/s；报文上报的「水平速度」为 '
 +(isNaN(rep)?'--':rep.toFixed(1))+' m/s（由飞行参数里的输入决定，巡游不会改写它）';
-if(!isNaN(wv)){
+s+='。两者差距过大时，接收端用坐标序列反算的速度会与报文对不上，容易被判为伪造';
+if(vm==='1'){s+='。垂直速度固定为 '+(isNaN(vv)?'--':vv.toFixed(1))+' m/s，不随高度波动变化';}
+else if(!isNaN(wv)){
 if(wv>0)s+='。高度在基准值上下 ±'+wv.toFixed(1)+' m 摆动，约 10.5 分钟一轮，峰值垂直速度 '+
 (wv*0.01).toFixed(2)+' m/s；填 0 可固定高度';
 else s+='。高度波动幅度为 0：高度固定，垂直速度恒为 0';}
+if(hm==='1')s+='。航向固定为 '+(isNaN(hd)?'--':hd.toFixed(1))+'°，不随轨迹切线变化';
+else s+='。航向由轨迹切线自动推算';
 el.textContent=s;}
-['patrol_speed','patrol_radius_lat','patrol_radius_lon','base_latitude','speed_horizontal','altitude_wave']
-.forEach(function(id){fld(id).addEventListener('input',patrolCalc);});
+['patrol_speed','patrol_radius_lat','patrol_radius_lon','base_latitude','speed_horizontal',
+'altitude_wave','heading','heading_mode','speed_vertical','vspd_mode']
+.forEach(function(id){const e=fld(id);if(e)e.addEventListener('input',patrolCalc);});
+function bindFixVal(id,modeId){const e=fld(id),m=fld(modeId);
+if(!e||!m)return;e.addEventListener('input',function(){
+if(m.value!=='1'){m.value='1';ddSync(modeId);}
+if(typeof patrolCalc==='function')patrolCalc();});}
+bindFixVal('heading','heading_mode');bindFixVal('speed_vertical','vspd_mode');
+let lastMsl=NaN;
 function altSync(src){
 const m=fld('base_altitude_msl'),g=fld('ground_altitude'),a=fld('altitude_agl');
+const b=fld('baro_altitude');
 const M=parseFloat(m.value),G=parseFloat(g.value),A=parseFloat(a.value);
+const B=b?parseFloat(b.value):NaN;
 if(src==='altitude_agl'){if(!isNaN(A)&&!isNaN(G))m.value=(A+G).toFixed(1);}
 else{if(!isNaN(M)&&!isNaN(G))a.value=(M-G).toFixed(1);}
+if(b&&src!=='load'){const nM=parseFloat(m.value);
+if(!isNaN(nM)&&!isNaN(B)&&!isNaN(lastMsl)&&Math.abs(B-lastMsl)<0.05)b.value=nM.toFixed(1);
+if(isNaN(B)||isNaN(lastMsl))b.value=nM.toFixed(1);}
+lastMsl=parseFloat(m.value);
 if(typeof patrolCalc==='function')patrolCalc();}
 ['base_altitude_msl','ground_altitude','altitude_agl'].forEach(function(id){
 fld(id).addEventListener('input',function(){altSync(id);});});
@@ -143,6 +166,29 @@ ls.appendChild(it);});
 bt.onclick=function(e){e.stopPropagation();dd.classList.toggle('open');};
 ls.onclick=function(e){e.stopPropagation();};
 document.addEventListener('click',function(){dd.classList.remove('open');});})();
+var DDS={};
+function ddMake(n,hid,items,ph){var dd=fld('dd'+n),bt=fld('dd'+n+'btn'),
+ls=fld('dd'+n+'list'),tx=fld('dd'+n+'txt');
+if(!dd||!bt||!ls||!tx)return;
+function sync(){var v=String(fld(hid).value),lb='';
+items.forEach(function(u){if(u[0]===v)lb=u[1];});
+if(lb){tx.textContent=lb;tx.classList.remove('ph');}
+else{tx.textContent=ph;tx.classList.add('ph');}}
+items.forEach(function(u){var it=document.createElement('div');it.className='dd-item';
+it.textContent=u[1];
+it.onclick=function(){fld(hid).value=u[0];sync();dd.classList.remove('open');
+if(typeof patrolCalc==='function')patrolCalc();};
+ls.appendChild(it);});
+bt.onclick=function(e){e.stopPropagation();dd.classList.toggle('open');};
+ls.onclick=function(e){e.stopPropagation();};
+document.addEventListener('click',function(){dd.classList.remove('open');});
+DDS[hid]=sync;sync();}
+function ddSync(id){if(DDS[id])DDS[id]();}
+ddMake('5','heading_mode',[['0','自动（跟随巡游）'],['1','固定（用左侧值）']],'-- 选择来源 --');
+ddMake('6','vspd_mode',[['0','自动（跟高度波动）'],['1','固定（用左侧值）']],'-- 选择来源 --');
+ddMake('7','height_type',[['0','起飞点高度'],['1','地面高度']],'-- 选择高度基准 --');
+ddMake('8','operator_location_type',[['0','起飞点'],['1','实时 GNSS'],['2','固定位置']],
+'-- 选择位置类型 --');
 async function load(){try{const r=await fetch('/api/config');const j=await r.json();
 F.forEach(k=>{if(j[k]!==undefined&&j[k]!==null)fld(k).value=j[k];});
 LASTCFG=j;
@@ -151,13 +197,15 @@ if(!j.has5g){const b5=document.getElementById('b5gl');if(b5)b5.style.display='no
 setRole((+j.band===1)?!!j.tx_5g:!!j.tx_2g);
 document.querySelectorAll('input[name=std]').forEach(function(r){r.checked=(+r.value===j.rid_standard);});
 uatSync();statusSync();gbcSync();bandUI();modeUI();stdUI();
+ddSync('heading_mode');ddSync('vspd_mode');ddSync('height_type');ddSync('operator_location_type');
 if(typeof altSync==='function')altSync('load');
 if(typeof patrolCalc==='function')patrolCalc();
 if(roleTx()&&typeof initMap==='function')initMap();}
 catch(e){msg('加载失败: '+e,false);}}
 const NUM=['channel','beacon_interval_ms','ua_type','base_latitude','base_longitude',
-'base_altitude_msl','ground_altitude','operator_latitude','operator_longitude','operator_altitude',
-'altitude_agl','speed_horizontal','status',
+'base_altitude_msl','ground_altitude','baro_altitude','operator_latitude','operator_longitude',
+'operator_altitude','altitude_agl','speed_horizontal','speed_vertical','heading','heading_mode',
+'vspd_mode','height_type','operator_location_type','status',
 'patrol_speed','altitude_wave','patrol_radius_lat','patrol_radius_lon','ua_category_gb'];
 async function save(){const d={};F.forEach(function(k){
 const v=fld(k).value;
@@ -169,7 +217,7 @@ d.tx_2g=_b===0?_tx:(_L.tx_2g!==undefined?_L.tx_2g:1);
 d.rx_2g=_b===0?_rx:(_L.rx_2g!==undefined?_L.rx_2g:0);
 d.tx_5g=_b===1?_tx:(_L.tx_5g!==undefined?_L.tx_5g:1);
 d.rx_5g=_b===1?_rx:(_L.rx_5g!==undefined?_L.rx_5g:0);
-d.channel_5g=149;
+d.channel_5g=_b===1?d.channel:(_L.channel_5g||149);
 if(_b===1)d.channel=(_L.channel||6);
 try{const r=await fetch('/api/config',{method:'POST',
 headers:{'Content-Type':'application/json'},body:JSON.stringify(d)});
@@ -199,10 +247,12 @@ function setRole(tx){document.querySelectorAll('input[name=role]').forEach(funct
 r.checked=(r.value===(tx?'tx':'rx'));});}
 function bandUI(){const b=getRadio('band');const c=fld('channel');if(!c)return;
 const lb=document.getElementById('chlbl');
-if(b==='1'){c.value=149;c.disabled=true;
-if(lb)lb.textContent='Wi-Fi 信道 (149-165)';}else{c.disabled=false;
-if(lb)lb.textContent='Wi-Fi 信道 (1-13)';
-if(+c.value>13)c.value=(LASTCFG&&LASTCFG.channel)||6;}}
+if(b==='1'){c.disabled=false;c.min=149;c.max=165;c.step=4;
+if(!(+c.value>=149&&+c.value<=165))c.value=(LASTCFG&&LASTCFG.channel_5g)||149;
+if(lb)lb.textContent='Wi-Fi 信道 (149/153/157/161/165)';}
+else{c.disabled=false;c.min=1;c.max=13;c.step=1;
+if(!(+c.value>=1&&+c.value<=13))c.value=(LASTCFG&&LASTCFG.channel)||6;
+if(lb)lb.textContent='Wi-Fi 信道 (1-13)';}}
 function modeUI(){const tx=roleTx();const rx=!tx;
 document.getElementById('stdbox').style.display=tx?'block':'none';
 document.querySelectorAll('.txonly').forEach(function(e){e.style.display=tx?'':'none';});

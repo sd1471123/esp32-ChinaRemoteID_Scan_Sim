@@ -60,7 +60,10 @@ else:
 # ---- 2. gzip 数组 ----
 blob = arr("PAGE_HTML_GZ")
 declared = arr_len("PAGE_HTML_GZ_LEN")
-in_bin = data.find(blob[:64]) >= 0 and data.find(blob[-64:]) >= 0
+# gzip 头 10 字节里含 mtime：每次 gen_gzpage 重新生成时时间戳不同，头部字节就会变。
+# 之前直接比对 blob[:64] 会在「先烧 S3、再烧 C5（C5 编译时又重生成 page_gz.h）」
+# 之后永久报「在bin中=否」——是假警报。跳过 10 字节头，比对压缩数据+尾部 CRC。
+in_bin = data.find(blob[10:]) >= 0
 try:
     plain = gzip.decompress(blob).decode("utf-8")
 except Exception as e:

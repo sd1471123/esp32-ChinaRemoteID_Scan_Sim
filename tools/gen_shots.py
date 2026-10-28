@@ -47,7 +47,12 @@ CFG_TX = {
     'ground_altitude': 38.0,
     'altitude_agl': 120.0,
     'altitude_wave': 5.0,
+    # 气压高度略低于几何高度（真实气压计基准差异），截图里能体现这是独立参数
+    'baro_altitude': 150.0,
     'speed_horizontal': 8.5,
+    'speed_vertical': 0.2, 'vspd_mode': 0,
+    'heading': 45, 'heading_mode': 0,
+    'height_type': 0, 'operator_location_type': 1,
     'status': 2,
     'operator_latitude': 22.539800,
     'operator_longitude': 113.952000,
@@ -155,6 +160,29 @@ INJECT_MEASURE = """
   function mark() {
     var h = Math.ceil(document.documentElement.scrollHeight);
     if (h > 0) document.body.setAttribute('data-pageh', String(h));
+    // 两列高度：调布局时用来确认左右两列是否齐平（末尾卡片会被 flex 拉伸）
+    var cs = document.querySelectorAll('.grid > .col');
+    if (cs.length) {
+      var a = [];
+      for (var i = 0; i < cs.length; i++) {
+        a.push(Math.round(cs[i].getBoundingClientRect().height));
+      }
+      document.body.setAttribute('data-colh', a.join(','));
+    }
+    // 每张卡片的高度（含标题），用于按实际尺寸分配两列内容
+    var cl = document.querySelectorAll('.grid > .col > .card');
+    if (cl.length) {
+      var b = [];
+      for (var j = 0; j < cl.length; j++) {
+        var h3 = cl[j].querySelector('h3');
+        b.push((h3 ? h3.textContent.slice(0, 6) : '?') + ':' +
+               Math.round(cl[j].getBoundingClientRect().height));
+      }
+      document.body.setAttribute('data-cardh', b.join('|'));
+    }
+    // 横向溢出量：长机型名/长下拉文字撑破窄屏时这里会 > 0（用户报过底部按钮跑出屏幕）
+    var de = document.documentElement;
+    document.body.setAttribute('data-ovf', String(de.scrollWidth - de.clientWidth));
   }
   mark();
   setInterval(mark, 400);
@@ -263,6 +291,17 @@ def measure_height(port, mode, width=1160):
         r = subprocess.run(cmd, capture_output=True, timeout=180,
                            text=True, encoding='utf-8', errors='replace')
         m = re.findall(r'data-pageh="(\d+)"', r.stdout or '')
+        c = re.findall(r'data-colh="([\d,]+)"', r.stdout or '')
+        if c:
+            hs = [int(x) for x in c[-1].split(',')]
+            if len(hs) >= 2:
+                print('    两列高度 = %s（差 %d px）' % (hs, abs(hs[0] - hs[1])))
+        cd = re.findall(r'data-cardh="([^"]+)"', r.stdout or '')
+        if cd:
+            print('    卡片高度 = %s' % cd[-1])
+        ov = re.findall(r'data-ovf="(-?\d+)"', r.stdout or '')
+        if ov:
+            print('    横向溢出 = %s px%s' % (ov[-1], '  << 有溢出' if int(ov[-1]) > 0 else ''))
         if m:
             return int(m[-1])
         print('    !! 高度探测失败（DOM 里没有 data-pageh）')

@@ -114,7 +114,47 @@ checks = {
     "高度:波动幅度输入存在": "id='altitude_wave'" in html,
     "高度:三联动脚本存在": "function altSync(" in html and "altSync('load')" in html,
     "高度:波动说明可固定": "填 0 可固定高度" in html,
-    "高度:运行状态整行": ".g .full{grid-column:1/-1}" in html and "class='full'" in html,
+    # 新增可自定义参数：气压高度 / 航向 / 垂直速度 / 高度基准 / 遥控站位置类型
+    "新增:气压高度输入": "id='baro_altitude'" in html,
+    "新增:航向与来源": "id='heading'" in html and "id='heading_mode'" in html,
+    "新增:垂直速度与来源": "id='speed_vertical'" in html and "id='vspd_mode'" in html,
+    "新增:高度基准": "id='height_type'" in html and "起飞点高度" in html,
+    "新增:遥控站位置类型": "id='operator_location_type'" in html and "实时 GNSS" in html,
+    "新增:声明项整行": "class='full oldstd'" in html and "class='full newstd'" in html,
+    # 四个来源/基准选择必须与其他下拉一致：自定义点击面板，不是原生 select
+    "交互:四个下拉都改自定义面板": all("<div class='dd' id='dd%d'" % n for n in (5, 6, 7, 8)),
+    "交互:已无原生 select": "<select id='heading_mode'" not in html
+                          and "<select id='vspd_mode'" not in html
+                          and "<select id='height_type'" not in html
+                          and "<select id='operator_location_type'" not in html,
+    "交互:下拉走通用构造器": ("function ddMake(" in html
+                          and "ddMake('5','heading_mode'" in html
+                          and "ddMake('8','operator_location_type'" in html),
+    "交互:加载后回填下拉文案": "ddSync('heading_mode');ddSync('vspd_mode')" in html,
+    "新增:巡游提示含来源": "不随轨迹切线变化" in html and "不随高度波动变化" in html,
+    # 「被其他参数覆盖」这一类坑：手动填数值必须自动切到固定，否则巡游会改回去
+    "覆盖:手动输入自动切固定": ("function bindFixVal(" in html
+                             and "bindFixVal('heading','heading_mode')" in html
+                             and "bindFixVal('speed_vertical','vspd_mode')" in html),
+    "覆盖:高度随波动摆动已说明": "两者都会随「高度波动幅度」" in html,
+    "覆盖:速度与轨迹不符有警告": "容易被判为伪造" in html,
+    # 两个频段都放开自由选信道：5.8G 允许 149-165（20 MHz 网格），默认 149
+    "信道:5.8G 可选149-165": "Wi-Fi 信道 (149/153/157/161/165)" in html,
+    "信道:5.8G 不再禁用输入": "c.disabled=true" not in html,
+    "信道:2.4G 仍可选1-13": "Wi-Fi 信道 (1-13)" in html,
+    "信道:切频段会还原对应默认值": ("c.value=(LASTCFG&&LASTCFG.channel_5g)||149" in html
+                                and "c.value=(LASTCFG&&LASTCFG.channel)||6" in html),
+    "信道:保存时按频段提交5G信道": "d.channel_5g=_b===1?d.channel:(_L.channel_5g||149)" in html,
+    # 说明信息一律折叠（点击展开），不允许平铺把卡片撑高
+    "折叠:飞行参数说明": "<summary>说明：高度换算与航向/垂直速度来源</summary>" in html,
+    "折叠:巡游说明": "<summary>说明：轨迹速度与报文速度</summary>" in html,
+    "折叠:飞手说明": "<summary>说明：飞手坐标与无人机位置</summary>" in html,
+    "折叠:无平铺长说明": ("class='note'>相对高度" not in html
+                       and "class='note' id='patrolCalc'" not in html
+                       and "class='note'>修改飞手坐标" not in html),
+    # 两列自平衡：飞手位置挪到左列（身份信息卡之后、飞行参数列之前）
+    "布局:飞手位置在左列": (html.find("id='operator_id'") < html.find("<h3>飞手位置</h3>")
+                          < html.find("<h3>飞行参数</h3>")),
 }
 for k, v in checks.items():
     print(("OK   " if v else "FAIL ") + k)

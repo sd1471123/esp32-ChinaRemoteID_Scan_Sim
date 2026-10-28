@@ -23,6 +23,8 @@ const dom = new JSDOM(patched, {
         device_mode: 0, rid_standard: 0, uas_id: 'X', drone_name: 'X',
         channel: '6', beacon_interval_ms: 5, ua_type: '2',
         base_altitude_msl: 50, ground_altitude: 0, altitude_agl: 50, altitude_wave: 5,
+        baro_altitude: 50, heading: 45, heading_mode: 0, speed_vertical: 0, vspd_mode: 0,
+        height_type: 0, operator_location_type: 1,
         band: 0, tx_2g: 1, rx_2g: 0, tx_5g: 1, rx_5g: 0,
         channel_5g: 149, has5g: true,
       })};
@@ -206,14 +208,33 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
     if (w.posOk(0, 0) || !w.posOk(22.54, 114.05)) console.log('NAV POSOK FAIL');
   } catch (e) { console.log('nav check THREW:', e.message); }
 
-  // 模拟：切到 5.8G 频段（单射频互斥，信道应自动锁到 149 并禁用输入）
+  // 信道自由可选：切到 5.8G 后输入框不再禁用，范围 149-165，默认沿用配置的 149
   try {
     const b5 = w.document.querySelector('input[name=band][value="1"]');
     b5.checked = true;
     b5.dispatchEvent(new w.Event('change', { bubbles: true }));
     const ch = w.document.getElementById('channel');
-    console.log('band 5.8G OK, channel =', ch.value, 'disabled =', ch.disabled);
-    if (ch.value !== '149' || !ch.disabled) console.log('BAND UI FAIL');
+    console.log('band 5.8G OK, channel =', ch.value, 'disabled =', ch.disabled,
+      'range =', ch.min + '-' + ch.max);
+    if (ch.disabled || ch.value !== '149' || ch.min !== '149' || ch.max !== '165') {
+      console.log('BAND UI FAIL');
+    }
+
+    // 改成 153 应写进 channel_5g，同时 2.4G 的 channel 保持原值不被污染
+    ch.value = '153';
+    await w.save();
+    const p5 = w._lastPost || {};
+    console.log('5.8G save -> channel_5g =', p5.channel_5g, ', channel =', p5.channel,
+      '(expect 153 / 6)');
+    if (p5.channel_5g !== 153 || String(p5.channel) !== '6') console.log('CHANNEL 5G SAVE FAIL');
+
+    // 切回 2.4G：输入框恢复 2.4G 旧值，范围回到 1-13
+    const b2 = w.document.querySelector('input[name=band][value="0"]');
+    b2.checked = true;
+    b2.dispatchEvent(new w.Event('change', { bubbles: true }));
+    console.log('band 2.4G back, channel =', ch.value, ', label =',
+      JSON.stringify(w.document.getElementById('chlbl').textContent));
+    if (ch.value !== '6' || ch.min !== '1' || ch.max !== '13') console.log('BAND 2G RESTORE FAIL');
   } catch (e) { console.log('band switch THREW:', e.message); }
 
   // 拨回发射：飞行参数/地图卡片应恢复显示
@@ -229,6 +250,11 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
     const p = w._lastPost || {};
     console.log('save payload alt fields:', p.ground_altitude, p.altitude_wave,
       (p.ground_altitude !== undefined && p.altitude_wave !== undefined) ? 'OK' : 'FAIL');
+    const keys = ['baro_altitude','heading','heading_mode','speed_vertical','vspd_mode',
+                  'height_type','operator_location_type'];
+    const miss = keys.filter(k => p[k] === undefined || p[k] === null);
+    console.log('save payload new params:', keys.map(k => k + '=' + p[k]).join(' '),
+      miss.length ? 'FAIL missing ' + miss : 'OK');
   } catch (e) { console.log('tx role THREW:', e.message); }
 
   // 巡游实况换算：填 15.166 m/s 时，报文应按用户值上报，且提示轨迹真实线速度
@@ -268,6 +294,85 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
     const t5 = f('patrolCalc').textContent;
     console.log('wave 5:', t5.includes('±5.0 m') && t5.includes('0.05') ? 'OK' : 'FAIL');
   } catch (e) { console.log('alt model THREW:', e.message); }
+
+  // 气压高度默认跟随海拔；单独声明过就不再被海拔改动覆盖
+  try {
+    const f = (k) => w.document.getElementById(k);
+    f('base_altitude_msl').value = '120';
+    f('ground_altitude').value = '20';
+    f('base_altitude_msl').dispatchEvent(new w.Event('input', { bubbles: true }));
+    console.log('baro follow MSL:', f('baro_altitude').value, '(expect 120)',
+      parseFloat(f('baro_altitude').value) === 120 ? 'OK' : 'FAIL');
+    f('baro_altitude').value = '200';                       // 用户单独声明气压高度
+    f('base_altitude_msl').value = '300';
+    f('base_altitude_msl').dispatchEvent(new w.Event('input', { bubbles: true }));
+    console.log('baro kept after MSL change:', f('baro_altitude').value, '(expect 200)',
+      parseFloat(f('baro_altitude').value) === 200 ? 'OK' : 'FAIL');
+  } catch (e) { console.log('baro follow THREW:', e.message); }
+
+  // 航向 / 垂直速度「固定」模式：巡游提示改写，且不再按轨迹/波动推算
+  try {
+    const f = (k) => w.document.getElementById(k);
+    f('speed_vertical').value = '2.5';
+    f('vspd_mode').value = '1';
+    f('vspd_mode').dispatchEvent(new w.Event('input', { bubbles: true }));
+    const tv = f('patrolCalc').textContent;
+    console.log('vspd fixed:', tv.includes('垂直速度固定为 2.5 m/s') &&
+      tv.includes('不随高度波动变化') ? 'OK' : 'FAIL');
+    f('heading').value = '270';
+    f('heading_mode').value = '1';
+    f('heading_mode').dispatchEvent(new w.Event('input', { bubbles: true }));
+    const th = f('patrolCalc').textContent;
+    console.log('heading fixed:', th.includes('航向固定为 270.0°') &&
+      th.includes('不随轨迹切线变化') ? 'OK' : 'FAIL');
+  } catch (e) { console.log('mode hint THREW:', e.message); }
+
+  // 只改数值、不动来源下拉：应自动切到「固定」，否则巡游下个 10 秒步进就把它覆盖回去
+  // （旧版水平速度被巡游覆写是同一个坑，这里守住不再复发）
+  try {
+    const f = (k) => w.document.getElementById(k);
+    f('heading_mode').value = '0';
+    f('vspd_mode').value = '0';
+    f('heading').value = '123';
+    f('heading').dispatchEvent(new w.Event('input', { bubbles: true }));
+    f('speed_vertical').value = '-1.5';
+    f('speed_vertical').dispatchEvent(new w.Event('input', { bubbles: true }));
+    console.log('auto-switch heading_mode:', f('heading_mode').value,
+      f('heading_mode').value === '1' ? 'OK' : 'FAIL');
+    console.log('auto-switch vspd_mode:', f('vspd_mode').value,
+      f('vspd_mode').value === '1' ? 'OK' : 'FAIL');
+    const t = f('patrolCalc').textContent;
+    console.log('auto-switch hint:', t.includes('航向固定为 123.0°') &&
+      t.includes('垂直速度固定为 -1.5 m/s') ? 'OK' : 'FAIL');
+    // 反过来：下拉仍可手动切回自动，此时数值不再被当作固定值
+    f('heading_mode').value = '0';
+    f('heading_mode').dispatchEvent(new w.Event('input', { bubbles: true }));
+    console.log('auto-switch reversible:',
+      f('patrolCalc').textContent.includes('航向由轨迹切线自动推算') ? 'OK' : 'FAIL');
+  } catch (e) { console.log('auto-switch THREW:', e.message); }
+
+  // 四个来源/基准下拉走自定义面板：点按钮展开、点条目选中并收起、隐藏字段同步
+  try {
+    const d = w.document;
+    const btn = d.getElementById('dd5btn');
+    const dd = d.getElementById('dd5');
+    btn.dispatchEvent(new w.MouseEvent('click', { bubbles: true }));
+    console.log('dd open:', dd.classList.contains('open') ? 'OK' : 'FAIL');
+    const items = d.querySelectorAll('#dd5list .dd-item');
+    console.log('dd item count:', items.length, '(expect 2)');
+    items[1].dispatchEvent(new w.MouseEvent('click', { bubbles: true }));
+    console.log('dd pick -> heading_mode =', d.getElementById('heading_mode').value,
+      '| text =', JSON.stringify(d.getElementById('dd5txt').textContent),
+      '| closed =', !dd.classList.contains('open'));
+    if (d.getElementById('heading_mode').value !== '1'
+      || d.getElementById('dd5txt').textContent !== '固定（用左侧值）'
+      || dd.classList.contains('open')) console.log('DD PICK FAIL');
+
+    // 其余三个也应完成构造（条目数分别 2 / 2 / 3）
+    const cnt = (n) => d.querySelectorAll('#dd' + n + 'list .dd-item').length;
+    console.log('dd 6/7/8 items:', cnt(6), cnt(7), cnt(8), '(expect 2 2 3)');
+    if (cnt(6) !== 2 || cnt(7) !== 2 || cnt(8) !== 3) console.log('DD BUILD FAIL');
+  } catch (e) { console.log('dd ui THREW:', e.message); }
 
   console.log('=== 运行后错误 ===');
   console.log(w._pageErrors.length ? w._pageErrors : '(none)');
