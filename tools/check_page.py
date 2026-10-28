@@ -103,6 +103,12 @@ checks = {
     "地图脚本语法通过": r_rx.returncode == 0,
     "地图脚本零越界": not banned,
     "地图脚本只暴露 RXMAP": rx_src.count("window.RXMAP") == 1,
+    # 手机窄屏横向溢出回归：网格子项必须可收缩，长文本必须可断行，
+    # 底部按钮必须是等分网格（曾用 flex:1 + flex:0 0 34% 混排，窄屏顶出右边界）
+    "窄屏:网格子项可收缩": ".grid>*{min-width:0}" in html,
+    "窄屏:长文本可断行": "overflow-wrap:anywhere" in html,
+    "窄屏:按钮等分网格": ".actions{display:grid;grid-template-columns:1fr 1fr;gap:10px;min-width:0}" in html,
+    "窄屏:无百分比 flex 混排": "flex:0 0 34%" not in html,
 }
 for k, v in checks.items():
     print(("OK   " if v else "FAIL ") + k)
