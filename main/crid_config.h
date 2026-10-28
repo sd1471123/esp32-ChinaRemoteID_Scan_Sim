@@ -165,6 +165,10 @@ typedef struct {
     float patrol_radius_lon;                 // 经度方向巡游半径
     float patrol_speed;                      // 巡游速度参数
     float time_counter;                      // 时间计数器
+
+    // 高度模型：相对高度不再写死为「海拔 - 5」，改由地面海拔推导
+    float ground_altitude;                   // 起飞点地面海拔 (m)，相对高度 = 海拔 - 该值
+    float altitude_wave;                     // 高度波动幅度 (m)，0 = 高度完全固定
 } cn_crid_config_t;
 
 /**

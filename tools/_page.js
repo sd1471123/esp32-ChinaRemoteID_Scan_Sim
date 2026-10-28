@@ -2,9 +2,9 @@
 let map=null,opMarker=null,dMarker=null,live=null,circle=null,ginit=false;
 let trailPts=[],trailLine=null;
 const F=['uas_id','drone_name','operator_id','realname_id','ssid','channel','beacon_interval_ms','ua_type',
-'base_latitude','base_longitude','base_altitude_msl','altitude_agl','speed_horizontal',
+'base_latitude','base_longitude','base_altitude_msl','ground_altitude','altitude_agl','speed_horizontal',
 'operator_latitude','operator_longitude','operator_altitude',
-'status','patrol_speed','patrol_radius_lat','patrol_radius_lon','ua_category_gb'];
+'status','patrol_speed','altitude_wave','patrol_radius_lat','patrol_radius_lon','ua_category_gb'];
 function msg(t,ok){const m=document.getElementById('msg');m.textContent=t;
 m.style.color=ok?'#0a7d43':'#c0392b';}
 function fld(k){return document.getElementById(k);}
@@ -42,11 +42,25 @@ const om=(parseFloat(fld('patrol_speed').value)||0)/10;
 const vy=rl*R*om,vx=ro*R*Math.cos(la*Math.PI/180)*om;
 const v=Math.sqrt(vx*vx+vy*vy);
 const rep=parseFloat(fld('speed_horizontal').value);
+const wv=parseFloat(fld('altitude_wave').value);
 const el=fld('patrolCalc');if(!el)return;
-el.textContent='轨迹真实线速度约 '+v.toFixed(2)+' m/s；报文上报的「水平速度」为 '
-+(isNaN(rep)?'--':rep.toFixed(1))+' m/s（由飞行参数里的输入决定，巡游不会改写它）';}
-['patrol_speed','patrol_radius_lat','patrol_radius_lon','base_latitude','speed_horizontal']
+let s='轨迹真实线速度约 '+v.toFixed(2)+' m/s；报文上报的「水平速度」为 '
++(isNaN(rep)?'--':rep.toFixed(1))+' m/s（由飞行参数里的输入决定，巡游不会改写它）';
+if(!isNaN(wv)){
+if(wv>0)s+='。高度在基准值上下 ±'+wv.toFixed(1)+' m 摆动，约 10.5 分钟一轮，峰值垂直速度 '+
+(wv*0.01).toFixed(2)+' m/s；填 0 可固定高度';
+else s+='。高度波动幅度为 0：高度固定，垂直速度恒为 0';}
+el.textContent=s;}
+['patrol_speed','patrol_radius_lat','patrol_radius_lon','base_latitude','speed_horizontal','altitude_wave']
 .forEach(function(id){fld(id).addEventListener('input',patrolCalc);});
+function altSync(src){
+const m=fld('base_altitude_msl'),g=fld('ground_altitude'),a=fld('altitude_agl');
+const M=parseFloat(m.value),G=parseFloat(g.value),A=parseFloat(a.value);
+if(src==='altitude_agl'){if(!isNaN(A)&&!isNaN(G))m.value=(A+G).toFixed(1);}
+else{if(!isNaN(M)&&!isNaN(G))a.value=(M-G).toFixed(1);}
+if(typeof patrolCalc==='function')patrolCalc();}
+['base_altitude_msl','ground_altitude','altitude_agl'].forEach(function(id){
+fld(id).addEventListener('input',function(){altSync(id);});});
 const DJI=[
 ['消费级',[['1581F8LQ','Mavic 4 Pro'],['1581F67Q','Mavic 3 Pro'],['1581F5Y8','Mavic 3 Classic'],
 ['1581F45Q','Mavic 3'],['1581F45T','Mavic 3'],['1581F895','Air 3S'],['1581F6N8','Air 3'],
@@ -137,13 +151,14 @@ if(!j.has5g){const b5=document.getElementById('b5gl');if(b5)b5.style.display='no
 setRole((+j.band===1)?!!j.tx_5g:!!j.tx_2g);
 document.querySelectorAll('input[name=std]').forEach(function(r){r.checked=(+r.value===j.rid_standard);});
 uatSync();statusSync();gbcSync();bandUI();modeUI();stdUI();
+if(typeof altSync==='function')altSync('load');
 if(typeof patrolCalc==='function')patrolCalc();
 if(roleTx()&&typeof initMap==='function')initMap();}
 catch(e){msg('加载失败: '+e,false);}}
 const NUM=['channel','beacon_interval_ms','ua_type','base_latitude','base_longitude',
-'base_altitude_msl','operator_latitude','operator_longitude','operator_altitude',
+'base_altitude_msl','ground_altitude','operator_latitude','operator_longitude','operator_altitude',
 'altitude_agl','speed_horizontal','status',
-'patrol_speed','patrol_radius_lat','patrol_radius_lon','ua_category_gb'];
+'patrol_speed','altitude_wave','patrol_radius_lat','patrol_radius_lon','ua_category_gb'];
 async function save(){const d={};F.forEach(function(k){
 const v=fld(k).value;
 d[k]=NUM.indexOf(k)>=0?(v===''?null:parseFloat(v)):v;});

@@ -109,6 +109,12 @@ checks = {
     "窄屏:长文本可断行": "overflow-wrap:anywhere" in html,
     "窄屏:按钮等分网格": ".actions{display:grid;grid-template-columns:1fr 1fr;gap:10px;min-width:0}" in html,
     "窄屏:无百分比 flex 混排": "flex:0 0 34%" not in html,
+    # 高度模型：相对高度由「海拔 − 地面海拔」推导，波动幅度可填 0 固定高度
+    "高度:地面海拔输入存在": "id='ground_altitude'" in html,
+    "高度:波动幅度输入存在": "id='altitude_wave'" in html,
+    "高度:三联动脚本存在": "function altSync(" in html and "altSync('load')" in html,
+    "高度:波动说明可固定": "填 0 可固定高度" in html,
+    "高度:运行状态整行": ".g .full{grid-column:1/-1}" in html and "class='full'" in html,
 }
 for k, v in checks.items():
     print(("OK   " if v else "FAIL ") + k)

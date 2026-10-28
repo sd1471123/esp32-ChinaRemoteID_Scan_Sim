@@ -15,11 +15,14 @@ const dom = new JSDOM(patched, {
   pretendToBeVisual: true,
   beforeParse(window) {
     window.fetch = async (u, opt) => {
-      if (u === '/api/config' && opt && opt.method === 'POST')
+      if (u === '/api/config' && opt && opt.method === 'POST') {
+        try { window._lastPost = JSON.parse(opt.body); } catch (e) { window._lastPost = null; }
         return { json: async () => ({ ok: true }) };   // 走进 save() 成功分支
+      }
       if (u === '/api/config') return { json: async () => ({
         device_mode: 0, rid_standard: 0, uas_id: 'X', drone_name: 'X',
         channel: '6', beacon_interval_ms: 5, ua_type: '2',
+        base_altitude_msl: 50, ground_altitude: 0, altitude_agl: 50, altitude_wave: 5,
         band: 0, tx_2g: 1, rx_2g: 0, tx_5g: 1, rx_5g: 0,
         channel_5g: 149, has5g: true,
       })};
@@ -223,6 +226,9 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
     if (disp !== '') console.log('ROLE SWITCH BACK FAIL');
     await w.save();
     console.log('save under tx role OK');
+    const p = w._lastPost || {};
+    console.log('save payload alt fields:', p.ground_altitude, p.altitude_wave,
+      (p.ground_altitude !== undefined && p.altitude_wave !== undefined) ? 'OK' : 'FAIL');
   } catch (e) { console.log('tx role THREW:', e.message); }
 
   // 巡游实况换算：填 15.166 m/s 时，报文应按用户值上报，且提示轨迹真实线速度
@@ -238,6 +244,30 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
     console.log('patrol calc:', txt);
     if (!txt.includes('0.14') || !txt.includes('15.2')) console.log('PATROL CALC FAIL');
   } catch (e) { console.log('patrol calc THREW:', e.message); }
+
+  // 高度模型：相对高度 = 海拔 − 地面海拔（三联动）+ 波动幅度提示
+  try {
+    const f = (k) => w.document.getElementById(k);
+    f('base_altitude_msl').value = '120';
+    f('ground_altitude').value = '20';
+    f('base_altitude_msl').dispatchEvent(new w.Event('input', { bubbles: true }));
+    const agl = parseFloat(f('altitude_agl').value);
+    console.log('alt link M=120 G=20 -> AGL =', f('altitude_agl').value, '(expect 100)',
+      agl === 100 ? 'OK' : 'FAIL');
+    f('altitude_agl').value = '50';
+    f('altitude_agl').dispatchEvent(new w.Event('input', { bubbles: true }));
+    const msl = parseFloat(f('base_altitude_msl').value);
+    console.log('alt link AGL=50 -> MSL =', f('base_altitude_msl').value, '(expect 70)',
+      msl === 70 ? 'OK' : 'FAIL');
+    f('altitude_wave').value = '0';
+    f('altitude_wave').dispatchEvent(new w.Event('input', { bubbles: true }));
+    const t0 = f('patrolCalc').textContent;
+    console.log('wave 0:', t0.includes('高度固定') && t0.includes('垂直速度恒为 0') ? 'OK' : 'FAIL');
+    f('altitude_wave').value = '5';
+    f('altitude_wave').dispatchEvent(new w.Event('input', { bubbles: true }));
+    const t5 = f('patrolCalc').textContent;
+    console.log('wave 5:', t5.includes('±5.0 m') && t5.includes('0.05') ? 'OK' : 'FAIL');
+  } catch (e) { console.log('alt model THREW:', e.message); }
 
   console.log('=== 运行后错误 ===');
   console.log(w._pageErrors.length ? w._pageErrors : '(none)');

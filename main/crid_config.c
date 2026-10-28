@@ -44,7 +44,10 @@ void crid_config_init_default(cn_crid_config_t *config) {
     config->latitude = 23.14287f;
     config->longitude = 113.26026f;
     config->altitude_msl = 50.0f;
-    config->altitude_agl = 50.0f;
+    // 高度模型：出厂默认认为起飞点地面海拔为 0，故相对高度与海拔同值
+    config->ground_altitude = 0.0f;
+    config->altitude_agl = config->altitude_msl - config->ground_altitude;
+    config->altitude_wave = 5.0f;   // 巡游时高度上下摆动幅度（0 = 高度完全固定）
     config->speed_horizontal = 1.0f;
     config->speed_vertical = 0.0f;
     config->heading = 45.0f;
@@ -214,40 +217,50 @@ typedef struct __attribute__((packed)) {
 } crid_persist_v3_t;
 
 #define CRID_PERSIST_MAGIC   0x44495243UL
-#define CRID_PERSIST_VERSION 3
+#define CRID_PERSIST_VERSION 4
+
+// v4: 在 v3 之后追加「地面海拔」与「高度波动幅度」。
+// 直接内嵌 v3 结构体，避免再抄一遍三十个字段；两者都是 packed，长度确定。
+typedef struct __attribute__((packed)) {
+    crid_persist_v3_t v3;
+    float ground_altitude;                       // 起飞点地面海拔 (m)
+    float altitude_wave;                         // 高度波动幅度 (m)
+} crid_persist_v4_t;
 
 esp_err_t crid_config_save_nvs(const cn_crid_config_t *config) {
     if (config == NULL) return ESP_ERR_INVALID_ARG;
 
-    crid_persist_v3_t p;
+    crid_persist_v4_t p;
     memset(&p, 0, sizeof(p));
-    p.magic = CRID_PERSIST_MAGIC;
-    p.version = CRID_PERSIST_VERSION;
-    strncpy(p.uas_id, config->uas_id, CRID_UAS_ID_MAX_LEN);
-    strncpy(p.drone_name, config->drone_name, CRID_UAS_ID_MAX_LEN);
-    strncpy(p.operator_id, config->operator_id, CRID_UAS_ID_MAX_LEN);
-    strncpy(p.ssid, config->ssid, CRID_SSID_MAX_LEN);
-    p.base_latitude = config->base_latitude;
-    p.base_longitude = config->base_longitude;
-    p.base_altitude_msl = config->base_altitude_msl;
-    p.altitude_agl = config->altitude_agl;
-    p.speed_horizontal = config->speed_horizontal;
-    p.patrol_radius_lat = config->patrol_radius_lat;
-    p.patrol_radius_lon = config->patrol_radius_lon;
-    p.patrol_speed = config->patrol_speed;
-    p.beacon_interval_ms = config->beacon_interval_ms;
-    p.status = config->status;
-    p.channel = config->channel;
-    p.device_mode = config->device_mode;
-    p.rid_standard = config->rid_standard;
-    strncpy(p.realname_id, config->realname_id, sizeof(p.realname_id) - 1);
-    p.ua_category_gb = config->ua_category_gb;
-    p.band = (config->band == CRID_BAND_5G) ? CRID_BAND_5G : CRID_BAND_2G;
-    p.tx_2g = config->tx_2g ? 1 : 0;
-    p.rx_2g = config->rx_2g ? 1 : 0;
-    p.tx_5g = config->tx_5g ? 1 : 0;
-    p.rx_5g = config->rx_5g ? 1 : 0;
-    p.channel_5g = config->channel_5g;
+    p.v3.magic = CRID_PERSIST_MAGIC;
+    p.v3.version = CRID_PERSIST_VERSION;
+    strncpy(p.v3.uas_id, config->uas_id, CRID_UAS_ID_MAX_LEN);
+    strncpy(p.v3.drone_name, config->drone_name, CRID_UAS_ID_MAX_LEN);
+    strncpy(p.v3.operator_id, config->operator_id, CRID_UAS_ID_MAX_LEN);
+    strncpy(p.v3.ssid, config->ssid, CRID_SSID_MAX_LEN);
+    p.v3.base_latitude = config->base_latitude;
+    p.v3.base_longitude = config->base_longitude;
+    p.v3.base_altitude_msl = config->base_altitude_msl;
+    p.v3.altitude_agl = config->altitude_agl;
+    p.v3.speed_horizontal = config->speed_horizontal;
+    p.v3.patrol_radius_lat = config->patrol_radius_lat;
+    p.v3.patrol_radius_lon = config->patrol_radius_lon;
+    p.v3.patrol_speed = config->patrol_speed;
+    p.v3.beacon_interval_ms = config->beacon_interval_ms;
+    p.v3.status = config->status;
+    p.v3.channel = config->channel;
+    p.v3.device_mode = config->device_mode;
+    p.v3.rid_standard = config->rid_standard;
+    strncpy(p.v3.realname_id, config->realname_id, sizeof(p.v3.realname_id) - 1);
+    p.v3.ua_category_gb = config->ua_category_gb;
+    p.v3.band = (config->band == CRID_BAND_5G) ? CRID_BAND_5G : CRID_BAND_2G;
+    p.v3.tx_2g = config->tx_2g ? 1 : 0;
+    p.v3.rx_2g = config->rx_2g ? 1 : 0;
+    p.v3.tx_5g = config->tx_5g ? 1 : 0;
+    p.v3.rx_5g = config->rx_5g ? 1 : 0;
+    p.v3.channel_5g = config->channel_5g;
+    p.ground_altitude = config->ground_altitude;
+    p.altitude_wave = config->altitude_wave;
 
     nvs_handle_t handle;
     esp_err_t ret = nvs_open(CRID_NVS_NAMESPACE, NVS_READWRITE, &handle);
@@ -319,7 +332,8 @@ bool crid_config_load_nvs(cn_crid_config_t *config) {
         return false;
     }
 
-    if (p1->version == 3 && len >= sizeof(crid_persist_v3_t)) {
+    // v4 的前半段与 v3 完全一致（内嵌 v3），所以 >=3 走同一套字段恢复
+    if (p1->version >= 3 && len >= sizeof(crid_persist_v3_t)) {
         const crid_persist_v3_t *p3 = (const crid_persist_v3_t *)raw;
         persist_apply_common(config, (const crid_persist_v1_t *)raw);
         config->device_mode = (p3->device_mode == DEVICE_MODE_RX) ? DEVICE_MODE_RX : DEVICE_MODE_TX;
@@ -357,6 +371,26 @@ bool crid_config_load_nvs(cn_crid_config_t *config) {
         ESP_LOGW(TAG, "Unknown config version %u, using defaults", p1->version);
         return false;
     }
+
+    if (p1->version >= 4 && len >= sizeof(crid_persist_v4_t)) {
+        const crid_persist_v4_t *p4 = (const crid_persist_v4_t *)raw;
+        config->ground_altitude = p4->ground_altitude;
+        config->altitude_wave = p4->altitude_wave;
+    } else {
+        // 旧存档（v1~v3）没有地面海拔与波动幅度：
+        // 用「海拔 - 相对高度」反推地面海拔，保证升级后相对高度显示值不变；
+        // 波动幅度取 5 m，与原实现里 ±5 m 的摆动保持一致
+        config->ground_altitude = config->base_altitude_msl - config->altitude_agl;
+        config->altitude_wave = 5.0f;
+    }
+    if (config->ground_altitude < -1000.0f) config->ground_altitude = -1000.0f;
+    if (config->ground_altitude > 10000.0f) config->ground_altitude = 10000.0f;
+    if (!(config->altitude_wave >= 0.0f)) config->altitude_wave = 0.0f;
+    if (config->altitude_wave > 100.0f) config->altitude_wave = 100.0f;
+
+    // 相对高度一律由「海拔 - 地面海拔」推导，避免存档里的旧值自相矛盾
+    config->altitude_msl = config->base_altitude_msl;
+    config->altitude_agl = config->altitude_msl - config->ground_altitude;
 
     ESP_LOGI(TAG, "Config loaded from NVS: %s @ %s (band=%s tx=%u rx=%u std=%u)",
              config->uas_id, config->ssid,

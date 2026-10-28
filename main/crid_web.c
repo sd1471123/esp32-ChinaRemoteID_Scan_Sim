@@ -65,6 +65,7 @@ static const char PAGE_HTML[] =
 "input:focus,select:focus{outline:none;border-color:#0f8a4d;background:#fff;"
 "box-shadow:0 0 0 3px rgba(15,138,77,.15)}"
 ".g{display:grid;grid-template-columns:1fr 1fr;gap:0 12px}"
+".g .full{grid-column:1/-1}"
 ".note{font-size:12px;color:#9ca3af;margin:8px 0 0}"
 // 说明信息默认折叠：details/summary 原生控件，零 JS，点开才展开完整文字
 "details.tip{margin:10px 0 0;background:#f7f9fa;border:1px solid #e6eaee;border-radius:8px}"
@@ -345,15 +346,17 @@ static const char PAGE_HTML[] =
 "<div><label>基准纬度</label><input id='base_latitude' type='number' step='0.0000001'></div>"
 "<div><label>基准经度</label><input id='base_longitude' type='number' step='0.0000001'></div>"
 "<div><label>海拔高度 m (MSL)</label><input id='base_altitude_msl' type='number'></div>"
+"<div><label>地面海拔 m</label><input id='ground_altitude' type='number' step='0.1'></div>"
 "<div><label>相对高度 m (AGL)</label><input id='altitude_agl' type='number'></div>"
 "<div><label>水平速度 m/s</label><input id='speed_horizontal' type='number' step='0.1'></div>"
-"<div><label>运行状态</label>"
+"<div class='full'><label>运行状态</label>"
 "<div class='dd' id='dd3'>"
 "<div class='dd-btn' id='dd3btn'><span class='dd-txt ph' id='dd3txt'>-- 选择状态 --</span>"
 "<span class='dd-car'>&#9662;</span></div>"
 "<div class='dd-panel'><div class='dd-list' id='dd3list'></div></div></div>"
 "<input type='hidden' id='status'></div>"
-"</div></div>"
+"</div><p class='note'>相对高度 = 海拔 − 地面海拔。改动其中任意两个，第三个自动换算；"
+"相对高度会原样广播，不再被巡游改写。</p></div>"
 "<div class='card txonly'><h3>飞手位置</h3><div class='g'>"
 "<div><label>飞手纬度</label><input id='operator_latitude' type='number' step='0.0000001'></div>"
 "<div><label>飞手经度</label><input id='operator_longitude' type='number' step='0.0000001'></div>"
@@ -362,6 +365,7 @@ static const char PAGE_HTML[] =
 "<p class='note'>修改飞手坐标后，无人机位置自动按默认相对偏移生成；单独修改无人机位置不影响飞手。</p></div>"
 "<div class='card txonly'><h3>巡游参数</h3><div class='g'>"
 "<div><label>巡游速度系数</label><input id='patrol_speed' type='number' step='0.01'></div>"
+"<div><label>高度波动幅度 m</label><input id='altitude_wave' type='number' step='0.5'></div>"
 "<div><label>纬度半径 (度)</label><input id='patrol_radius_lat' type='number' step='0.00001'></div>"
 "<div><label>经度半径 (度)</label><input id='patrol_radius_lon' type='number' step='0.00001'></div>"
 "</div><p class='note' id='patrolCalc'></p></div>"
@@ -450,9 +454,9 @@ static const char PAGE_HTML[] =
 "let map=null,opMarker=null,dMarker=null,live=null,circle=null,ginit=false;"
 "let trailPts=[],trailLine=null;"   // 飞行轨迹：poll 每 2 秒记录广播位置连成线
 "const F=['uas_id','drone_name','operator_id','realname_id','ssid','channel','beacon_interval_ms','ua_type',"
-"'base_latitude','base_longitude','base_altitude_msl','altitude_agl','speed_horizontal',"
+"'base_latitude','base_longitude','base_altitude_msl','ground_altitude','altitude_agl','speed_horizontal',"
 "'operator_latitude','operator_longitude','operator_altitude',"
-"'status','patrol_speed','patrol_radius_lat','patrol_radius_lon','ua_category_gb'];"
+"'status','patrol_speed','altitude_wave','patrol_radius_lat','patrol_radius_lon','ua_category_gb'];"
 "function msg(t,ok){const m=document.getElementById('msg');m.textContent=t;"
 "m.style.color=ok?'#0a7d43':'#c0392b';}"
 "function fld(k){return document.getElementById(k);}"
@@ -495,11 +499,27 @@ static const char PAGE_HTML[] =
 "const vy=rl*R*om,vx=ro*R*Math.cos(la*Math.PI/180)*om;"
 "const v=Math.sqrt(vx*vx+vy*vy);"
 "const rep=parseFloat(fld('speed_horizontal').value);"
+"const wv=parseFloat(fld('altitude_wave').value);"
 "const el=fld('patrolCalc');if(!el)return;"
-"el.textContent='轨迹真实线速度约 '+v.toFixed(2)+' m/s；报文上报的「水平速度」为 '"
-"+(isNaN(rep)?'--':rep.toFixed(1))+' m/s（由飞行参数里的输入决定，巡游不会改写它）';}"
-"['patrol_speed','patrol_radius_lat','patrol_radius_lon','base_latitude','speed_horizontal']"
+"let s='轨迹真实线速度约 '+v.toFixed(2)+' m/s；报文上报的「水平速度」为 '"
+"+(isNaN(rep)?'--':rep.toFixed(1))+' m/s（由飞行参数里的输入决定，巡游不会改写它）';"
+"if(!isNaN(wv)){"
+"if(wv>0)s+='。高度在基准值上下 ±'+wv.toFixed(1)+' m 摆动，约 10.5 分钟一轮，峰值垂直速度 '+"
+"(wv*0.01).toFixed(2)+' m/s；填 0 可固定高度';"
+"else s+='。高度波动幅度为 0：高度固定，垂直速度恒为 0';}"
+"el.textContent=s;}"
+"['patrol_speed','patrol_radius_lat','patrol_radius_lon','base_latitude','speed_horizontal','altitude_wave']"
 ".forEach(function(id){fld(id).addEventListener('input',patrolCalc);});"
+// 高度三联动：相对高度 = 海拔 − 地面海拔。改海拔或地面海拔则重算相对高度，
+// 改相对高度则反推海拔，保证三者永远自洽（固件保存时也会按同一公式重算一次）
+"function altSync(src){"
+"const m=fld('base_altitude_msl'),g=fld('ground_altitude'),a=fld('altitude_agl');"
+"const M=parseFloat(m.value),G=parseFloat(g.value),A=parseFloat(a.value);"
+"if(src==='altitude_agl'){if(!isNaN(A)&&!isNaN(G))m.value=(A+G).toFixed(1);}"
+"else{if(!isNaN(M)&&!isNaN(G))a.value=(M-G).toFixed(1);}"
+"if(typeof patrolCalc==='function')patrolCalc();}"
+"['base_altitude_msl','ground_altitude','altitude_agl'].forEach(function(id){"
+"fld(id).addEventListener('input',function(){altSync(id);});});"
 // ---- 大疆机型预设：前 8 位序列号前缀 -> 型号（数据源自社区逆向汇总，1581F 为大疆统一前缀）----
 "const DJI=["
 "['消费级',[['1581F8LQ','Mavic 4 Pro'],['1581F67Q','Mavic 3 Pro'],['1581F5Y8','Mavic 3 Classic'],"
@@ -593,13 +613,14 @@ static const char PAGE_HTML[] =
 "setRole((+j.band===1)?!!j.tx_5g:!!j.tx_2g);"
 "document.querySelectorAll('input[name=std]').forEach(function(r){r.checked=(+r.value===j.rid_standard);});"
 "uatSync();statusSync();gbcSync();bandUI();modeUI();stdUI();"
+"if(typeof altSync==='function')altSync('load');"
 "if(typeof patrolCalc==='function')patrolCalc();"
 "if(roleTx()&&typeof initMap==='function')initMap();}"
 "catch(e){msg('加载失败: '+e,false);}}"
 "const NUM=['channel','beacon_interval_ms','ua_type','base_latitude','base_longitude',"
-"'base_altitude_msl','operator_latitude','operator_longitude','operator_altitude',"
+"'base_altitude_msl','ground_altitude','operator_latitude','operator_longitude','operator_altitude',"
 "'altitude_agl','speed_horizontal','status',"
-"'patrol_speed','patrol_radius_lat','patrol_radius_lon','ua_category_gb'];"
+"'patrol_speed','altitude_wave','patrol_radius_lat','patrol_radius_lon','ua_category_gb'];"
 "async function save(){const d={};F.forEach(function(k){"
 "const v=fld(k).value;"
 "d[k]=NUM.indexOf(k)>=0?(v===''?null:parseFloat(v)):v;});"
@@ -1125,6 +1146,8 @@ static esp_err_t handler_get_config(httpd_req_t *req) {
     cJSON_AddNumberToObject(j, "base_latitude", cfg->base_latitude);
     cJSON_AddNumberToObject(j, "base_longitude", cfg->base_longitude);
     cJSON_AddNumberToObject(j, "base_altitude_msl", cfg->base_altitude_msl);
+    cJSON_AddNumberToObject(j, "ground_altitude", cfg->ground_altitude);
+    cJSON_AddNumberToObject(j, "altitude_wave", cfg->altitude_wave);
     cJSON_AddNumberToObject(j, "operator_latitude", cfg->operator_lat);
     cJSON_AddNumberToObject(j, "operator_longitude", cfg->operator_lon);
     cJSON_AddNumberToObject(j, "operator_altitude", cfg->operator_alt);
@@ -1260,7 +1283,15 @@ static esp_err_t handler_post_config(httpd_req_t *req) {
         else next.operator_alt = (float)v;
     }
     if (err[0] == '\0' && jget_num(j, "base_altitude_msl", &v)) next.base_altitude_msl = (float)v;
+    if (err[0] == '\0' && jget_num(j, "ground_altitude", &v)) {
+        if (v < -1000 || v > 10000) snprintf(err, sizeof(err), "地面海拔须在 -1000~10000m");
+        else next.ground_altitude = (float)v;
+    }
     if (err[0] == '\0' && jget_num(j, "altitude_agl", &v)) next.altitude_agl = (float)v;
+    if (err[0] == '\0' && jget_num(j, "altitude_wave", &v)) {
+        if (v < 0 || v > 100) snprintf(err, sizeof(err), "高度波动幅度须在 0~100m");
+        else next.altitude_wave = (float)v;
+    }
     if (err[0] == '\0' && jget_num(j, "speed_horizontal", &v)) {
         if (v < 0 || v > 254) snprintf(err, sizeof(err), "速度须在 0~254 m/s");
         else next.speed_horizontal = (float)v;
@@ -1365,6 +1396,8 @@ static esp_err_t handler_post_config(httpd_req_t *req) {
     cfg->latitude = cfg->base_latitude;
     cfg->longitude = cfg->base_longitude;
     cfg->altitude_msl = cfg->base_altitude_msl;
+    // 相对高度以「海拔 - 地面海拔」为准，页面传来的 AGL 只作参考（防止两者打架）
+    cfg->altitude_agl = cfg->altitude_msl - cfg->ground_altitude;
 
     restarted = ap_changed;
 
@@ -1538,6 +1571,7 @@ static esp_err_t handler_reset(httpd_req_t *req) {
     cfg->latitude = cfg->base_latitude;
     cfg->longitude = cfg->base_longitude;
     cfg->altitude_msl = cfg->base_altitude_msl;
+    cfg->altitude_agl = cfg->altitude_msl - cfg->ground_altitude;
 
     bool restarted = ap_changed;
     crid_config_save_nvs(cfg);
