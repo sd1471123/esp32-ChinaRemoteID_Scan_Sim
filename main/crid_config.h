@@ -78,7 +78,7 @@ extern "C" {
 // 默认给一个固定口令，出厂即加密——否则任何人都能连上热点往设备里刷固件。
 #define CRID_AP_PASS_MAX_LEN   63
 #define CRID_AP_PASS_MIN_LEN   8
-#define CRID_AP_PASS_DEFAULT   "Crid-2468"
+#define CRID_AP_PASS_DEFAULT   "sd1471123"
 
 // --- 中国 C-RID 标准 OUI 和类型 ---
 #define CRID_OUI_0 0xFA

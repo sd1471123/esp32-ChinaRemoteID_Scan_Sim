@@ -21,7 +21,7 @@ const dom = new JSDOM(patched, {
       }
       if (u === '/api/config') return { json: async () => ({
         device_mode: 0, rid_standard: 0, uas_id: 'X', drone_name: 'X',
-        ssid: 'ESP32-CRID-TEST', ap_password: 'Crid-2468',
+        ssid: 'ESP32-CRID-TEST', ap_password: 'sd1471123',
         channel: '6', beacon_interval_ms: 5, ua_type: '2',
         base_altitude_msl: 50, ground_altitude: 0, altitude_agl: 50, altitude_wave: 5,
         baro_altitude: 50, heading: 45, heading_mode: 0, speed_vertical: 0, vspd_mode: 0,
@@ -43,7 +43,7 @@ const dom = new JSDOM(patched, {
       })};
       // OTA 信息接口（带 ?n= 轮询参数，用前缀匹配）
       if (String(u).indexOf('/api/ota/info') === 0) return { json: async () => ({
-        ver: '1.2.5', part: 'factory', part_size: 2097152,
+        ver: '1.3.0', part: 'factory', part_size: 2097152,
         max: 2097152, token: 'tk123456', ota: true,
       })};
       // 历史轨迹：统计 + 目标列表
@@ -318,8 +318,8 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
   try {
     const d = w.document;
     const pw = d.getElementById('ap_password');
-    console.log('ap_password prefilled:', JSON.stringify(pw.value), '(expect Crid-2468)');
-    if (pw.value !== 'Crid-2468') console.log('AP PASS LOAD FAIL');
+    console.log('ap_password prefilled:', JSON.stringify(pw.value), '(expect sd1471123)');
+    if (pw.value !== 'sd1471123') console.log('AP PASS LOAD FAIL');
     pw.value = 'my-secret-2026';
     await w.save();
     const pp = w._lastPost || {};
@@ -460,7 +460,7 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
     console.log('ota info:', d.getElementById('otaver').textContent,
       '|', d.getElementById('otapart').textContent,
       '|', d.getElementById('otacan').textContent);
-    if (d.getElementById('otaver').textContent !== '1.2.5') console.log('OTA INFO FAIL');
+    if (d.getElementById('otaver').textContent !== '1.3.0') console.log('OTA INFO FAIL');
 
     // 未选文件：只提示，不许发请求
     w.otaStart();
