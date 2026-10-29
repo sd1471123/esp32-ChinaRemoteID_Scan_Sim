@@ -18,19 +18,27 @@ extern "C" {
  * @param band 射频工作频段 (CRID_BAND_2G / CRID_BAND_5G)
  * @param channel Wi-Fi 信道 (2.4G: 1-13, 5.8G: 149-165)
  * @param ssid 热点名称
+ * @param password 热点密码 (WPA2-PSK, 8-63 个可打印 ASCII；NULL 或空串 = 开放热点)
  * @param beacon_interval_ms Beacon 广播间隔 (100-60000)
  * @return ESP_OK 成功
  */
-esp_err_t crid_wifi_init_ap(uint8_t band, uint8_t channel, const char *ssid, uint16_t beacon_interval_ms);
+esp_err_t crid_wifi_init_ap(uint8_t band, uint8_t channel, const char *ssid,
+                            const char *password, uint16_t beacon_interval_ms);
 
 /**
- * @brief 运行时更新 softAP 配置（SSID / 信道 / Beacon 间隔，来自网页保存）
+ * @brief 运行时更新 softAP 配置（SSID / 密码 / 信道 / Beacon 间隔，来自网页保存）
  * @param ssid 新热点名称
+ * @param password 新热点密码（NULL 或空串 = 开放热点）
  * @param channel 新信道（须与当前 band 匹配）
  * @param beacon_interval_ms 新广播间隔
  * @return ESP_OK 成功
+ *
+ * 密码或加密方式发生变化时，这里会主动把已关联的客户端全部踢下线：
+ * 802.11 规定关联时已完成认证，不主动 deauth 的话，改口令后老客户端仍能
+ * 继续用旧关联读写数据，等于改了密码没生效。
  */
-esp_err_t crid_wifi_update_ap(const char *ssid, uint8_t channel, uint16_t beacon_interval_ms);
+esp_err_t crid_wifi_update_ap(const char *ssid, const char *password,
+                              uint8_t channel, uint16_t beacon_interval_ms);
 
 /**
  * @brief 运行时切换频段并重建热点（2.4G <-> 5.8G）
@@ -39,12 +47,13 @@ esp_err_t crid_wifi_update_ap(const char *ssid, uint8_t channel, uint16_t beacon
  *
  * @param band 目标频段
  * @param ssid 热点名称
+ * @param password 热点密码（NULL 或空串 = 开放热点）
  * @param channel 目标频段下的信道
  * @param beacon_interval_ms 广播间隔
  * @return ESP_OK 成功
  */
-esp_err_t crid_wifi_switch_band(uint8_t band, const char *ssid, uint8_t channel,
-                                uint16_t beacon_interval_ms);
+esp_err_t crid_wifi_switch_band(uint8_t band, const char *ssid, const char *password,
+                                uint8_t channel, uint16_t beacon_interval_ms);
 
 /**
  * @brief 将 RID 厂商 IE 挂到 softAP 的 Beacon / Probe Response（指定槽位）

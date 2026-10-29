@@ -52,7 +52,36 @@ static esp_err_t crid_wifi_apply_band(uint8_t band) {
 #endif
 }
 
-esp_err_t crid_wifi_init_ap(uint8_t band, uint8_t channel, const char *ssid, uint16_t beacon_interval_ms) {
+// 把明文口令写进 softAP 的安全字段：空串/NULL 表示开放热点，非空用 WPA2-PSK。
+// 长度合法性（8-63 个可打印 ASCII）由调用方校验，这里只做截断保护。
+static void crid_wifi_apply_security(wifi_config_t *ap, const char *password) {
+    memset(ap->ap.password, 0, sizeof(ap->ap.password));
+    size_t n = (password != NULL) ? strlen(password) : 0;
+    if (n == 0) {
+        ap->ap.authmode = WIFI_AUTH_OPEN;
+        ap->ap.pairwise_cipher = WIFI_CIPHER_TYPE_NONE;
+        return;
+    }
+    if (n > sizeof(ap->ap.password) - 1) n = sizeof(ap->ap.password) - 1;
+    memcpy(ap->ap.password, password, n);
+    ap->ap.authmode = WIFI_AUTH_WPA2_PSK;
+    ap->ap.pairwise_cipher = WIFI_CIPHER_TYPE_CCMP;
+}
+
+// 当前 softAP 的安全配置是否与期望值一致（用来判断要不要踢客户端重连）
+static bool crid_wifi_security_changed(const wifi_config_t *old_cfg, const char *password) {
+    size_t n = (password != NULL) ? strlen(password) : 0;
+    wifi_auth_mode_t want = (n == 0) ? WIFI_AUTH_OPEN : WIFI_AUTH_WPA2_PSK;
+    if (old_cfg->ap.authmode != want) return true;
+    if (n == 0) return false;
+    // 驱动里的口令字段是定长数组，先比长度再比内容：
+    // 只比前 n 个字符的话，「abcdefghij」改成「abcdefgh」会被误判成没变
+    if (strlen((const char *)old_cfg->ap.password) != n) return true;
+    return strncmp((const char *)old_cfg->ap.password, password, n) != 0;
+}
+
+esp_err_t crid_wifi_init_ap(uint8_t band, uint8_t channel, const char *ssid,
+                            const char *password, uint16_t beacon_interval_ms) {
     esp_err_t ret;
 
     wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
@@ -104,7 +133,7 @@ esp_err_t crid_wifi_init_ap(uint8_t band, uint8_t channel, const char *ssid, uin
     memcpy(ap_config.ap.ssid, ssid, ssid_len);
     ap_config.ap.ssid_len = (uint8_t)ssid_len;
     ap_config.ap.channel = crid_band_normalize_channel(band, channel);
-    ap_config.ap.authmode = WIFI_AUTH_OPEN;
+    crid_wifi_apply_security(&ap_config, password);
     ap_config.ap.max_connection = 4;
     ap_config.ap.ssid_hidden = 0;
     // Beacon 间隔与 RID 帧更新周期一致，保证每帧携带最新计数器
@@ -120,18 +149,22 @@ esp_err_t crid_wifi_init_ap(uint8_t band, uint8_t channel, const char *ssid, uin
     // 5.8G 只支持 20 MHz 带宽，显式设置避免驱动在 5G 上尝试 40 MHz
     esp_wifi_set_bandwidth(WIFI_IF_AP, WIFI_BW20);
 
-    ESP_LOGI(TAG, "Wi-Fi AP initialized: ssid=%s, band=%s, channel=%u, beacon=%ums (%u TU)",
+    ESP_LOGI(TAG, "Wi-Fi AP initialized: ssid=%s, band=%s, channel=%u, beacon=%ums (%u TU), security=%s",
              ssid, band == CRID_BAND_5G ? "5.8G" : "2.4G", channel,
-             beacon_interval_ms, crid_ms_to_tu(beacon_interval_ms));
+             beacon_interval_ms, crid_ms_to_tu(beacon_interval_ms),
+             (password != NULL && password[0] != '\0') ? "WPA2-PSK" : "OPEN");
     return ESP_OK;
 }
 
-esp_err_t crid_wifi_update_ap(const char *ssid, uint8_t channel, uint16_t beacon_interval_ms) {
+esp_err_t crid_wifi_update_ap(const char *ssid, const char *password,
+                              uint8_t channel, uint16_t beacon_interval_ms) {
     wifi_config_t ap_config = { 0 };
     esp_err_t ret = esp_wifi_get_config(WIFI_IF_AP, &ap_config);
     if (ret != ESP_OK) {
         return ret;
     }
+
+    bool sec_changed = crid_wifi_security_changed(&ap_config, password);
 
     size_t ssid_len = strlen(ssid);
     if (ssid_len > sizeof(ap_config.ap.ssid)) ssid_len = sizeof(ap_config.ap.ssid);
@@ -140,11 +173,20 @@ esp_err_t crid_wifi_update_ap(const char *ssid, uint8_t channel, uint16_t beacon
     ap_config.ap.ssid_len = (uint8_t)ssid_len;
     ap_config.ap.channel = channel;
     ap_config.ap.beacon_interval = crid_ms_to_tu(beacon_interval_ms);
+    crid_wifi_apply_security(&ap_config, password);
 
     ret = esp_wifi_set_config(WIFI_IF_AP, &ap_config);
     if (ret == ESP_OK) {
-        ESP_LOGI(TAG, "Wi-Fi AP config updated: ssid=%s, channel=%u, beacon=%ums (%u TU)",
-                 ssid, channel, beacon_interval_ms, crid_ms_to_tu(beacon_interval_ms));
+        ESP_LOGI(TAG, "Wi-Fi AP config updated: ssid=%s, channel=%u, beacon=%ums (%u TU), security=%s",
+                 ssid, channel, beacon_interval_ms, crid_ms_to_tu(beacon_interval_ms),
+                 (password != NULL && password[0] != '\0') ? "WPA2-PSK" : "OPEN");
+        // 改口令后必须主动踢掉已关联的客户端：关联时就已经完成认证，
+        // 不 deauth 的话老客户端还能继续沿用旧关联读写数据，等于密码没改。
+        if (sec_changed) {
+            vTaskDelay(pdMS_TO_TICKS(50));
+            esp_err_t dr = esp_wifi_deauth_sta(0);   // aid=0 => 全部客户端
+            ESP_LOGW(TAG, "AP 安全配置变更，踢下线全部客户端: %s", esp_err_to_name(dr));
+        }
     } else {
         ESP_LOGE(TAG, "Wi-Fi AP config update failed: %s", esp_err_to_name(ret));
     }
@@ -157,14 +199,14 @@ esp_err_t crid_wifi_update_ap(const char *ssid, uint8_t channel, uint16_t beacon
  * 单射频：切频段会重建 AP，所有已连接客户端（含正在提交表单的手机）都会掉线。
  * 调用前必须先把手头的 HTTP 响应发出去。
  */
-esp_err_t crid_wifi_switch_band(uint8_t band, const char *ssid, uint8_t channel,
-                                uint16_t beacon_interval_ms) {
+esp_err_t crid_wifi_switch_band(uint8_t band, const char *ssid, const char *password,
+                                uint8_t channel, uint16_t beacon_interval_ms) {
     esp_err_t ret = crid_wifi_apply_band(band);
     if (ret != ESP_OK) {
         return ret;
     }
     vTaskDelay(pdMS_TO_TICKS(50));   // 等驱动完成频段切换
-    return crid_wifi_update_ap(ssid, channel, beacon_interval_ms);
+    return crid_wifi_update_ap(ssid, password, channel, beacon_interval_ms);
 }
 
 esp_err_t crid_wifi_set_rid_ie(uint8_t slot, const uint8_t *ie, uint16_t len) {

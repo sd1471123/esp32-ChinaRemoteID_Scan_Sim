@@ -21,4 +21,4 @@ set(EXTRA_COMPONENT_DIRS ${CMAKE_CURRENT_SOURCE_DIR}/main
                          ${CMAKE_CURRENT_SOURCE_DIR}/components)
 
 include($ENV{IDF_PATH}/tools/cmake/project.cmake)
-project(remoteid_scanner VERSION 1.2.4)
+project(remoteid_scanner VERSION 1.2.5)

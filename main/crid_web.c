@@ -373,7 +373,20 @@ static const char PAGE_HTML[] =
 "<input type='hidden' id='ua_category_gb'></div>"
 "</div></div>"
 "<div class='oldstd'><label>操作员 ID</label><input id='operator_id' maxlength='20'></div>"
-"<label>热点名称 (SSID)</label><input id='ssid' maxlength='31'>"
+"<div class='g'>"
+"<div><label>热点名称 (SSID)</label><input id='ssid' maxlength='31'></div>"
+"<div><label>热点密码</label><input id='ap_password' maxlength='63' autocomplete='new-password'></div>"
+"</div>"
+"<p class='note' style='margin-top:2px'>WPA2 加密，8-63 位；留空 = 开放热点（谁都能连上并升级固件）。</p>"
+"<details class='tip'><summary>说明：热点密码与设备安全</summary><div>"
+"出厂默认口令 <b>Crid-2468</b>，建议改成自己的。密码只接受 8-63 位可见键盘字符（WPA2 的限制），"
+"保存后热点立即重建，<b>所有已连接的手机都会被断开</b>，需要用新密码重新连接。"
+"<br>忘记口令时：把设备插上 USB，串口日志开机会打印当前 SSID 与口令；"
+"或在网页点「恢复初始」回到默认口令（需要先能连上热点）。"
+"<br>留空保存 = 开放热点，任何能搜到信号的人都能进网页改参数、上传固件，仅在调试时用。"
+"<br>这层密码的作用是<b>阻止陌生人连入热点</b>；网页本身是 HTTP 明文，同一热点下抓包仍能看到内容，"
+"它不等于完整的访问控制。接收模式下「身份信息」整卡隐藏，改密码请先切到发射模式。"
+"</div></details>"
 "<div class='g'>"
 "<div><label id='chlbl'>Wi-Fi 信道 (1-13)</label><input id='channel' type='number' min='1' max='13'></div>"
 "<div><label>广播间隔 (ms)</label><input id='beacon_interval_ms' type='number' min='200' max='60000'></div>"
@@ -547,8 +560,8 @@ static const char PAGE_HTML[] =
 "<br>升级成功后设备自动重启，热点会断开约 10 秒，本页会自动刷新并显示新版本号。"
 "<br>分区表已改为 factory + ota_0 + ota_1（各 2 MB）：<b>首次</b>需要用 USB 完整烧录一次，"
 "之后才能完全依赖网页升级。位置与参数存在 NVS，升级不会清除。"
-"<br>热点没有密码，能连上本机的人都能升级固件；上传令牌只能挡住其它网页的跨站误提交，"
-"不是权限控制。"
+"<br>热点默认开启 WPA2 口令（可在「身份信息」里改），能连上热点的人才能升级固件；"
+"上传令牌只能挡住其它网页的跨站误提交，不是权限控制。"
 "</div></details></div>"
 "<div class='actions span2'>"
 "<button onclick='save()'>保存并应用</button>"
@@ -576,7 +589,7 @@ static const char PAGE_HTML[] =
 // 暂时性死区（部分 WebView 会报 circle 未定义），提前声明杜绝此类问题
 "let map=null,opMarker=null,dMarker=null,live=null,circle=null,ginit=false;"
 "let trailPts=[],trailLine=null;"   // 飞行轨迹：poll 每 2 秒记录广播位置连成线
-"const F=['uas_id','drone_name','operator_id','realname_id','ssid','channel','beacon_interval_ms','ua_type',"
+"const F=['uas_id','drone_name','operator_id','realname_id','ssid','ap_password','channel','beacon_interval_ms','ua_type',"
 "'base_latitude','base_longitude','base_altitude_msl','ground_altitude','altitude_agl','baro_altitude',"
 "'speed_horizontal','heading','heading_mode','speed_vertical','vspd_mode',"
 "'operator_latitude','operator_longitude','operator_altitude',"
@@ -813,10 +826,12 @@ static const char PAGE_HTML[] =
 // 再把 d.channel 还原成 2.4G 的旧值，避免切频段互相污染
 "d.channel_5g=_b===1?d.channel:(_L.channel_5g||149);"
 "if(_b===1)d.channel=(_L.channel||6);"
+// 密码变化要单独提示：改完热点会重建并踢掉本机，必须用新密码重连才回得来
+"const pwChg=(d.ap_password||'')!==(_L.ap_password||'');"
 "try{const r=await fetch('/api/config',{method:'POST',"
 "headers:{'Content-Type':'application/json'},body:JSON.stringify(d)});"
 "const j=await r.json();"
-"if(j.ok){msg('已保存并应用 ✓'+(j.restarted?' (SSID/信道/广播间隔变更会重建热点，连接可能短暂中断，请稍候或重新连接)':''),true);"
+"if(j.ok){msg('已保存并应用 ✓'+(pwChg?' (热点密码已修改，请用新密码重新连接)':(j.restarted?' (SSID/信道/广播间隔变更会重建热点，连接可能短暂中断，请稍候或重新连接)':'')),true);"
 // 保存成功后的地图刷新只是附带 UI 更新：包裹 try + typeof 防护，
 // 无论页面 JS 环境处于什么状态都绝不影响「已保存」的判定与提示
 "try{if(map&&circle){map.removeLayer(circle);circle=null;}"
@@ -1463,6 +1478,8 @@ static esp_err_t handler_get_config(httpd_req_t *req) {
     cJSON_AddStringToObject(j, "drone_name", cfg->drone_name);
     cJSON_AddStringToObject(j, "operator_id", cfg->operator_id);
     cJSON_AddStringToObject(j, "ssid", cfg->ssid);
+    // 明文回给页面：能读到它的人已经过了热点密码这一关（或是插着 USB 看串口的人）
+    cJSON_AddStringToObject(j, "ap_password", cfg->ap_password);
     cJSON_AddNumberToObject(j, "channel", cfg->channel);
     cJSON_AddNumberToObject(j, "beacon_interval_ms", cfg->beacon_interval_ms);
     cJSON_AddNumberToObject(j, "ua_type", cfg->ua_type);
@@ -1577,6 +1594,27 @@ static esp_err_t handler_post_config(httpd_req_t *req) {
         const char *s = cJSON_GetStringValue(item);
         if (strlen(s) == 0) snprintf(err, sizeof(err), "SSID 不能为空");
         else { strncpy(next.ssid, s, CRID_SSID_MAX_LEN); next.ssid[CRID_SSID_MAX_LEN] = '\0'; }
+    }
+    if (err[0] == '\0' && (item = cJSON_GetObjectItemCaseSensitive(j, "ap_password")) != NULL &&
+        cJSON_IsString(item)) {
+        // 空串是合法值：用户明确要求「开放热点」（不加密），页面会给出警告
+        const char *s = cJSON_GetStringValue(item);
+        size_t n = strlen(s);
+        if (n == 0) {
+            next.ap_password[0] = '\0';
+        } else if (n < CRID_AP_PASS_MIN_LEN) {
+            snprintf(err, sizeof(err), "热点密码至少 8 位");
+        } else if (n > CRID_AP_PASS_MAX_LEN) {
+            snprintf(err, sizeof(err), "热点密码最多 63 位");
+        } else {
+            bool printable = true;
+            for (size_t i = 0; i < n; i++) {
+                unsigned char c = (unsigned char)s[i];
+                if (c < 0x20 || c > 0x7E) { printable = false; break; }
+            }
+            if (!printable) snprintf(err, sizeof(err), "热点密码只能用可见键盘字符");
+            else memcpy(next.ap_password, s, n + 1);
+        }
     }
     if (err[0] == '\0' && jget_num(j, "channel", &v)) {
         if (v >= 1 && v <= 13) next.channel = (uint8_t)v;
@@ -1746,6 +1784,7 @@ static esp_err_t handler_post_config(httpd_req_t *req) {
     uint8_t new_ch = crid_band_channel(&next);
     bool band_changed = (next.band != cfg->band);
     bool ap_changed = (strcmp(next.ssid, cfg->ssid) != 0) ||
+                      (strcmp(next.ap_password, cfg->ap_password) != 0) ||
                       (new_ch != old_ch) ||
                       (next.beacon_interval_ms != cfg->beacon_interval_ms) ||
                       band_changed;
@@ -1793,12 +1832,13 @@ static esp_err_t handler_post_config(httpd_req_t *req) {
         esp_err_t ur;
         if (band_changed) {
             // 单射频：切频段会重建 AP，手机上必然掉线
-            ur = crid_wifi_switch_band(cfg->band, cfg->ssid,
+            ur = crid_wifi_switch_band(cfg->band, cfg->ssid, cfg->ap_password,
                                        crid_band_channel(cfg), cfg->beacon_interval_ms);
             ESP_LOGW(TAG, "频段切换 -> %s, channel=%u",
                      cfg->band == CRID_BAND_5G ? "5.8G" : "2.4G", crid_band_channel(cfg));
         } else {
-            ur = crid_wifi_update_ap(cfg->ssid, crid_band_channel(cfg), cfg->beacon_interval_ms);
+            ur = crid_wifi_update_ap(cfg->ssid, cfg->ap_password,
+                                     crid_band_channel(cfg), cfg->beacon_interval_ms);
         }
         if (ur != ESP_OK) {
             ESP_LOGE(TAG, "apply AP failed: %s", esp_err_to_name(ur));
@@ -2173,6 +2213,7 @@ static esp_err_t handler_reset(httpd_req_t *req) {
 
     bool band_changed = (next.band != cfg->band);
     bool ap_changed = (strcmp(next.ssid, cfg->ssid) != 0) ||
+                      (strcmp(next.ap_password, cfg->ap_password) != 0) ||
                       (next.channel != cfg->channel) ||
                       (next.beacon_interval_ms != cfg->beacon_interval_ms) ||
                       band_changed;
@@ -2196,9 +2237,10 @@ static esp_err_t handler_reset(httpd_req_t *req) {
 
     if (ap_changed) {
         esp_err_t ur = band_changed
-            ? crid_wifi_switch_band(cfg->band, cfg->ssid, crid_band_channel(cfg),
-                                    cfg->beacon_interval_ms)
-            : crid_wifi_update_ap(cfg->ssid, crid_band_channel(cfg), cfg->beacon_interval_ms);
+            ? crid_wifi_switch_band(cfg->band, cfg->ssid, cfg->ap_password,
+                                    crid_band_channel(cfg), cfg->beacon_interval_ms)
+            : crid_wifi_update_ap(cfg->ssid, cfg->ap_password,
+                                  crid_band_channel(cfg), cfg->beacon_interval_ms);
         if (ur != ESP_OK) {
             ESP_LOGE(TAG, "apply AP failed: %s", esp_err_to_name(ur));
         }

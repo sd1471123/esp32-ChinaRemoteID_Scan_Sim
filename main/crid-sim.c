@@ -206,11 +206,15 @@ void app_main(void) {
 
     // 5. 初始化 Wi-Fi（softAP 始终运行：网页配置入口；band 决定 2.4G / 5.8G）
     ret = crid_wifi_init_ap(g_config.band, crid_band_channel(&g_config),
-                            g_config.ssid, g_config.beacon_interval_ms);
+                            g_config.ssid, g_config.ap_password, g_config.beacon_interval_ms);
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "Wi-Fi init failed: %s", esp_err_to_name(ret));
         return;
     }
+    // 把热点口令打到串口：这是忘记密码时唯一的就地找回途径（能插 USB 的人
+    // 本来就能重烧固件，所以明文打印不降低安全性）
+    ESP_LOGI(TAG, "热点 SSID: %s  密码: %s", g_config.ssid,
+             g_config.ap_password[0] ? g_config.ap_password : "(开放，无密码)");
 
     // 6. 应用初始工作模式（接收模式则开启混杂监听）
     crid_app_apply_mode();

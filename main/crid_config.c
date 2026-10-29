@@ -77,6 +77,8 @@ void crid_config_init_default(cn_crid_config_t *config) {
 
     // SSID 后缀也用 MAC 后 4 位
     snprintf(config->ssid, CRID_SSID_MAX_LEN + 1, "ESP32-CRID-%s", mac_suffix);
+    // 出厂即加密：默认 WPA2 口令，用户可在网页改用自有口令（留空 = 开放热点）
+    snprintf(config->ap_password, CRID_AP_PASS_MAX_LEN + 1, "%s", CRID_AP_PASS_DEFAULT);
 
     config->channel = DEFAULT_WIFI_CHANNEL;
     config->message_counter = 0;
@@ -222,7 +224,7 @@ typedef struct __attribute__((packed)) {
 } crid_persist_v3_t;
 
 #define CRID_PERSIST_MAGIC   0x44495243UL
-#define CRID_PERSIST_VERSION 5
+#define CRID_PERSIST_VERSION 6
 
 // v4: 在 v3 之后追加「地面海拔」与「高度波动幅度」。
 // 直接内嵌 v3 结构体，避免再抄一遍三十个字段；两者都是 packed，长度确定。
@@ -240,43 +242,53 @@ typedef struct __attribute__((packed)) {
     uint8_t vspd_mode;                           // 0=跟随高度波动 1=固定
 } crid_persist_v5_t;
 
+// v6: 追加热点密码（WPA2-PSK）。空串 = 开放热点，非空必须是 8-63 个可打印 ASCII。
+// 旧存档（v1~v5）没有这一项，迁移时统一补默认口令，出厂即加密。
+typedef struct __attribute__((packed)) {
+    crid_persist_v5_t v5;
+    char ap_password[CRID_AP_PASS_MAX_LEN + 1];
+} crid_persist_v6_t;
+
 esp_err_t crid_config_save_nvs(const cn_crid_config_t *config) {
     if (config == NULL) return ESP_ERR_INVALID_ARG;
 
-    crid_persist_v5_t p;
+    crid_persist_v6_t p;
     memset(&p, 0, sizeof(p));
-    p.v4.v3.magic = CRID_PERSIST_MAGIC;
-    p.v4.v3.version = CRID_PERSIST_VERSION;
-    strncpy(p.v4.v3.uas_id, config->uas_id, CRID_UAS_ID_MAX_LEN);
-    strncpy(p.v4.v3.drone_name, config->drone_name, CRID_UAS_ID_MAX_LEN);
-    strncpy(p.v4.v3.operator_id, config->operator_id, CRID_UAS_ID_MAX_LEN);
-    strncpy(p.v4.v3.ssid, config->ssid, CRID_SSID_MAX_LEN);
-    p.v4.v3.base_latitude = config->base_latitude;
-    p.v4.v3.base_longitude = config->base_longitude;
-    p.v4.v3.base_altitude_msl = config->base_altitude_msl;
-    p.v4.v3.altitude_agl = config->altitude_agl;
-    p.v4.v3.speed_horizontal = config->speed_horizontal;
-    p.v4.v3.patrol_radius_lat = config->patrol_radius_lat;
-    p.v4.v3.patrol_radius_lon = config->patrol_radius_lon;
-    p.v4.v3.patrol_speed = config->patrol_speed;
-    p.v4.v3.beacon_interval_ms = config->beacon_interval_ms;
-    p.v4.v3.status = config->status;
-    p.v4.v3.channel = config->channel;
-    p.v4.v3.device_mode = config->device_mode;
-    p.v4.v3.rid_standard = config->rid_standard;
-    strncpy(p.v4.v3.realname_id, config->realname_id, sizeof(p.v4.v3.realname_id) - 1);
-    p.v4.v3.ua_category_gb = config->ua_category_gb;
-    p.v4.v3.band = (config->band == CRID_BAND_5G) ? CRID_BAND_5G : CRID_BAND_2G;
-    p.v4.v3.tx_2g = config->tx_2g ? 1 : 0;
-    p.v4.v3.rx_2g = config->rx_2g ? 1 : 0;
-    p.v4.v3.tx_5g = config->tx_5g ? 1 : 0;
-    p.v4.v3.rx_5g = config->rx_5g ? 1 : 0;
-    p.v4.v3.channel_5g = config->channel_5g;
-    p.v4.ground_altitude = config->ground_altitude;
-    p.v4.altitude_wave = config->altitude_wave;
-    p.baro_altitude = config->baro_altitude;
-    p.heading_mode = config->heading_mode ? 1 : 0;
-    p.vspd_mode = config->vspd_mode ? 1 : 0;
+    crid_persist_v5_t *q = &p.v5;      // 前 5 个版本的字段原样保留在 v5 里
+    q->v4.v3.magic = CRID_PERSIST_MAGIC;
+    q->v4.v3.version = CRID_PERSIST_VERSION;
+    strncpy(q->v4.v3.uas_id, config->uas_id, CRID_UAS_ID_MAX_LEN);
+    strncpy(q->v4.v3.drone_name, config->drone_name, CRID_UAS_ID_MAX_LEN);
+    strncpy(q->v4.v3.operator_id, config->operator_id, CRID_UAS_ID_MAX_LEN);
+    strncpy(q->v4.v3.ssid, config->ssid, CRID_SSID_MAX_LEN);
+    q->v4.v3.base_latitude = config->base_latitude;
+    q->v4.v3.base_longitude = config->base_longitude;
+    q->v4.v3.base_altitude_msl = config->base_altitude_msl;
+    q->v4.v3.altitude_agl = config->altitude_agl;
+    q->v4.v3.speed_horizontal = config->speed_horizontal;
+    q->v4.v3.patrol_radius_lat = config->patrol_radius_lat;
+    q->v4.v3.patrol_radius_lon = config->patrol_radius_lon;
+    q->v4.v3.patrol_speed = config->patrol_speed;
+    q->v4.v3.beacon_interval_ms = config->beacon_interval_ms;
+    q->v4.v3.status = config->status;
+    q->v4.v3.channel = config->channel;
+    q->v4.v3.device_mode = config->device_mode;
+    q->v4.v3.rid_standard = config->rid_standard;
+    strncpy(q->v4.v3.realname_id, config->realname_id, sizeof(q->v4.v3.realname_id) - 1);
+    q->v4.v3.ua_category_gb = config->ua_category_gb;
+    q->v4.v3.band = (config->band == CRID_BAND_5G) ? CRID_BAND_5G : CRID_BAND_2G;
+    q->v4.v3.tx_2g = config->tx_2g ? 1 : 0;
+    q->v4.v3.rx_2g = config->rx_2g ? 1 : 0;
+    q->v4.v3.tx_5g = config->tx_5g ? 1 : 0;
+    q->v4.v3.rx_5g = config->rx_5g ? 1 : 0;
+    q->v4.v3.channel_5g = config->channel_5g;
+    q->v4.ground_altitude = config->ground_altitude;
+    q->v4.altitude_wave = config->altitude_wave;
+    q->baro_altitude = config->baro_altitude;
+    q->heading_mode = config->heading_mode ? 1 : 0;
+    q->vspd_mode = config->vspd_mode ? 1 : 0;
+    strncpy(p.ap_password, config->ap_password, CRID_AP_PASS_MAX_LEN);
+    p.ap_password[CRID_AP_PASS_MAX_LEN] = '\0';
 
     nvs_handle_t handle;
     esp_err_t ret = nvs_open(CRID_NVS_NAMESPACE, NVS_READWRITE, &handle);
@@ -419,6 +431,32 @@ bool crid_config_load_nvs(cn_crid_config_t *config) {
     }
     if (!(config->baro_altitude > -1000.0f)) config->baro_altitude = config->base_altitude_msl;
     if (config->baro_altitude > 20000.0f) config->baro_altitude = 20000.0f;
+
+    // v6 新增：热点密码。旧存档（v1~v5）没有这一项，迁移时补默认口令——
+    // 老版本的热点是完全开放的，升级后必须直接变成加密状态，不能留空。
+    if (p1->version >= 6 && len >= sizeof(crid_persist_v6_t)) {
+        const crid_persist_v6_t *p6 = (const crid_persist_v6_t *)raw;
+        strncpy(config->ap_password, p6->ap_password, CRID_AP_PASS_MAX_LEN);
+        config->ap_password[CRID_AP_PASS_MAX_LEN] = '\0';
+    } else {
+        strncpy(config->ap_password, CRID_AP_PASS_DEFAULT, CRID_AP_PASS_MAX_LEN);
+        config->ap_password[CRID_AP_PASS_MAX_LEN] = '\0';
+    }
+    // 兜底：长度非法或含不可打印字符（NVS 被写坏、跨版本字段错位）时回默认口令。
+    // 空串是合法值——表示用户主动选择了开放热点。
+    {
+        size_t pl = strlen(config->ap_password);
+        bool bad = (pl > 0 && (pl < CRID_AP_PASS_MIN_LEN || pl > CRID_AP_PASS_MAX_LEN));
+        for (size_t i = 0; !bad && i < pl; i++) {
+            unsigned char c = (unsigned char)config->ap_password[i];
+            if (c < 0x20 || c > 0x7E) bad = true;
+        }
+        if (bad) {
+            ESP_LOGW(TAG, "Stored AP password invalid (len=%u), fallback to default", (unsigned)pl);
+            strncpy(config->ap_password, CRID_AP_PASS_DEFAULT, CRID_AP_PASS_MAX_LEN);
+            config->ap_password[CRID_AP_PASS_MAX_LEN] = '\0';
+        }
+    }
 
     // 相对高度一律由「海拔 - 地面海拔」推导，避免存档里的旧值自相矛盾
     config->altitude_msl = config->base_altitude_msl;

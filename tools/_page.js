@@ -1,7 +1,7 @@
 
 let map=null,opMarker=null,dMarker=null,live=null,circle=null,ginit=false;
 let trailPts=[],trailLine=null;
-const F=['uas_id','drone_name','operator_id','realname_id','ssid','channel','beacon_interval_ms','ua_type',
+const F=['uas_id','drone_name','operator_id','realname_id','ssid','ap_password','channel','beacon_interval_ms','ua_type',
 'base_latitude','base_longitude','base_altitude_msl','ground_altitude','altitude_agl','baro_altitude',
 'speed_horizontal','heading','heading_mode','speed_vertical','vspd_mode',
 'operator_latitude','operator_longitude','operator_altitude',
@@ -219,10 +219,11 @@ d.tx_5g=_b===1?_tx:(_L.tx_5g!==undefined?_L.tx_5g:1);
 d.rx_5g=_b===1?_rx:(_L.rx_5g!==undefined?_L.rx_5g:0);
 d.channel_5g=_b===1?d.channel:(_L.channel_5g||149);
 if(_b===1)d.channel=(_L.channel||6);
+const pwChg=(d.ap_password||'')!==(_L.ap_password||'');
 try{const r=await fetch('/api/config',{method:'POST',
 headers:{'Content-Type':'application/json'},body:JSON.stringify(d)});
 const j=await r.json();
-if(j.ok){msg('已保存并应用 ✓'+(j.restarted?' (SSID/信道/广播间隔变更会重建热点，连接可能短暂中断，请稍候或重新连接)':''),true);
+if(j.ok){msg('已保存并应用 ✓'+(pwChg?' (热点密码已修改，请用新密码重新连接)':(j.restarted?' (SSID/信道/广播间隔变更会重建热点，连接可能短暂中断，请稍候或重新连接)':'')),true);
 try{if(map&&circle){map.removeLayer(circle);circle=null;}
 if(typeof drawCircle==='function')drawCircle();}catch(me){}}
 else{msg('保存失败: '+(j.err||''),false);}}

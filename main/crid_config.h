@@ -73,6 +73,13 @@ extern "C" {
 #define CRID_UAS_ID_MAX_LEN    20     // UAS ID 最大长度
 #define CRID_SSID_MAX_LEN      31     // SSID 最大长度
 
+// --- 热点密码（WPA2-PSK）---
+// 802.11 规定 WPA2 个人版口令为 8-63 个可打印 ASCII 字符；留空表示开放热点。
+// 默认给一个固定口令，出厂即加密——否则任何人都能连上热点往设备里刷固件。
+#define CRID_AP_PASS_MAX_LEN   63
+#define CRID_AP_PASS_MIN_LEN   8
+#define CRID_AP_PASS_DEFAULT   "Crid-2468"
+
 // --- 中国 C-RID 标准 OUI 和类型 ---
 #define CRID_OUI_0 0xFA
 #define CRID_OUI_1 0x0B
@@ -141,6 +148,7 @@ typedef struct {
     uint8_t height_type;                     // 高度参考类型 (0=Takeoff, 1=Ground)
     uint8_t mac_address[6];                  // MAC 地址
     char ssid[CRID_SSID_MAX_LEN + 1];        // SSID
+    char ap_password[CRID_AP_PASS_MAX_LEN + 1];  // 热点密码(WPA2-PSK, 8-63 位, 空=开放热点)
     uint8_t channel;                         // 通道
     uint8_t message_counter;                 // 消息计数器 (0-255, 循环)
     uint16_t beacon_interval_ms;             // 广播间隔 (ms, 200-60000)

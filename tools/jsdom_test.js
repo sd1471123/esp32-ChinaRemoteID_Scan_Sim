@@ -21,6 +21,7 @@ const dom = new JSDOM(patched, {
       }
       if (u === '/api/config') return { json: async () => ({
         device_mode: 0, rid_standard: 0, uas_id: 'X', drone_name: 'X',
+        ssid: 'ESP32-CRID-TEST', ap_password: 'Crid-2468',
         channel: '6', beacon_interval_ms: 5, ua_type: '2',
         base_altitude_msl: 50, ground_altitude: 0, altitude_agl: 50, altitude_wave: 5,
         baro_altitude: 50, heading: 45, heading_mode: 0, speed_vertical: 0, vspd_mode: 0,
@@ -42,7 +43,7 @@ const dom = new JSDOM(patched, {
       })};
       // OTA 信息接口（带 ?n= 轮询参数，用前缀匹配）
       if (String(u).indexOf('/api/ota/info') === 0) return { json: async () => ({
-        ver: '1.2.4', part: 'factory', part_size: 2097152,
+        ver: '1.2.5', part: 'factory', part_size: 2097152,
         max: 2097152, token: 'tk123456', ota: true,
       })};
       // 历史轨迹：统计 + 目标列表
@@ -313,6 +314,28 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
       miss.length ? 'FAIL missing ' + miss : 'OK');
   } catch (e) { console.log('tx role THREW:', e.message); }
 
+  // 热点密码：回读 → 保存上报 → 改密码时给出「用新密码重连」提示
+  try {
+    const d = w.document;
+    const pw = d.getElementById('ap_password');
+    console.log('ap_password prefilled:', JSON.stringify(pw.value), '(expect Crid-2468)');
+    if (pw.value !== 'Crid-2468') console.log('AP PASS LOAD FAIL');
+    pw.value = 'my-secret-2026';
+    await w.save();
+    const pp = w._lastPost || {};
+    const m = d.getElementById('msg').textContent;
+    console.log('ap_password posted:', JSON.stringify(pp.ap_password));
+    console.log('save msg:', m);
+    if (pp.ap_password !== 'my-secret-2026') console.log('AP PASS POST FAIL');
+    if (!/热点密码已修改/.test(m)) console.log('AP PASS HINT FAIL');
+    // 留空 = 开放热点：仍应原样上报空串（由后端决定接受）
+    pw.value = '';
+    await w.save();
+    console.log('ap_password cleared ->', JSON.stringify((w._lastPost || {}).ap_password),
+      '(expect "")');
+    if ((w._lastPost || {}).ap_password !== '') console.log('AP PASS OPEN FAIL');
+  } catch (e) { console.log('ap password THREW:', e.message); }
+
   // 巡游实况换算：填 15.166 m/s 时，报文应按用户值上报，且提示轨迹真实线速度
   try {
     const f = (k) => w.document.getElementById(k);
@@ -437,7 +460,7 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
     console.log('ota info:', d.getElementById('otaver').textContent,
       '|', d.getElementById('otapart').textContent,
       '|', d.getElementById('otacan').textContent);
-    if (d.getElementById('otaver').textContent !== '1.2.3') console.log('OTA INFO FAIL');
+    if (d.getElementById('otaver').textContent !== '1.2.5') console.log('OTA INFO FAIL');
 
     // 未选文件：只提示，不许发请求
     w.otaStart();
@@ -465,11 +488,12 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
   // 历史轨迹：卡片渲染与刷新（只做观察输出，不影响退出码）
   console.log('=== 历史轨迹 ===');
-  console.log('  logbox 存在:', !!document.getElementById('logbox'));
-  console.log('  目标行数:', document.querySelectorAll('#lgtargets .lgrow').length);
-  console.log('  占用文案:', (document.getElementById('lgused') || {}).textContent);
-  console.log('  进度条宽度:', (document.getElementById('lgfill') || {}).style
-    ? document.getElementById('lgfill').style.width : '');
+  const ld = w.document;
+  console.log('  logbox 存在:', !!ld.getElementById('logbox'));
+  console.log('  目标行数:', ld.querySelectorAll('#lgtargets .lgrow').length);
+  console.log('  占用文案:', (ld.getElementById('lgused') || {}).textContent);
+  console.log('  进度条宽度:', (ld.getElementById('lgfill') || {}).style
+    ? ld.getElementById('lgfill').style.width : '');
 
   console.log('=== 运行后错误 ===');
   console.log(w._pageErrors.length ? w._pageErrors : '(none)');

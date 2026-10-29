@@ -181,6 +181,17 @@ checks = {
     "轨迹:未对时降级为上面计时": ("上电 '" in html and "fmtT(" in html),
     "轨迹:说明折叠": "<summary>说明：记录了什么、能存多久、时间为什么不对</summary>" in html,
     "轨迹:说明写出降采样与容量": ("最快 5 秒一条" in html and "6.5 万条" in html),
+    # 热点密码（WPA2）：挡住陌生人连入热点改参数 / 上传固件
+    "密码:输入框存在且限长63": "id='ap_password'" in html and "maxlength='63'" in html,
+    "密码:紧跟在 SSID 之后": 0 < html.find("id='ssid'") < html.find("id='ap_password'")
+                            < html.find("id='channel'"),
+    "密码:提示留空等于开放": "留空 = 开放热点" in html,
+    "密码:说明折叠": "<summary>说明：热点密码与设备安全</summary>" in html,
+    "密码:说明写出改后要重连": ("所有已连接的手机都会被断开" in html
+                          and "串口日志开机会打印当前 SSID 与口令" in html),
+    "密码:保存后提示用新密码重连": "热点密码已修改，请用新密码重新连接" in html,
+    "密码:随配置一起上报": "'ap_password'" in html and "d.ap_password" in html,
+    "密码:OTA说明改为需连热点": "热点默认开启 WPA2 口令" in html,
 }
 for k, v in checks.items():
     print(("OK   " if v else "FAIL ") + k)
