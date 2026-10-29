@@ -234,6 +234,8 @@ if(j.ok){msg('已恢复初始设定 ✓'+(j.restarted?' (热点参数变化，�
 await load();}else{msg('恢复失败',false);}}
 catch(e){msg(e&&e.name==='TypeError'?'已恢复初始设定，连接被重置，请重新连接热点后刷新确认':'恢复失败: '+e,false);}}
 var OTA=null,otaBusy=false,otaPollN=0;
+function otaOpen(){var m=q('otamask');if(!m)return;m.classList.add('on');otaLoad();}
+function otaClose(){if(otaBusy)return;var m=q('otamask');if(m)m.classList.remove('on');}
 function otaProg(p){var b=q('otabar'),f=q('otafill');if(!b||!f)return;
 b.className='otabar on';
 f.style.width=Math.max(0,Math.min(100,p))+'%';}
@@ -313,6 +315,8 @@ function modeUI(){const tx=roleTx();const rx=!tx;
 document.getElementById('stdbox').style.display=tx?'block':'none';
 document.querySelectorAll('.txonly').forEach(function(e){e.style.display=tx?'':'none';});
 document.getElementById('rxbox').style.display=rx?'block':'none';
+const lg=document.getElementById('logbox');if(lg)lg.style.display=rx?'':'none';
+if(rx)logRefresh();
 if(rx&&!rxTimer){pollRx();rxTimer=setInterval(pollRx,2000);}
 if(!rx&&rxTimer){clearInterval(rxTimer);rxTimer=null;}
 if(rx){rxMapLoad();try{if(window.RXMAP)RXMAP.resize();}catch(e){}}
@@ -722,6 +726,7 @@ h+='<div class="lgmore">共 '+j.total+' 条，这里是最新的 '+ps.length+' �
 box.innerHTML=h;
 }catch(e){box.innerHTML='<div class="lgmore">读取失败</div>';}}
 async function logRefresh(){
+if(roleTx())return;
 try{const r=await fetch('/api/log/info');const j=await r.json();
 const b=q('logbox');
 if(!j.ready){if(b)b.style.display='none';return;}

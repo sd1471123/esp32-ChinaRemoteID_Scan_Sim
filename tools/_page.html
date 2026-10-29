@@ -1,18 +1,28 @@
 <!DOCTYPE html><html lang='zh'><head><meta charset='utf-8'>
 <meta name='viewport' content='width=device-width,initial-scale=1'>
-<title>ESP32-RID 接收/发射</title>
+<title>ESP32-ChinaRemoteID_Scan_Sim</title>
 <link rel='stylesheet' href='https://unpkg.com/leaflet@1.9.4/dist/leaflet.css'/>
 <script src='https://unpkg.com/leaflet@1.9.4/dist/leaflet.js' onerror='window._mapfail=1'></script>
 <style>
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 body{font-family:-apple-system,'Segoe UI',Roboto,'PingFang SC','Microsoft YaHei',sans-serif;
 margin:0;background:#eef1f5;color:#1f2937;line-height:1.5;overflow-x:hidden}
-.hdr{background:linear-gradient(135deg,#0b3d2e,#0f8a4d);color:#fff;padding:16px}
+.hdr{background:linear-gradient(135deg,#0b3d2e,#0f8a4d);color:#fff;padding:14px 16px}
 .hdr-in{max-width:1080px;margin:0 auto}
-.hdr h2{margin:0;font-size:20px;display:flex;align-items:center;gap:8px}
+.hdr-row{display:flex;align-items:flex-start;gap:12px}
+.hdr-tt{flex:1;min-width:0}
+.hdr h2{margin:0;font-size:17px;line-height:1.3;display:flex;align-items:center;gap:8px;
+overflow-wrap:anywhere}
 .dot{width:10px;height:10px;border-radius:50%;background:#4ade80;display:inline-block;
 box-shadow:0 0 6px #4ade80;flex:none}
-.hdr p{margin:4px 0 0;font-size:12px;opacity:.8}
+.hdr-url{display:block;margin-top:4px;font-size:11px;color:#b8ecd2;text-decoration:none;
+font-family:ui-monospace,Menlo,Consolas,monospace;overflow-wrap:anywhere}
+.hdr-url:hover{color:#fff;text-decoration:underline}
+.hdr .sub{margin:6px 0 0;font-size:11px;opacity:.78}
+.hdr-ota{flex:none;width:auto;margin:0;padding:8px 12px;border-radius:9px;font-size:12px;
+font-weight:700;font-family:inherit;color:#0b3d2e;background:rgba(255,255,255,.93);
+border:1px solid rgba(255,255,255,.5);box-shadow:0 1px 3px rgba(0,0,0,.16)}
+.hdr-ota:active{transform:scale(.97);background:#fff;filter:none}
 .wrap{max-width:1080px;margin:0 auto;padding:14px}
 .grid{display:grid;grid-template-columns:1fr;gap:14px}
 .grid>*{min-width:0}
@@ -27,9 +37,11 @@ border-radius:8px;font-size:15px;background:#f9fafb;color:#1f2937;transition:.15
 input:focus,select:focus{outline:none;border-color:#0f8a4d;background:#fff;
 box-shadow:0 0 0 3px rgba(15,138,77,.15)}
 .g{display:grid;grid-template-columns:1fr 1fr;gap:0 12px}
+.g>div{display:flex;flex-direction:column;min-width:0}
+.g>div>label{flex:1 0 auto;display:flex;align-items:flex-end}
 .g .full{grid-column:1/-1}
-.note{font-size:12px;color:#9ca3af;margin:8px 0 0}
-details.tip{margin:10px 0 0;background:#f7f9fa;border:1px solid #e6eaee;border-radius:8px}
+.note{font-size:12px;color:#9ca3af;margin:6px 0 0}
+details.tip{margin:8px 0 0;background:#f7f9fa;border:1px solid #e6eaee;border-radius:8px}
 details.tip>summary{list-style:none;cursor:pointer;padding:7px 10px;display:flex;
 align-items:center;gap:6px;font-size:12px;font-weight:600;color:#0f8a4d}
 details.tip>summary::-webkit-details-marker{display:none}
@@ -222,6 +234,7 @@ border-radius:6px 6px 0 0}
 .lgpt .dim{color:#8b95a1}
 .lgmore{font-size:12px;color:#6b7280;padding:8px 2px}
 #msg{margin-top:10px;font-size:14px;min-height:18px;font-weight:600}
+#msg:empty{display:none}
 .otainfo{display:flex;gap:6px 16px;flex-wrap:wrap;font-size:12px;color:#4b5563;
 background:#f7f9fa;border:1px solid #e6eaee;border-radius:8px;padding:7px 10px;margin-top:8px}
 .otainfo b{color:#0b3d2e;font-weight:600;font-family:ui-monospace,Menlo,Consolas,monospace}
@@ -245,9 +258,15 @@ background:linear-gradient(90deg,#0f8a4d,#16a35f);transition:width .18s}
 #map{height:460px}
 }
 </style></head><body>
-<div class='hdr'><div class='hdr-in'>
-<h2><span class='dot'></span>ESP32-RID 接收/发射</h2>
-<p>开源项目根据 GB 42590-2023 / GB 46750-2025</p>
+<div class='hdr'><div class='hdr-in'><div class='hdr-row'>
+<div class='hdr-tt'>
+<h2><span class='dot'></span>ESP32-ChinaRemoteID_Scan_Sim</h2>
+<a class='hdr-url' href='https://github.com/sd1471123/esp32-ChinaRemoteID_Scan_Sim'
+ target='_blank' rel='noopener'>github.com/sd1471123/esp32-ChinaRemoteID_Scan_Sim</a>
+</div>
+<button class='hdr-ota' id='otatoggle' type='button' onclick='otaOpen()'>固件升级</button>
+</div>
+<p class='sub'>中国 Remote ID 收发一体固件 · GB 42590-2023 / GB 46750-2025</p>
 </div></div>
 <div class='wrap'><div class='grid'>
 <div class='card span2'><h3>运行模式</h3>
@@ -302,15 +321,15 @@ background:linear-gradient(90deg,#0f8a4d,#16a35f);transition:width .18s}
 机型代码为 RID 标准 16 类航空器类别码。序列号可手动微调，其他品牌用「其他厂商」分组。
 两个标准均广播该序列号。</div></details>
 <div class='newstd'><div class='g'>
-<div><label>实名登记号后8位</label><input id='realname_id' maxlength='8'>
-<p class='note' style='margin-top:2px'>仅新国标广播，空 = 不填。</p></div>
+<div><label>实名登记号后8位</label><input id='realname_id' maxlength='8'></div>
 <div><label>新国标分类</label>
 <div class='dd' id='dd4'>
 <div class='dd-btn' id='dd4btn'><span class='dd-txt ph' id='dd4txt'>-- 选择分类 --</span>
 <span class='dd-car'>&#9662;</span></div>
 <div class='dd-panel'><div class='dd-list' id='dd4list'></div></div></div>
 <input type='hidden' id='ua_category_gb'></div>
-</div></div>
+</div>
+<p class='note' style='margin-top:6px'>仅新国标广播，空 = 不填。</p></div>
 <div class='oldstd'><label>操作员 ID</label><input id='operator_id' maxlength='20'></div>
 <div class='g'>
 <div><label>热点名称 (SSID)</label><input id='ssid' maxlength='31'></div>
@@ -448,7 +467,7 @@ background:linear-gradient(90deg,#0f8a4d,#16a35f);transition:width .18s}
 目的地取机型名与经纬度（WGS-84 原始值，由 App 自行转 GCJ-02）；
 只有 App 未安装（1.5 秒内没跳走）才退回网页版。</div></details>
 </div>
-<div class='card span2' id='logbox'><h3>历史轨迹</h3>
+<div class='card span2 rxonly' id='logbox' style='display:none'><h3>历史轨迹</h3>
 <div class='otainfo'>
 <span>记录 <b id='lgcnt'>--</b> 条</span>
 <span>占用 <b id='lgused'>--</b></span>
@@ -473,7 +492,25 @@ background:linear-gradient(90deg,#0f8a4d,#16a35f);transition:width .18s}
 <br>「清空记录」只是把日志代次加一，毫秒级完成，不会擦整个分区，之后新记录会自然覆盖旧数据。
 </div></details>
 </div>
-<div class='card span2'><h3>固件升级 (OTA)</h3>
+<div class='actions span2'>
+<button onclick='save()'>保存并应用</button>
+<button class='danger' onclick='resetCfg()'>恢复初始</button>
+</div>
+<div id='msg' class='span2'></div>
+</div>
+<div class='navmask' id='navpick'>
+<div class='navsheet'>
+<h4 id='navpick_t'>导航到目标</h4>
+<p class='sub' id='navpick_p'></p>
+<button class='navopt' type='button' data-prov='amap'><b>高德地图 App</b>
+<span>直接打开高德并进入驾车路线；未安装则退回高德网页版</span></button>
+<button class='navopt' type='button' data-prov='bd'><b>百度地图 App</b>
+<span>直接打开百度地图并进入驾车路线；未安装则退回百度网页版</span></button>
+<button class='navcancel' type='button' id='navpick_c'>取消</button>
+</div></div>
+<div class='navmask' id='otamask' onclick='otaClose()'>
+<div class='navsheet' onclick='event.stopPropagation()'>
+<h4>固件升级 (OTA)</h4>
 <div class='otainfo'>
 <span>当前版本 <b id='otaver'>--</b></span>
 <span>运行分区 <b id='otapart'>--</b></span>
@@ -496,22 +533,8 @@ background:linear-gradient(90deg,#0f8a4d,#16a35f);transition:width .18s}
 之后才能完全依赖网页升级。位置与参数存在 NVS，升级不会清除。
 <br>热点默认开启 WPA2 口令（可在「身份信息」里改），能连上热点的人才能升级固件；
 上传令牌只能挡住其它网页的跨站误提交，不是权限控制。
-</div></details></div>
-<div class='actions span2'>
-<button onclick='save()'>保存并应用</button>
-<button class='danger' onclick='resetCfg()'>恢复初始</button>
-</div>
-<div id='msg' class='span2'></div>
-</div>
-<div class='navmask' id='navpick'>
-<div class='navsheet'>
-<h4 id='navpick_t'>导航到目标</h4>
-<p class='sub' id='navpick_p'></p>
-<button class='navopt' type='button' data-prov='amap'><b>高德地图 App</b>
-<span>直接打开高德并进入驾车路线；未安装则退回高德网页版</span></button>
-<button class='navopt' type='button' data-prov='bd'><b>百度地图 App</b>
-<span>直接打开百度地图并进入驾车路线；未安装则退回百度网页版</span></button>
-<button class='navcancel' type='button' id='navpick_c'>取消</button>
+</div></details>
+<button class='navcancel' type='button' onclick='otaClose()'>关闭</button>
 </div></div>
 <p class='foot'>手机连接本机热点后访问 http://192.168.4.1 打开此页。
 修改 SSID / 信道 / 广播间隔保存后需重新连接热点。配置已持久化，断电不丢失。</p>
@@ -752,6 +775,8 @@ if(j.ok){msg('已恢复初始设定 ✓'+(j.restarted?' (热点参数变化，�
 await load();}else{msg('恢复失败',false);}}
 catch(e){msg(e&&e.name==='TypeError'?'已恢复初始设定，连接被重置，请重新连接热点后刷新确认':'恢复失败: '+e,false);}}
 var OTA=null,otaBusy=false,otaPollN=0;
+function otaOpen(){var m=q('otamask');if(!m)return;m.classList.add('on');otaLoad();}
+function otaClose(){if(otaBusy)return;var m=q('otamask');if(m)m.classList.remove('on');}
 function otaProg(p){var b=q('otabar'),f=q('otafill');if(!b||!f)return;
 b.className='otabar on';
 f.style.width=Math.max(0,Math.min(100,p))+'%';}
@@ -831,6 +856,8 @@ function modeUI(){const tx=roleTx();const rx=!tx;
 document.getElementById('stdbox').style.display=tx?'block':'none';
 document.querySelectorAll('.txonly').forEach(function(e){e.style.display=tx?'':'none';});
 document.getElementById('rxbox').style.display=rx?'block':'none';
+const lg=document.getElementById('logbox');if(lg)lg.style.display=rx?'':'none';
+if(rx)logRefresh();
 if(rx&&!rxTimer){pollRx();rxTimer=setInterval(pollRx,2000);}
 if(!rx&&rxTimer){clearInterval(rxTimer);rxTimer=null;}
 if(rx){rxMapLoad();try{if(window.RXMAP)RXMAP.resize();}catch(e){}}
@@ -1240,6 +1267,7 @@ h+='<div class="lgmore">共 '+j.total+' 条，这里是最新的 '+ps.length+' �
 box.innerHTML=h;
 }catch(e){box.innerHTML='<div class="lgmore">读取失败</div>';}}
 async function logRefresh(){
+if(roleTx())return;
 try{const r=await fetch('/api/log/info');const j=await r.json();
 const b=q('logbox');
 if(!j.ready){if(b)b.style.display='none';return;}

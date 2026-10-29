@@ -486,10 +486,18 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
     if (!/正在重启/.test(d.getElementById('otatxt').textContent)) console.log('OTA SUCCESS TEXT FAIL');
   } catch (e) { console.log('ota ui THREW:', e.message); }
 
-  // 历史轨迹：卡片渲染与刷新（只做观察输出，不影响退出码）
+  // 历史轨迹：只在接收模式显示；发射模式下整卡隐藏且不再轮询
   console.log('=== 历史轨迹 ===');
   const ld = w.document;
-  console.log('  logbox 存在:', !!ld.getElementById('logbox'));
+  const lgbox = ld.getElementById('logbox');
+  console.log('  logbox 存在:', !!lgbox);
+  w.setRole(true); w.modeUI();
+  console.log('  发射模式隐藏:', lgbox.style.display === 'none');
+  await w.logRefresh();     // 发射模式应直接跳过，不得把隐藏态改回可见
+  console.log('  发射模式跳过刷新:', lgbox.style.display === 'none');
+  w.setRole(false); w.modeUI();
+  await w.logRefresh();
+  console.log('  接收模式显示:', lgbox.style.display === '');
   console.log('  目标行数:', ld.querySelectorAll('#lgtargets .lgrow').length);
   console.log('  占用文案:', (ld.getElementById('lgused') || {}).textContent);
   console.log('  进度条宽度:', (ld.getElementById('lgfill') || {}).style

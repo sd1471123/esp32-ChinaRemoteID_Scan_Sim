@@ -90,9 +90,9 @@ checks = {
                           and "updateRxMap" not in html and "rxFocus" not in html,
     "页面仅通过 RXMAP 钩子调用": len([l for l in html.splitlines() if "RXMAP" in l]) == 5,
     "离线网格容器在": "id='rxgrid'" in html and "id='rxgridnote'" in html,
-    "标题已更新": "<title>ESP32-RID 接收/发射</title>" in html
-                and "ESP32-RID 接收/发射</h2>" in html
-                and "开源项目根据 GB 42590-2023 / GB 46750-2025" in html,
+    "标题已更新": "<title>ESP32-ChinaRemoteID_Scan_Sim</title>" in html
+                and "ESP32-ChinaRemoteID_Scan_Sim</h2>" in html
+                and "中国 Remote ID 收发一体固件" in html,
     "接收端无自检代码": "selfCheck" not in html and "__probe" not in html,
     "无 /app.js 与 /api/pageinfo": "/app.js" not in html and "/api/pageinfo" not in html,
     "Leaflet CDN 已恢复": "unpkg.com/leaflet@1.9.4/dist/leaflet.js" in html,
@@ -155,8 +155,14 @@ checks = {
     # 两列自平衡：飞手位置挪到左列（身份信息卡之后、飞行参数列之前）
     "布局:飞手位置在左列": (html.find("id='operator_id'") < html.find("<h3>飞手位置</h3>")
                           < html.find("<h3>飞行参数</h3>")),
-    # 固件升级（OTA）：裸流上传 + 上传进度 + 重启后比对版本，说明同样折叠
-    "OTA:卡片存在": "<h3>固件升级 (OTA)</h3>" in html,
+    # 顶部横幅：项目标题 + 仓库地址 + 右上角固件升级入口
+    "头部:项目标题": "<h2><span class='dot'></span>ESP32-ChinaRemoteID_Scan_Sim</h2>" in html,
+    "头部:仓库地址": ("https://github.com/sd1471123/esp32-ChinaRemoteID_Scan_Sim" in html
+                  and "target='_blank'" in html),
+    "头部:升级入口在右上角": (html.find("id='otatoggle'") < html.find("<div class='wrap'>")
+                          and 0 < html.find("id='otatoggle'")),
+    # 固件升级（OTA）：顶部弹层 + 裸流上传 + 上传进度 + 重启后比对版本
+    "OTA:面板存在": ("id='otamask'" in html and "<h4>固件升级 (OTA)</h4>" in html),
     "OTA:版本/分区/容量信息": all(("id='%s'" % i) in html
                             for i in ('otaver', 'otapart', 'otacan')),
     "OTA:文件选择与按钮": ("id='otafile'" in html and "onclick='otaStart()'" in html),
@@ -169,8 +175,11 @@ checks = {
     "OTA:重启后比对版本再刷新": ("function otaWaitReboot(" in html
                             and "location.reload()" in html),
     "OTA:升级说明折叠": "<summary>说明：升级流程、断电保护与风险</summary>" in html,
-    # 历史轨迹（接收端持久化日志）
+    # 历史轨迹（接收端持久化日志）：只有接收模式落盘，发射模式整卡隐藏
     "轨迹:卡片存在": "<h3>历史轨迹</h3>" in html,
+    "轨迹:仅接收端显示": ("class='card span2 rxonly' id='logbox'" in html
+                       and "lg.style.display=rx?'':'none'" in html
+                       and "if(roleTx())return;" in html),
     "轨迹:统计三栏": all(("id='%s'" % i) in html for i in ('lgcnt', 'lgused', 'lgrange')),
     "轨迹:容量进度条": "class='lgbar'" in html and "id='lgfill'" in html,
     "轨迹:目标列表容器": "id='lgtargets'" in html and "id='lgpoints'" in html,
