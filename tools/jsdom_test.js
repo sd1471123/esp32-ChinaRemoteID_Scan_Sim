@@ -40,9 +40,37 @@ const dom = new JSDOM(patched, {
           has_op_loc: true, op_latitude: 22.53, op_longitude: 114.04, op_altitude_geo: 25,
         }],
       })};
+      // OTA 信息接口（带 ?n= 轮询参数，用前缀匹配）
+      if (String(u).indexOf('/api/ota/info') === 0) return { json: async () => ({
+        ver: '1.2.3', part: 'factory', part_size: 2097152,
+        max: 2097152, token: 'tk123456', ota: true,
+      })};
       return { json: async () => ({}) };
     };
     window.confirm = () => true;
+    // XHR 桩：只服务于固件升级（记录请求头/请求体，回一个 ok 的 JSON）
+    window._otaReq = null;
+    window.XMLHttpRequest = function () {
+      const self = {
+        _hdr: {}, status: 0, responseText: '', timeout: 0,
+        upload: { onprogress: null },
+        open(m, u) { self.method = m; self.url = u; },
+        setRequestHeader(k, v) { self._hdr[k] = v; },
+        send(body) {
+          window._otaReq = { method: self.method, url: self.url, headers: self._hdr, body };
+          setTimeout(() => {
+            const n = body.size || body.length || 0;
+            if (self.upload.onprogress) {
+              self.upload.onprogress({ lengthComputable: true, loaded: n, total: n });
+            }
+            self.status = 200;
+            self.responseText = JSON.stringify({ ok: true, size: n });
+            if (self.onload) self.onload();
+          }, 30);
+        },
+      };
+      return self;
+    };
     // Leaflet 桩
     const mk = (o) => Object.assign({
       addTo(){ return this; }, setLatLng(){ return this; }, getLatLng(){ return {lat:0,lng:0}; },
@@ -373,6 +401,39 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
     console.log('dd 6/7/8 items:', cnt(6), cnt(7), cnt(8), '(expect 2 2 3)');
     if (cnt(6) !== 2 || cnt(7) !== 2 || cnt(8) !== 3) console.log('DD BUILD FAIL');
   } catch (e) { console.log('dd ui THREW:', e.message); }
+
+  // 固件升级（OTA）：信息区回填、未选文件不发请求、上传带上令牌与裸流头
+  try {
+    const d = w.document;
+    await sleep(120);
+    console.log('ota info:', d.getElementById('otaver').textContent,
+      '|', d.getElementById('otapart').textContent,
+      '|', d.getElementById('otacan').textContent);
+    if (d.getElementById('otaver').textContent !== '1.2.3') console.log('OTA INFO FAIL');
+
+    // 未选文件：只提示，不许发请求
+    w.otaStart();
+    console.log('ota no-file msg:', d.getElementById('otatxt').textContent);
+    if (w._otaReq) console.log('OTA NOFILE FAIL (request sent without file)');
+
+    // 选一个 120KB 的假固件 -> 应 POST 裸流到 /api/ota/upload 并带令牌
+    const fi = d.getElementById('otafile');
+    const file = new w.File([new Uint8Array(120 * 1024)], 'remoteid_scanner.bin',
+      { type: 'application/octet-stream' });
+    Object.defineProperty(fi, 'files', { value: [file], configurable: true });
+    w.otaStart();
+    await sleep(150);
+    const r = w._otaReq || {};
+    console.log('ota req:', r.method, r.url, JSON.stringify(r.headers),
+      'bytes =', r.body && r.body.size);
+    if (r.method !== 'POST' || r.url !== '/api/ota/upload'
+      || r.headers['X-OTA-Token'] !== 'tk123456'
+      || r.headers['Content-Type'] !== 'application/octet-stream') console.log('OTA REQ FAIL');
+    console.log('ota progress width:', JSON.stringify(d.getElementById('otafill').style.width),
+      '| text:', d.getElementById('otatxt').textContent,
+      '| btn disabled:', d.getElementById('otabtn').disabled);
+    if (!/正在重启/.test(d.getElementById('otatxt').textContent)) console.log('OTA SUCCESS TEXT FAIL');
+  } catch (e) { console.log('ota ui THREW:', e.message); }
 
   console.log('=== 运行后错误 ===');
   console.log(w._pageErrors.length ? w._pageErrors : '(none)');

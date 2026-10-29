@@ -155,6 +155,20 @@ checks = {
     # 两列自平衡：飞手位置挪到左列（身份信息卡之后、飞行参数列之前）
     "布局:飞手位置在左列": (html.find("id='operator_id'") < html.find("<h3>飞手位置</h3>")
                           < html.find("<h3>飞行参数</h3>")),
+    # 固件升级（OTA）：裸流上传 + 上传进度 + 重启后比对版本，说明同样折叠
+    "OTA:卡片存在": "<h3>固件升级 (OTA)</h3>" in html,
+    "OTA:版本/分区/容量信息": all(("id='%s'" % i) in html
+                            for i in ('otaver', 'otapart', 'otacan')),
+    "OTA:文件选择与按钮": ("id='otafile'" in html and "onclick='otaStart()'" in html),
+    "OTA:进度条": "id='otabar'" in html and "id='otafill'" in html,
+    "OTA:裸流上传带令牌": ("'/api/ota/upload'" in html
+                       and "'application/octet-stream'" in html
+                       and "'X-OTA-Token'" in html),
+    "OTA:用XHR拿上传进度": "x.upload.onprogress" in html,
+    "OTA:升级时暂停轮询": "if(otaBusy)return;" in html,
+    "OTA:重启后比对版本再刷新": ("function otaWaitReboot(" in html
+                            and "location.reload()" in html),
+    "OTA:升级说明折叠": "<summary>说明：升级流程、断电保护与风险</summary>" in html,
 }
 for k, v in checks.items():
     print(("OK   " if v else "FAIL ") + k)

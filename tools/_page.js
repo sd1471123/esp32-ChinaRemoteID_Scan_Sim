@@ -232,6 +232,61 @@ try{const r=await fetch('/api/reset',{method:'POST'});const j=await r.json();
 if(j.ok){msg('已恢复初始设定 ✓'+(j.restarted?' (热点参数变化，请重新连接热点)':''),true);
 await load();}else{msg('恢复失败',false);}}
 catch(e){msg(e&&e.name==='TypeError'?'已恢复初始设定，连接被重置，请重新连接热点后刷新确认':'恢复失败: '+e,false);}}
+var OTA=null,otaBusy=false,otaPollN=0;
+function otaProg(p){var b=q('otabar'),f=q('otafill');if(!b||!f)return;
+b.className='otabar on';
+f.style.width=Math.max(0,Math.min(100,p))+'%';}
+function otaTxt(t,cls){var e=q('otatxt');if(!e)return;
+e.className='otatxt'+(cls?' '+cls:'');e.textContent=t;}
+function otaFill(){if(!OTA)return;var v=q('otaver'),p=q('otapart'),c=q('otacan');
+if(v)v.textContent=OTA.ver||'--';
+if(p)p.textContent=(OTA.part||'--')+(OTA.part_size?' / '+(OTA.part_size/1048576).toFixed(2)+' MB':'');
+if(c)c.textContent=OTA.ota?(OTA.max/1048576).toFixed(2)+' MB':'不可用';}
+function otaLoad(){return fetch('/api/ota/info',{cache:'no-store'})
+.then(function(r){return r.json();})
+.then(function(j){OTA=j;otaFill();})
+.catch(function(){otaTxt('升级信息读取失败：页面与固件版本可能不匹配','bad');});}
+function otaStart(){if(otaBusy)return;
+var fi=q('otafile');var file=fi&&fi.files?fi.files[0]:null;
+if(!file){otaTxt('请先选择固件文件 (.bin)','bad');return;}
+if(!OTA||!OTA.token){otaTxt('升级信息未就绪，请刷新页面后重试','bad');return;}
+if(file.size<32768){otaTxt('文件太小，不是有效固件','bad');return;}
+if(OTA.max&&file.size>OTA.max){otaTxt('文件超过分区容量 '+(OTA.max/1048576).toFixed(2)+' MB','bad');return;}
+if(!confirm('确认升级固件？\n\n文件：'+file.name+'\n大小：'+(file.size/1048576).toFixed(2)+' MB'
++'\n当前版本：'+(OTA.ver||'?')+'\n\n升级期间请勿断电，完成后设备会自动重启。'))return;
+otaBusy=true;var btn=q('otabtn');if(btn)btn.disabled=true;
+otaProg(0);otaTxt('正在上传，请勿关闭页面…','');
+var x=new XMLHttpRequest();
+x.open('POST','/api/ota/upload',true);
+x.setRequestHeader('Content-Type','application/octet-stream');
+x.setRequestHeader('X-OTA-Token',OTA.token);
+x.timeout=180000;
+x.upload.onprogress=function(e){if(!e.lengthComputable)return;
+var pc=e.loaded/e.total*100;otaProg(pc);
+otaTxt('已上传 '+(e.loaded/1024).toFixed(0)+' / '+(e.total/1024).toFixed(0)+' KB（'+pc.toFixed(0)+'%）');};
+x.onload=function(){var j=null;try{j=JSON.parse(x.responseText);}catch(e){}
+if(x.status===200&&j&&j.ok){otaProg(100);otaTxt('写入完成，设备正在重启…','good');otaWaitReboot();}
+else{otaBusy=false;if(btn)btn.disabled=false;
+otaTxt('升级失败：'+((j&&j.err)||('HTTP '+x.status))+'（旧固件不受影响）','bad');}};
+x.onerror=function(){otaBusy=false;if(btn)btn.disabled=false;
+otaTxt('网络中断，升级未完成；设备若已重启请刷新页面确认版本','bad');};
+x.ontimeout=function(){otaBusy=false;if(btn)btn.disabled=false;otaTxt('上传超时，已取消','bad');};
+x.send(file);}
+function otaWaitReboot(){var t0=Date.now();
+var iv=setInterval(function(){
+if(Date.now()-t0>60000){clearInterval(iv);otaBusy=false;
+var b=q('otabtn');if(b)b.disabled=false;
+otaTxt('设备 60 秒内未响应，请手动刷新页面查看版本','bad');return;}
+otaPollN++;
+fetch('/api/ota/info?n='+otaPollN,{cache:'no-store'})
+.then(function(r){return r.json();})
+.then(function(j){clearInterval(iv);otaBusy=false;
+var same=(j.ver===OTA.ver);
+otaTxt(same?'已重启，版本仍为 '+j.ver+'（上传的可能是同版本固件，或已被回滚）'
+:'已升级到 '+j.ver+'，正在刷新页面…',same?'bad':'good');
+setTimeout(function(){location.reload();},1600);})
+.catch(function(){});
+},2000);}
 function getRadio(n){const r=document.querySelector('input[name='+n+']:checked');
 return r?r.value:'0';}
 function stdUI(){const s=getRadio('std');
@@ -495,6 +550,7 @@ el.onclick=function(){try{if(window.RXMAP)RXMAP.focus(t.mac);}catch(e){}};
 return el;}
 
 async function pollRx(){
+if(otaBusy)return;
 try{
 const r=await fetch('/api/rx');const j=await r.json();
 try{if(window.RXMAP)RXMAP.update(j.tracks);}catch(e){}
@@ -607,7 +663,7 @@ if(trailPts.length>240)trailPts.shift();
 if(map){if(!trailLine)trailLine=L.polyline(trailPts,
 {color:'#1565c0',weight:2,opacity:.6}).addTo(map);
 else trailLine.setLatLngs(trailPts);}}
-async function poll(){try{const r=await fetch('/api/status');const j=await r.json();
+async function poll(){if(otaBusy)return;try{const r=await fetch('/api/status');const j=await r.json();
 const t='实时广播位置: '+j.latitude.toFixed(6)+', '+j.longitude.toFixed(6)+
 '  高度 '+j.altitude_msl.toFixed(1)+'m  航向 '+j.heading.toFixed(0)+'°';
 document.getElementById('liveinfo').textContent=t;
@@ -622,3 +678,4 @@ headers:{'Content-Type':'application/json'},body:JSON.stringify({epoch_ms:sT})})
 setInterval(poll,2000);
 syncTime();
 load();
+otaLoad();

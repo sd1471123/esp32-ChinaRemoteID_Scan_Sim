@@ -98,7 +98,7 @@ jobs:
           esptool.py --chip esp32s3 --baud 460800 write_flash \
             0x0 remoteid_scanner_esp32s3/bootloader/bootloader.bin \
             0x8000 remoteid_scanner_esp32s3/partition_table/partition-table.bin \
-            0x10000 remoteid_scanner_esp32s3/remoteid_scanner.bin
+            0x20000 remoteid_scanner_esp32s3/remoteid_scanner.bin
           ```
 
           **ESP32-C5**（bootloader 偏移 0x2000，注意与 S3 不同）：
@@ -106,13 +106,15 @@ jobs:
           esptool.py --chip esp32c5 --baud 460800 write_flash \
             0x2000 remoteid_scanner_esp32c5/bootloader/bootloader.bin \
             0x8000 remoteid_scanner_esp32c5/partition_table/partition-table.bin \
-            0x10000 remoteid_scanner_esp32c5/remoteid_scanner.bin
+            0x20000 remoteid_scanner_esp32c5/remoteid_scanner.bin
           ```
 
           也可使用 [espressif flash download tool](https://www.espressif.com/en/support/download/other-tools)
           图形界面烧录（对应芯片型号 + 上表地址）。
 
-          两个芯片均按 **16MB Flash** 构建（factory 分区 1.5MB）。
+          两个芯片均按 **16MB Flash** 构建，分区表为 factory + ota_0 + ota_1（各 2MB），
+          应用镜像地址是 **0x20000**；烧录本版后即可在网页 http://192.168.4.1 的
+          「固件升级 (OTA)」卡片里直接上传 .bin 升级，不再需要数据线。
           本 Release 由 CI 自动构建于 ${{ github.ref_name }}，功能说明见仓库 README。
         draft: false
         prerelease: false

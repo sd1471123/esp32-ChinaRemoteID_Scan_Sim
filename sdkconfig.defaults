@@ -1,5 +1,11 @@
 # 跨芯片共用默认配置（esp32s3 / esp32c5 等）
-# 自定义分区表：factory 分区扩到 1.5MB（见 partition_table/partitionTable.csv）
+# 自定义分区表：factory + ota_0 + ota_1 三个 app 槽，各 2MB
+# （见 partition_table/partitionTable.csv）
 # 内置默认 1MB app 分区对 RISC-V 目标（C3/C5/C6）偏小，固件约 1.03MB 会溢出
 CONFIG_PARTITION_TABLE_CUSTOM=y
 CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partition_table/partitionTable.csv"
+
+# 固件回滚：网页 OTA 写入的新固件带 PENDING_VERIFY 标记，只有在 app_main
+# 完成全部初始化并调用 esp_ota_mark_app_valid_cancel_rollback() 后才算确认；
+# 若新固件在这之前崩溃/复位，引导器自动退回上一版可用的固件。
+CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE=y

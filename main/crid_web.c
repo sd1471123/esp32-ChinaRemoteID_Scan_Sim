@@ -8,6 +8,7 @@
 #include "crid_wifi.h"
 #include "crid_rx.h"
 #include "crid_gb46750.h"
+#include "crid_ota.h"
 #include "page_gz.h"
 #include "esp_http_server.h"
 #include "esp_log.h"
@@ -259,6 +260,23 @@ static const char PAGE_HTML[] =
 "button.danger{background:#fff;color:#c0392b;border:1px solid #f3b6b0}"
 "button.danger:hover{background:#fdf1f0;filter:none}"
 "#msg{margin-top:10px;font-size:14px;min-height:18px;font-weight:600}"
+// ---- 固件升级（OTA） ----
+".otainfo{display:flex;gap:6px 16px;flex-wrap:wrap;font-size:12px;color:#4b5563;"
+"background:#f7f9fa;border:1px solid #e6eaee;border-radius:8px;padding:7px 10px;margin-top:8px}"
+".otainfo b{color:#0b3d2e;font-weight:600;font-family:ui-monospace,Menlo,Consolas,monospace}"
+".otafile{display:flex;gap:8px;align-items:center;flex-wrap:wrap}"
+".otafile input[type=file]{flex:1 1 200px;min-width:0;margin-top:0;padding:7px 8px;"
+"font-size:13px;background:#fff}"
+".otafile button{flex:0 0 auto;width:auto;margin-top:0;padding:10px 16px;font-size:14px}"
+"button:disabled{opacity:.55;cursor:not-allowed;filter:none}"
+".otabar{display:none;height:10px;border-radius:6px;background:#eef1f4;"
+"overflow:hidden;margin-top:10px}"
+".otabar.on{display:block}"
+".otabar i{display:block;width:0;height:100%;border-radius:6px;"
+"background:linear-gradient(90deg,#0f8a4d,#16a35f);transition:width .18s}"
+".otatxt{font-size:12px;color:#6b7280;margin-top:6px;min-height:16px;line-height:1.5}"
+".otatxt.bad{color:#c0392b}"
+".otatxt.good{color:#0a7d43}"
 ".foot{font-size:12px;color:#9ca3af;margin:10px 2px}"
 "@media(min-width:860px){"
 ".grid{grid-template-columns:1fr 1fr}"
@@ -461,6 +479,31 @@ static const char PAGE_HTML[] =
 "目的地取机型名与经纬度（WGS-84 原始值，由 App 自行转 GCJ-02）；"
 "只有 App 未安装（1.5 秒内没跳走）才退回网页版。</div></details>"
 "</div>"
+// 固件升级：放在最下方、两个模式都显示（升级的是设备本身，与收/发无关）
+"<div class='card span2'><h3>固件升级 (OTA)</h3>"
+"<div class='otainfo'>"
+"<span>当前版本 <b id='otaver'>--</b></span>"
+"<span>运行分区 <b id='otapart'>--</b></span>"
+"<span>可升级容量 <b id='otacan'>--</b></span>"
+"</div>"
+"<label>固件文件（.bin，选编译产物 remoteid_scanner.bin）</label>"
+"<div class='otafile'>"
+"<input type='file' id='otafile' accept='.bin'>"
+"<button type='button' id='otabtn' onclick='otaStart()'>上传并升级</button>"
+"</div>"
+"<div class='otabar' id='otabar'><i id='otafill'></i></div>"
+"<div class='otatxt' id='otatxt'></div>"
+"<details class='tip'><summary>说明：升级流程、断电保护与风险</summary><div>"
+"上传的是编译产物<b>单个 .bin</b>（约 0.6–0.8 MB），不是厂商升级包、也不是压缩包。"
+"固件写入<b>另一个</b> app 分区，写完校验镜像头、芯片型号与 SHA256 通过后才切换启动项；"
+"传输中断或中途断电只会留下一个写坏的备份分区，<b>重启仍是旧固件</b>。"
+"新固件若在完成初始化前崩溃，引导器会自动退回上一版（已在固件里开启回滚）。"
+"<br>升级成功后设备自动重启，热点会断开约 10 秒，本页会自动刷新并显示新版本号。"
+"<br>分区表已改为 factory + ota_0 + ota_1（各 2 MB）：<b>首次</b>需要用 USB 完整烧录一次，"
+"之后才能完全依赖网页升级。位置与参数存在 NVS，升级不会清除。"
+"<br>热点没有密码，能连上本机的人都能升级固件；上传令牌只能挡住其它网页的跨站误提交，"
+"不是权限控制。"
+"</div></details></div>"
 "<div class='actions span2'>"
 "<button onclick='save()'>保存并应用</button>"
 "<button class='danger' onclick='resetCfg()'>恢复初始</button>"
@@ -739,6 +782,65 @@ static const char PAGE_HTML[] =
 "if(j.ok){msg('已恢复初始设定 ✓'+(j.restarted?' (热点参数变化，请重新连接热点)':''),true);"
 "await load();}else{msg('恢复失败',false);}}"
 "catch(e){msg(e&&e.name==='TypeError'?'已恢复初始设定，连接被重置，请重新连接热点后刷新确认':'恢复失败: '+e,false);}}"
+// ---- 固件升级（OTA）：XHR 裸流上传 + 上传进度 + 重启后自动刷新 ----
+// 不用 fetch 的原因：fetch 拿不到上传进度事件，几百 KB 在热点上要传几秒，
+// 没有进度条用户会以为卡死；XHR 的 upload.onprogress 才能逐块更新。
+"var OTA=null,otaBusy=false,otaPollN=0;"
+"function otaProg(p){var b=q('otabar'),f=q('otafill');if(!b||!f)return;"
+"b.className='otabar on';"
+"f.style.width=Math.max(0,Math.min(100,p))+'%';}"
+"function otaTxt(t,cls){var e=q('otatxt');if(!e)return;"
+"e.className='otatxt'+(cls?' '+cls:'');e.textContent=t;}"
+"function otaFill(){if(!OTA)return;var v=q('otaver'),p=q('otapart'),c=q('otacan');"
+"if(v)v.textContent=OTA.ver||'--';"
+"if(p)p.textContent=(OTA.part||'--')+(OTA.part_size?' / '+(OTA.part_size/1048576).toFixed(2)+' MB':'');"
+"if(c)c.textContent=OTA.ota?(OTA.max/1048576).toFixed(2)+' MB':'不可用';}"
+"function otaLoad(){return fetch('/api/ota/info',{cache:'no-store'})"
+".then(function(r){return r.json();})"
+".then(function(j){OTA=j;otaFill();})"
+".catch(function(){otaTxt('升级信息读取失败：页面与固件版本可能不匹配','bad');});}"
+"function otaStart(){if(otaBusy)return;"
+"var fi=q('otafile');var file=fi&&fi.files?fi.files[0]:null;"
+"if(!file){otaTxt('请先选择固件文件 (.bin)','bad');return;}"
+"if(!OTA||!OTA.token){otaTxt('升级信息未就绪，请刷新页面后重试','bad');return;}"
+"if(file.size<32768){otaTxt('文件太小，不是有效固件','bad');return;}"
+"if(OTA.max&&file.size>OTA.max){otaTxt('文件超过分区容量 '+(OTA.max/1048576).toFixed(2)+' MB','bad');return;}"
+"if(!confirm('确认升级固件？\\n\\n文件：'+file.name+'\\n大小：'+(file.size/1048576).toFixed(2)+' MB'"
+"+'\\n当前版本：'+(OTA.ver||'?')+'\\n\\n升级期间请勿断电，完成后设备会自动重启。'))return;"
+"otaBusy=true;var btn=q('otabtn');if(btn)btn.disabled=true;"
+"otaProg(0);otaTxt('正在上传，请勿关闭页面…','');"
+"var x=new XMLHttpRequest();"
+"x.open('POST','/api/ota/upload',true);"
+"x.setRequestHeader('Content-Type','application/octet-stream');"
+"x.setRequestHeader('X-OTA-Token',OTA.token);"
+"x.timeout=180000;"
+"x.upload.onprogress=function(e){if(!e.lengthComputable)return;"
+"var pc=e.loaded/e.total*100;otaProg(pc);"
+"otaTxt('已上传 '+(e.loaded/1024).toFixed(0)+' / '+(e.total/1024).toFixed(0)+' KB（'+pc.toFixed(0)+'%）');};"
+"x.onload=function(){var j=null;try{j=JSON.parse(x.responseText);}catch(e){}"
+"if(x.status===200&&j&&j.ok){otaProg(100);otaTxt('写入完成，设备正在重启…','good');otaWaitReboot();}"
+"else{otaBusy=false;if(btn)btn.disabled=false;"
+"otaTxt('升级失败：'+((j&&j.err)||('HTTP '+x.status))+'（旧固件不受影响）','bad');}};"
+"x.onerror=function(){otaBusy=false;if(btn)btn.disabled=false;"
+"otaTxt('网络中断，升级未完成；设备若已重启请刷新页面确认版本','bad');};"
+"x.ontimeout=function(){otaBusy=false;if(btn)btn.disabled=false;otaTxt('上传超时，已取消','bad');};"
+"x.send(file);}"
+// 重启等待：设备重启后热点会消失几秒，轮询到第一次回包再比对版本
+"function otaWaitReboot(){var t0=Date.now();"
+"var iv=setInterval(function(){"
+"if(Date.now()-t0>60000){clearInterval(iv);otaBusy=false;"
+"var b=q('otabtn');if(b)b.disabled=false;"
+"otaTxt('设备 60 秒内未响应，请手动刷新页面查看版本','bad');return;}"
+"otaPollN++;"
+"fetch('/api/ota/info?n='+otaPollN,{cache:'no-store'})"
+".then(function(r){return r.json();})"
+".then(function(j){clearInterval(iv);otaBusy=false;"
+"var same=(j.ver===OTA.ver);"
+"otaTxt(same?'已重启，版本仍为 '+j.ver+'（上传的可能是同版本固件，或已被回滚）'"
+":'已升级到 '+j.ver+'，正在刷新页面…',same?'bad':'good');"
+"setTimeout(function(){location.reload();},1600);})"
+".catch(function(){});"
+"},2000);}"
 // ---- 模式切换 UI 与接收监测轮询 ----
 "function getRadio(n){const r=document.querySelector('input[name='+n+']:checked');"
 "return r?r.value:'0';}"
@@ -1045,6 +1147,9 @@ static const char PAGE_HTML[] =
 "return el;}"
 ""
 "async function pollRx(){"
+// 升级上传期间暂停轮询：httpd 只有 7 个 socket，多余的并发请求会挤掉
+// 正在传输的升级连接（LRU 回收），白白中断升级
+"if(otaBusy)return;"
 "try{"
 "const r=await fetch('/api/rx');const j=await r.json();"
 "try{if(window.RXMAP)RXMAP.update(j.tracks);}catch(e){}"   // 地图刷新独立保护
@@ -1167,7 +1272,7 @@ static const char PAGE_HTML[] =
 "{color:'#1565c0',weight:2,opacity:.6}).addTo(map);"
 "else trailLine.setLatLngs(trailPts);}}"
 // ---- 实时广播位置轮询 ----
-"async function poll(){try{const r=await fetch('/api/status');const j=await r.json();"
+"async function poll(){if(otaBusy)return;try{const r=await fetch('/api/status');const j=await r.json();"
 "const t='实时广播位置: '+j.latitude.toFixed(6)+', '+j.longitude.toFixed(6)+"
 "'  高度 '+j.altitude_msl.toFixed(1)+'m  航向 '+j.heading.toFixed(0)+'°';"
 "document.getElementById('liveinfo').textContent=t;"
@@ -1183,6 +1288,7 @@ static const char PAGE_HTML[] =
 "setInterval(poll,2000);"
 "syncTime();"
 "load();"
+"otaLoad();"
 "</script></body></html>";
 
 // ================================================================
@@ -1775,6 +1881,8 @@ static const httpd_uri_t uris[] = {
     { .uri = "/api/rx",    .method = HTTP_GET,  .handler = handler_rx,        .user_ctx = NULL },
     { .uri = "/api/reset", .method = HTTP_POST, .handler = handler_reset,     .user_ctx = NULL },
     { .uri = "/api/time",  .method = HTTP_POST, .handler = handler_time,      .user_ctx = NULL },
+    { .uri = "/api/ota/info",  .method = HTTP_GET,  .handler = crid_ota_handler_info,   .user_ctx = NULL },
+    { .uri = "/api/ota/upload",.method = HTTP_POST, .handler = crid_ota_handler_upload, .user_ctx = NULL },
     { .uri = "/favicon.ico",.method = HTTP_GET, .handler = handler_favicon,   .user_ctx = NULL },
 };
 
@@ -1788,6 +1896,9 @@ esp_err_t crid_web_start(cn_crid_config_t *config) {
     // 否则超出部分会以 ESP_ERR_HTTPD_HANDLERS_FULL 静默失败、对应接口 404。
     http_cfg.max_uri_handlers = sizeof(uris) / sizeof(uris[0]) + 2;
     http_cfg.lru_purge_enable = true;
+    // 默认 4KB 栈对 OTA 升级偏紧：esp_ota_begin/end 要做 SHA256 校验与分区操作，
+    // 加上 cJSON 构包，留 8KB 更稳妥（只有一个 httpd 任务，代价可忽略）
+    http_cfg.stack_size = 8192;
 
     esp_err_t ret = httpd_start(&server, &http_cfg);
     if (ret != ESP_OK) {

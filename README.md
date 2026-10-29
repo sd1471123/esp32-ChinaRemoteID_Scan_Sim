@@ -48,6 +48,7 @@ S3 固件不显示 5.8 GHz 选项）：
 - 响应式设计：电脑端（≥860px）双列卡片 + 大地图通栏，手机端单列自适应
 - 内嵌页面与地图脚本以 **gzip 压缩**下发（约 30KB → 11KB），带禁缓存响应头
 - 接收端地图脚本作为**独立资源按需懒加载**（`/rxmap.js`），与发射端地图零符号共享，单点故障不影响页面其余功能
+- **网页内 OTA 升级**：页面底部选一个 `.bin` 即可换固件（裸流上传 + 进度条），双 app 分区轮换、镜像校验、断电保护、启动失败自动回滚，**不用数据线、不用装 ESP-IDF**
 
 ## 使用方法
 
@@ -58,6 +59,7 @@ S3 固件不显示 5.8 GHz 选项）：
 5. 修改 SSID / 信道 / 广播间隔 / 频段后热点会重建，手机需重新连接（页面会提示，先回包再重建，不会报错）；
 6. 「恢复初始」按钮一键还原全部默认配置（保留消息计数器，防止接收端乱序）；
 7. 接收模式下，监听信道跟随「Wi-Fi 信道」设置（2.4 GHz 1–13、5.8 GHz 149–165，默认分别为 6 / 149）。
+8. 固件升级：页面最下方「固件升级 (OTA)」选择 `remoteid_scanner.bin` 上传，设备写入另一个 app 分区、校验通过后自动重启（详见上一节）。
 
 ## 构建与烧录
 
@@ -122,16 +124,45 @@ idf.py -p COM3 flash monitor    # 烧录并打开串口监视器（Ctrl+] 退出
 esptool.py --chip esp32s3 --baud 460800 write_flash \
   0x0 remoteid_scanner_esp32s3/bootloader/bootloader.bin \
   0x8000 remoteid_scanner_esp32s3/partition_table/partition-table.bin \
-  0x10000 remoteid_scanner_esp32s3/remoteid_scanner.bin
+  0x20000 remoteid_scanner_esp32s3/remoteid_scanner.bin
 
 # ESP32-C5（bootloader 地址是 0x2000，不是 0x0！）
 esptool.py --chip esp32c5 --baud 460800 write_flash \
   0x2000 remoteid_scanner_esp32c5/bootloader/bootloader.bin \
   0x8000 remoteid_scanner_esp32c5/partition_table/partition-table.bin \
-  0x10000 remoteid_scanner_esp32c5/remoteid_scanner.bin
+  0x20000 remoteid_scanner_esp32c5/remoteid_scanner.bin
 ```
 
 也可使用 [flash download tool](https://www.espressif.com/en/support/download/other-tools) 图形界面，选择对应芯片型号与上表地址烧录。
+
+> **从 v1.2.2 及更早版本升级注意**：本版分区表已改——factory 从 `0x10000` 移到
+> `0x20000`，并新增 `otadata` / `ota_0` / `ota_1`，**应用镜像地址不再是 `0x10000`**。
+> 整片重烧一次即可，NVS 参数（`0x9000`）保持不动；若重烧后设备反复重启，
+> 用 `esptool.py --chip <芯片> erase_flash` 清一次再烧（会清空已保存参数）。
+
+## 网页内 OTA 升级
+
+固件内置了网页升级入口：**不用数据线、不用装 ESP-IDF**，手机连上设备热点打开
+`http://192.168.4.1`，用页面最下方的「固件升级 (OTA)」卡片选中 `.bin` 上传即可。
+
+- **升级文件**：`build/remoteid_scanner.bin`（约 0.6–0.8 MB 的单个应用镜像）。
+  Release 的 zip 也能用，解压出 `remoteid_scanner.bin` 即可；**不要**选整个 zip 或合并固件。
+- **写入位置**：`ota_0` / `ota_1` 两槽轮换，每次写「当前没在跑」的那一个；写完由
+  `esp_ota_end` 校验镜像头、芯片型号与 SHA256，通过后才把启动项切过去。
+- **断电保护**：传输中断、断网、断电只会留下一个写坏的备份槽，**重启仍然运行旧固件**。
+- **自动回滚**：固件开启了 `CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE`，新固件必须走到
+  `app_main` 末尾（NVS / Wi-Fi / 主任务 / 网页服务全部起来）才被标记为有效；在此之前
+  崩溃或反复复位，bootloader 会自动退回上一版可用固件，不会变砖。
+- **升级完成后**设备自动重启，热点断开约 10 秒，页面自动刷新；卡片信息区显示的是
+  **当前运行镜像自带的版本号**（取自镜像 app 描述符，不是页面里写死的字符串）。
+- **参数不丢**：配置全在 NVS，升级不动它，「恢复初始」也不会被触发。
+
+**边界与风险**
+
+- 首次必须用 USB 烧一次新分区表（老分区表里没有 OTA 槽），之后才能完全依赖网页升级；
+- 热点**没有密码**，能连上本机热点的人都能上传固件。上传令牌（每次上电随机生成、
+  只在 `/api/ota/info` 下发）只能挡住其它网页的跨站误提交，**不是权限控制**；
+- 只接受 `application/octet-stream`，体积上限 = 目标分区 2 MB，低于 32 KB 直接拒绝。
 
 ## 项目结构
 
@@ -145,6 +176,7 @@ esptool.py --chip esp32c5 --baud 460800 write_flash \
 │   ├── crid_rx.c/h               # 接收端：混杂模式监听 + 多协议解码 + 飞手位置解析
 │   ├── crid_patrol.c/h           # 巡游路径模拟
 │   ├── crid_web.c/h              # 内置网页配置与接收监测（http://192.168.4.1）
+│   ├── crid_ota.c/h              # 网页内固件升级（裸流上传 → 另一个 app 分区 → 切启动项）
 │   ├── rxmap_page.js             # 接收端地图独立脚本（懒加载，无网自动降级离线网格）
 │   └── page_gz.h                 # 自动生成的 gzip 页面资源（构建时生成，不入库）
 ├── components/opendroneid/       # OpenDroneID 官方库（编解码核心）
@@ -214,6 +246,52 @@ GB 42590-2023 附录 A.1.3.1.3 允许 **5725–5829 MHz**，对应 Wi-Fi 信道 
 > C5 同时只提供一条射频，5.8G 频段下 AP 与混杂监听仍然可以并存（已实测信道 149 收发正常）。
 
 ## 版本历史
+
+### v1.2.3 — 网页内固件升级（OTA）
+
+本版让设备**彻底摆脱数据线**：升级固件不用再插 USB、不用装 ESP-IDF，手机连上热点在
+网页里选一个 `.bin` 就能换固件，失败也不会变砖。
+
+**分区表改为双 app 槽**
+
+| 分区 | 偏移 | 大小 | 用途 |
+|---|---|---|---|
+| nvs | `0x9000` | 24 KB | 参数存储（升级不动） |
+| phy_init | `0xf000` | 4 KB | 射频校准 |
+| otadata | `0x10000` | 8 KB | 启动槽选择记录 |
+| factory | `0x20000` | 2 MB | USB 烧录的出厂镜像 |
+| ota_0 | `0x220000` | 2 MB | 网页升级槽 A |
+| ota_1 | `0x420000` | 2 MB | 网页升级槽 B |
+
+16 MB flash 只用掉 6.1 MB。**应用镜像地址由 `0x10000` 变为 `0x20000`**，README 与 CI 的烧录命令同步更新。
+
+**升级链路**
+
+- `GET /api/ota/info`：当前版本（取自镜像 app 描述符）、运行分区、可升级容量、本次上电的上传令牌
+- `POST /api/ota/upload`：裸二进制流 → `esp_ota_get_next_update_partition` → 4 KB 顺序擦写
+  → `esp_ota_end` 校验（镜像头 / 芯片 ID / SHA256）→ `esp_ota_set_boot_partition` → 重启
+- 4 KB 静态缓冲：httpd 任务栈只有 4 KB，绝不能在栈上开大数组；顺序擦写让手机端一开始
+  就能看到进度，不必先等 2 MB 分区整体擦完
+- 页面用 XHR 而不是 fetch —— fetch 拿不到上传进度；升级期间暂停 2 秒轮询，避免多余
+  并发请求把升级连接挤掉（httpd 只有 7 个 socket，而 LRU 回收是开着的）
+- 重启后轮询 `/api/ota/info` 比对版本号：变了显示「已升级到 vX」并自动刷新，没变则提示
+  可能上传的是同版本固件、或已被回滚
+
+**防变砖**
+
+- 只写「不在运行」的那个槽，写完校验通过才切启动项，任何中断都只坏掉备份槽
+- 开启 `CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE`，`app_main` 末尾才调用
+  `esp_ota_mark_app_valid_cancel_rollback()`：新固件起不来会自动回滚到上一版
+- 上传令牌（每次上电随机生成，走 `X-OTA-Token` 头）挡跨站误提交；热点本身无密码，
+  它不是权限控制
+
+**顺带**
+
+- 版本号改由根 `CMakeLists.txt` 的 `project(... VERSION 1.2.3)` 提供并写入镜像描述符，
+  页面显示的是「真正在跑的固件」的版本，而不是页面里写死的字符串
+- 启动日志首行打印 `Firmware 1.2.3 on partition 'factory' (2048 KB)`
+- `tools/check_page.py` 增加 9 项 OTA 断言（共 59 项）；`tools/jsdom_test.js` 增加
+  「未选文件不发请求 / 请求头与令牌 / 进度与成功文案」三组断言
 
 ### v1.2.2 — 发射参数补全 / 不再被其它逻辑悄悄改写
 

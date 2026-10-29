@@ -20,12 +20,15 @@
 #include "esp_wifi.h"
 #include "nvs_flash.h"
 #include "esp_log.h"
+#include "esp_app_desc.h"
+#include "esp_ota_ops.h"
 
 #include "crid_config.h"
 #include "crid_messages.h"
 #include "crid_gb46750.h"
 #include "crid_wifi.h"
 #include "crid_web.h"
+#include "crid_ota.h"
 #include "crid_patrol.h"
 #include "crid_rx.h"
 
@@ -163,6 +166,17 @@ void app_main(void) {
     ESP_LOGI(TAG, "=== ESP32 China C-RID Simulator ===");
     ESP_LOGI(TAG, "Standards: GB42590-2023 / GB46750-2025");
 
+    // 固件版本与运行分区：网页「固件升级」卡显示的就是这里的版本，
+    // OTA 之后重启能立刻看出到底跑的是哪一版、在哪个槽
+    {
+        const esp_app_desc_t *desc = esp_app_get_description();
+        const esp_partition_t *runp = esp_ota_get_running_partition();
+        ESP_LOGI(TAG, "Firmware %s on partition '%s' (%u KB)",
+                 (desc && desc->version[0]) ? desc->version : "?",
+                 runp ? runp->label : "?",
+                 (unsigned)(runp ? runp->size / 1024 : 0));
+    }
+
     // 0. 日志降噪：以下两类是协议栈的常规噪音，不反映任何故障
     //    - httpd_txrx: 手机端关闭页面/切后台/网络切换会主动 RST 连接（errno 104 ECONNRESET），
     //      ESP-IDF httpd 只是优雅关闭该 socket 并继续服务，属于正常路径；
@@ -209,8 +223,30 @@ void app_main(void) {
     }
 
     // 8. 启动网页配置服务器（手机连接热点后访问 http://192.168.4.1）
+    crid_ota_init();   // 本次上电的 OTA 上传令牌
     if (crid_web_start(&g_config) != ESP_OK) {
         ESP_LOGE(TAG, "Web config server failed to start!");
+    }
+
+    // 9. 确认本次运行的固件可用：开启 OTA 回滚后，网页升级写入的新固件带
+    //    PENDING_VERIFY 标记，只有走到这里（NVS / Wi-Fi / 主任务 / 网页服务
+    //    全部起来）才算确认；若新固件在此之前崩溃或反复复位，引导器会自动
+    //    退回上一版可用固件，不会变砖。
+    //    只对 ota_x 槽做这件事：从 factory 启动时没有待确认状态，
+    //    调了反而会打出一行误导性的 error 日志。
+    {
+        const esp_partition_t *runp = esp_ota_get_running_partition();
+        bool in_ota_slot = runp && runp->type == ESP_PARTITION_TYPE_APP &&
+                           runp->subtype >= ESP_PARTITION_SUBTYPE_APP_OTA_MIN &&
+                           runp->subtype <= ESP_PARTITION_SUBTYPE_APP_OTA_MAX;
+        if (in_ota_slot) {
+            esp_err_t ota_ok = esp_ota_mark_app_valid_cancel_rollback();
+            if (ota_ok != ESP_OK) {
+                ESP_LOGW(TAG, "mark app valid: %s", esp_err_to_name(ota_ok));
+            } else {
+                ESP_LOGI(TAG, "OTA slot '%s' confirmed valid", runp->label);
+            }
+        }
     }
 
     ESP_LOGI(TAG, "C-RID started successfully! (band=%s, tx=%u, rx=%u, std=%u)",

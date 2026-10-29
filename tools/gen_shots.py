@@ -249,6 +249,12 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 'tracks': TRACKS,
                 'stats': {'rid': 4, 'total': 71, 'ok': 68, 'ovf': 0},
             }), 'application/json')
+        elif path.startswith('/api/ota/info'):
+            # 固件升级卡片的信息区（真实固件按 app 描述符与分区表返回同样的字段）
+            self._send(200, json.dumps({
+                'ver': '1.2.3', 'part': 'factory', 'part_size': 2097152,
+                'max': 2097152, 'token': 'demo0001', 'ota': True,
+            }), 'application/json')
         elif path == '/rxmap.js':
             with open(RXMAP, 'rb') as f:
                 self._send(200, f.read(), 'application/javascript')

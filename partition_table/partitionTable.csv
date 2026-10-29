@@ -1,5 +1,13 @@
 # ESP-IDF Partition Table
 # Name, Type, SubType, Offset, Size, Flags
+#
+# 双 app 槽（OTA）：factory 为 USB 烧录的「出厂」镜像，ota_0 / ota_1 供网页内
+# 升级轮换使用。16MB flash 只用掉 6.1MB，剩余全部留空。
+# 注意：本表改动后必须用 USB 完整烧录一次（bootloader + 分区表 + factory），
+#       之后才能在网页里做 OTA 升级。
 nvs,data,nvs,0x9000,24K,
 phy_init,data,phy,0xf000,4K,
-factory,app,factory,0x10000,0x180000,
+otadata,data,ota,0x10000,8K,
+factory,app,factory,0x20000,2M,
+ota_0,app,ota_0,0x220000,2M,
+ota_1,app,ota_1,0x420000,2M,
