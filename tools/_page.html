@@ -9,19 +9,24 @@ body{font-family:-apple-system,'Segoe UI',Roboto,'PingFang SC','Microsoft YaHei'
 margin:0;background:#eef1f5;color:#1f2937;line-height:1.5;overflow-x:hidden}
 .hdr{background:linear-gradient(135deg,#0b3d2e,#0f8a4d);color:#fff;padding:14px 16px}
 .hdr-in{max-width:1080px;margin:0 auto}
-.hdr-row{display:flex;align-items:flex-start;gap:12px}
+.hdr-row{display:flex;align-items:flex-start;gap:10px}
 .hdr-tt{flex:1;min-width:0}
-.hdr h2{margin:0;font-size:17px;line-height:1.3;display:flex;align-items:center;gap:8px;
-overflow-wrap:anywhere}
+.hdr h2{margin:0;font-size:17px;line-height:1.28;display:flex;align-items:flex-start;gap:8px;
+overflow-wrap:break-word}
 .dot{width:10px;height:10px;border-radius:50%;background:#4ade80;display:inline-block;
-box-shadow:0 0 6px #4ade80;flex:none}
-.hdr-url{display:block;margin-top:4px;font-size:11px;color:#b8ecd2;text-decoration:none;
-font-family:ui-monospace,Menlo,Consolas,monospace;overflow-wrap:anywhere}
+box-shadow:0 0 6px #4ade80;flex:none;margin-top:6px}
+.hdr-nm{min-width:0}
+.hdr-url{display:block;margin-top:5px;font-size:11px;color:#b8ecd2;text-decoration:none;
+font-family:ui-monospace,Menlo,Consolas,monospace;white-space:nowrap;overflow:hidden;
+text-overflow:ellipsis}
 .hdr-url:hover{color:#fff;text-decoration:underline}
-.hdr .sub{margin:6px 0 0;font-size:11px;opacity:.78}
-.hdr-ota{flex:none;width:auto;margin:0;padding:8px 12px;border-radius:9px;font-size:12px;
+.hdr .sub{margin:5px 0 0;font-size:11px;opacity:.78}
+.hdr-ota{flex:none;width:auto;margin:0;padding:6px 10px;border-radius:9px;font-size:12px;
 font-weight:700;font-family:inherit;color:#0b3d2e;background:rgba(255,255,255,.93);
-border:1px solid rgba(255,255,255,.5);box-shadow:0 1px 3px rgba(0,0,0,.16)}
+border:1px solid rgba(255,255,255,.5);box-shadow:0 1px 3px rgba(0,0,0,.16);
+display:flex;flex-direction:column;align-items:center;gap:1px;line-height:1.15}
+.hdr-ota .ota-v{font-size:10px;font-weight:600;color:#0f8a4d;
+font-family:ui-monospace,Menlo,Consolas,monospace}
 .hdr-ota:active{transform:scale(.97);background:#fff;filter:none}
 .wrap{max-width:1080px;margin:0 auto;padding:14px}
 .grid{display:grid;grid-template-columns:1fr;gap:14px}
@@ -252,6 +257,12 @@ background:linear-gradient(90deg,#0f8a4d,#16a35f);transition:width .18s}
 .otatxt.bad{color:#c0392b}
 .otatxt.good{color:#0a7d43}
 .foot{font-size:12px;color:#9ca3af;margin:10px 2px}
+@media(max-width:400px){
+.hdr{padding:12px 14px}
+.hdr h2{font-size:16px}
+.hdr-url{font-size:10px;letter-spacing:-.2px}
+.hdr-ota{padding:5px 9px}
+}
 @media(min-width:860px){
 .grid{grid-template-columns:1fr 1fr}
 .span2{grid-column:1/-1}
@@ -260,12 +271,13 @@ background:linear-gradient(90deg,#0f8a4d,#16a35f);transition:width .18s}
 </style></head><body>
 <div class='hdr'><div class='hdr-in'><div class='hdr-row'>
 <div class='hdr-tt'>
-<h2><span class='dot'></span>ESP32-ChinaRemoteID_Scan_Sim</h2>
+<h2><span class='dot'></span><span class='hdr-nm'>ESP32-ChinaRemoteID<wbr>_Scan_Sim</span></h2>
+</div>
+<button class='hdr-ota' id='otatoggle' type='button' onclick='otaOpen()'>
+<span>固件升级</span><span class='ota-v' id='otavh'>v--</span></button>
+</div>
 <a class='hdr-url' href='https://github.com/sd1471123/esp32-ChinaRemoteID_Scan_Sim'
  target='_blank' rel='noopener'>github.com/sd1471123/esp32-ChinaRemoteID_Scan_Sim</a>
-</div>
-<button class='hdr-ota' id='otatoggle' type='button' onclick='otaOpen()'>固件升级</button>
-</div>
 <p class='sub'>中国 Remote ID 收发一体固件 · GB 42590-2023 / GB 46750-2025</p>
 </div></div>
 <div class='wrap'><div class='grid'>
@@ -275,17 +287,19 @@ background:linear-gradient(90deg,#0f8a4d,#16a35f);transition:width .18s}
 <label><input type='radio' name='role' value='rx'><span>接收<br>监听周边</span></label>
 <label><input type='radio' name='role' value='tx'><span>发射<br>RID 广播</span></label>
 </div>
+<div id='bandbox'>
 <span class='lbl'>Wi-Fi 频段（单射频，二选一）</span>
 <div class='seg'>
 <label><input type='radio' name='band' value='0' checked><span>2.4 GHz</span></label>
 <label id='b5gl'><input type='radio' name='band' value='1'><span>5.8 GHz</span></label>
+</div>
 </div>
 <details class='tip'><summary>说明：为什么射频信号只能二选一</summary><div>
 本机只有<b>一条射频链路</b>，同一时刻只能发或只能收。发射时射频忙于发出 Beacon（携带 RID 报文），
 这段时间到达的信号收不到；接收时射频一直在监听，就没有空口资源稳定广播。
 所以「又发又收」在单射频硬件上只能是分时轮转，会互相抢时间、掉帧，不如明确二选一。
 <br>热点本身<b>始终开启</b>，与射频信号怎么用无关，手机随时可以连进来改参数。
-<br>2.4G 与 5.8G 也共用同一射频，只能启用一个频段；切换频段会重建热点，手机需重新连接。
+<span id='bandln'><br>2.4G 与 5.8G 也共用同一射频，只能启用一个频段；切换频段会重建热点，手机需重新连接。</span>
 </div></details>
 <div id='stdbox'>
 <label>广播标准</label>
@@ -734,7 +748,8 @@ async function load(){try{const r=await fetch('/api/config');const j=await r.jso
 F.forEach(k=>{if(j[k]!==undefined&&j[k]!==null)fld(k).value=j[k];});
 LASTCFG=j;
 document.querySelectorAll('input[name=band]').forEach(function(r){r.checked=(+r.value===(+j.band||0));});
-if(!j.has5g){const b5=document.getElementById('b5gl');if(b5)b5.style.display='none';}
+if(!j.has5g){var bb=document.getElementById('bandbox');if(bb)bb.style.display='none';
+var bl=document.getElementById('bandln');if(bl)bl.style.display='none';}
 setRole((+j.band===1)?!!j.tx_5g:!!j.tx_2g);
 document.querySelectorAll('input[name=std]').forEach(function(r){r.checked=(+r.value===j.rid_standard);});
 uatSync();statusSync();gbcSync();bandUI();modeUI();stdUI();
@@ -783,6 +798,7 @@ f.style.width=Math.max(0,Math.min(100,p))+'%';}
 function otaTxt(t,cls){var e=q('otatxt');if(!e)return;
 e.className='otatxt'+(cls?' '+cls:'');e.textContent=t;}
 function otaFill(){if(!OTA)return;var v=q('otaver'),p=q('otapart'),c=q('otacan');
+var hv=q('otavh');if(hv)hv.textContent='v'+(OTA.ver||'--');
 if(v)v.textContent=OTA.ver||'--';
 if(p)p.textContent=(OTA.part||'--')+(OTA.part_size?' / '+(OTA.part_size/1048576).toFixed(2)+' MB':'');
 if(c)c.textContent=OTA.ota?(OTA.max/1048576).toFixed(2)+' MB':'不可用';}

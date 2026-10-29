@@ -91,7 +91,7 @@ checks = {
     "页面仅通过 RXMAP 钩子调用": len([l for l in html.splitlines() if "RXMAP" in l]) == 5,
     "离线网格容器在": "id='rxgrid'" in html and "id='rxgridnote'" in html,
     "标题已更新": "<title>ESP32-ChinaRemoteID_Scan_Sim</title>" in html
-                and "ESP32-ChinaRemoteID_Scan_Sim</h2>" in html
+                and "ESP32-ChinaRemoteID<wbr>_Scan_Sim</span></h2>" in html
                 and "中国 Remote ID 收发一体固件" in html,
     "接收端无自检代码": "selfCheck" not in html and "__probe" not in html,
     "无 /app.js 与 /api/pageinfo": "/app.js" not in html and "/api/pageinfo" not in html,
@@ -155,12 +155,22 @@ checks = {
     # 两列自平衡：飞手位置挪到左列（身份信息卡之后、飞行参数列之前）
     "布局:飞手位置在左列": (html.find("id='operator_id'") < html.find("<h3>飞手位置</h3>")
                           < html.find("<h3>飞行参数</h3>")),
-    # 顶部横幅：项目标题 + 仓库地址 + 右上角固件升级入口
-    "头部:项目标题": "<h2><span class='dot'></span>ESP32-ChinaRemoteID_Scan_Sim</h2>" in html,
+    # 顶部横幅：项目标题 + 仓库地址 + 右上角固件升级入口（含当前版本号）
+    # 标题里放 <wbr>：手机窄屏只在「_Scan_Sim」前断行，不会把 ID 拆到中间
+    "头部:项目标题": ("<h2><span class='dot'></span><span class='hdr-nm'>"
+                  "ESP32-ChinaRemoteID<wbr>_Scan_Sim</span></h2>") in html,
     "头部:仓库地址": ("https://github.com/sd1471123/esp32-ChinaRemoteID_Scan_Sim" in html
                   and "target='_blank'" in html),
+    # 地址整行独占 + 不折行：整条 url 在窄屏也要一行放下
+    "头部:地址不折行": "white-space:nowrap" in html,
     "头部:升级入口在右上角": (html.find("id='otatoggle'") < html.find("<div class='wrap'>")
                           and 0 < html.find("id='otatoggle'")),
+    "头部:入口含版本号": ("id='otavh'" in html
+                     and html.find("id='otavh'") > html.find("id='otatoggle'")
+                     and "hv.textContent='v'+(OTA.ver" in html),
+    # S3（2.4G-only）：频段二选一整块 + 说明里的 2.4G/5.8G 那句一起收起
+    "频段:无5G时整块隐藏": ("id='bandbox'" in html and "id='bandln'" in html
+                       and "if(!j.has5g)" in html),
     # 固件升级（OTA）：顶部弹层 + 裸流上传 + 上传进度 + 重启后比对版本
     "OTA:面板存在": ("id='otamask'" in html and "<h4>固件升级 (OTA)</h4>" in html),
     "OTA:版本/分区/容量信息": all(("id='%s'" % i) in html

@@ -193,7 +193,8 @@ async function load(){try{const r=await fetch('/api/config');const j=await r.jso
 F.forEach(k=>{if(j[k]!==undefined&&j[k]!==null)fld(k).value=j[k];});
 LASTCFG=j;
 document.querySelectorAll('input[name=band]').forEach(function(r){r.checked=(+r.value===(+j.band||0));});
-if(!j.has5g){const b5=document.getElementById('b5gl');if(b5)b5.style.display='none';}
+if(!j.has5g){var bb=document.getElementById('bandbox');if(bb)bb.style.display='none';
+var bl=document.getElementById('bandln');if(bl)bl.style.display='none';}
 setRole((+j.band===1)?!!j.tx_5g:!!j.tx_2g);
 document.querySelectorAll('input[name=std]').forEach(function(r){r.checked=(+r.value===j.rid_standard);});
 uatSync();statusSync();gbcSync();bandUI();modeUI();stdUI();
@@ -242,6 +243,7 @@ f.style.width=Math.max(0,Math.min(100,p))+'%';}
 function otaTxt(t,cls){var e=q('otatxt');if(!e)return;
 e.className='otatxt'+(cls?' '+cls:'');e.textContent=t;}
 function otaFill(){if(!OTA)return;var v=q('otaver'),p=q('otapart'),c=q('otacan');
+var hv=q('otavh');if(hv)hv.textContent='v'+(OTA.ver||'--');
 if(v)v.textContent=OTA.ver||'--';
 if(p)p.textContent=(OTA.part||'--')+(OTA.part_size?' / '+(OTA.part_size/1048576).toFixed(2)+' MB':'');
 if(c)c.textContent=OTA.ota?(OTA.max/1048576).toFixed(2)+' MB':'不可用';}

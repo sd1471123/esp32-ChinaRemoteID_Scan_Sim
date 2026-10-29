@@ -461,6 +461,10 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
       '|', d.getElementById('otapart').textContent,
       '|', d.getElementById('otacan').textContent);
     if (d.getElementById('otaver').textContent !== '1.3.0') console.log('OTA INFO FAIL');
+    // 顶部横幅：项目名带 <wbr> 断点，入口按钮第二行显示同一版本号
+    console.log('hdr name:', (d.querySelector('.hdr-nm') || {}).textContent,
+      '| 入口版本:', (d.getElementById('otavh') || {}).textContent);
+    if ((d.getElementById('otavh') || {}).textContent !== 'v1.3.0') console.log('HDR VER FAIL');
 
     // 未选文件：只提示，不许发请求
     w.otaStart();
