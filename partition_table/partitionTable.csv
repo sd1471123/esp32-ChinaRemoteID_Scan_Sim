@@ -2,7 +2,14 @@
 # Name, Type, SubType, Offset, Size, Flags
 #
 # 双 app 槽（OTA）：factory 为 USB 烧录的「出厂」镜像，ota_0 / ota_1 供网页内
-# 升级轮换使用。16MB flash 只用掉 6.1MB，剩余全部留空。
+# 升级轮换使用。
+#
+# ridlog：接收端飞行轨迹环形日志（4MB）。不用文件系统，直接按 4KB 扇区顺序
+#   追加 64 字节定长记录，写满回头覆盖最旧的扇区，靠扇区级擦除均摊磨损。
+#   子类型 0x40 属 data 类型自定义段，bootloader 不解析，只有本固件按名字查找。
+#
+# 16MB 分配：0x0-0x620000 为系统与三个 app 槽（6.1MB），ridlog 4MB
+#   （到 0xA20000），0xA20000 之后 5.9MB 仍留空。
 # 注意：本表改动后必须用 USB 完整烧录一次（bootloader + 分区表 + factory），
 #       之后才能在网页里做 OTA 升级。
 nvs,data,nvs,0x9000,24K,
@@ -11,3 +18,4 @@ otadata,data,ota,0x10000,8K,
 factory,app,factory,0x20000,2M,
 ota_0,app,ota_0,0x220000,2M,
 ota_1,app,ota_1,0x420000,2M,
+ridlog,data,0x40,0x620000,4M,

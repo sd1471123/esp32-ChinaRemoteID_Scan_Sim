@@ -13,11 +13,13 @@
 
 #include "crid_rx.h"
 #include "crid_config.h"
+#include "crid_log.h"
 #include "esp_wifi.h"
 #include "esp_wifi_types.h"
 #include "esp_log.h"
 #include "opendroneid.h"
 #include <string.h>
+#include <time.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "freertos/queue.h"
@@ -48,6 +50,10 @@ typedef struct {
     uint8_t  last_channel;
     uint8_t  protocol;
     uint32_t msg_count;
+    // 轨迹持久化：降采样用（上次落盘时刻与位置）
+    uint32_t last_log_ms;
+    int32_t  last_log_lat_e7;
+    int32_t  last_log_lon_e7;
     ODID_UAS_Data odid;             // GB42590/ASTM 解码目标
     // GB 46750 解码结果
     struct {
@@ -322,6 +328,114 @@ static bool decode_packed(rx_track_t *t, const uint8_t *data, uint8_t len) {
 }
 
 /* ================================================================
+ * 轨迹持久化：5 秒 或 位移超过 30 m 才落盘一条
+ *
+ * 原始广播 1-2 Hz，全存会把 4 MB 分区写穿；降采样后单目标每小时约 700 条
+ * （4 MB 约 6.5 万条：单目标可存 90 小时，五个目标同时约 18 小时）。
+ * 位置变化触发是为了让高速飞行时的航迹不至于被 5 秒拉成折线。
+ * ================================================================ */
+
+#define LOG_MIN_MS        5000
+#define LOG_MIN_MOVE_E7   270000L      // 30 m ≈ 2.7e5 × 1e-7 度
+
+static inline int16_t clamp_i16(long v, int16_t lo, int16_t hi) {
+    if (v < (long)lo) return lo;
+    if (v > (long)hi) return hi;
+    return (int16_t)v;
+}
+
+static void maybe_log(rx_track_t *t) {
+    if (!crid_log_ready()) return;
+
+    double  lat = 0, lon = 0;
+    float   alt = 0, agl = 0, spd_h = 0, spd_v = 0, trk = 0;
+    uint8_t ua = 0, st = 0;
+    bool    agl_ok = false, has = false;
+    char    uid[sizeof(((crid_log_rec_t *)0)->uid)] = { 0 };
+
+    if (t->protocol == RX_PROTO_GB46750 && t->gb.valid) {
+        lat    = t->gb.lat;
+        lon    = t->gb.lon;
+        alt    = t->gb.geo_alt;
+        agl    = t->gb.agl_alt;
+        agl_ok = t->gb.has_agl;
+        spd_h  = t->gb.gspeed;
+        spd_v  = t->gb.vspeed;
+        trk    = t->gb.track;
+        ua     = t->gb.ua_category;
+        st     = t->gb.status;
+        strncpy(uid, t->gb.unique_id, sizeof(uid) - 1);
+        has    = (lat != 0.0 || lon != 0.0);
+    } else if (t->protocol == RX_PROTO_GB42590 && t->odid.LocationValid) {
+        lat    = t->odid.Location.Latitude;
+        lon    = t->odid.Location.Longitude;
+        alt    = t->odid.Location.AltitudeGeo;
+        agl    = t->odid.Location.Height;
+        agl_ok = (agl > -999.0f);
+        spd_h  = t->odid.Location.SpeedHorizontal;
+        spd_v  = t->odid.Location.SpeedVertical;
+        trk    = t->odid.Location.Direction;
+        st     = (uint8_t)t->odid.Location.Status;
+        if (t->odid.BasicIDValid[0]) {
+            strncpy(uid, t->odid.BasicID[0].UASID, sizeof(uid) - 1);
+            ua = (uint8_t)t->odid.BasicID[0].UAType;
+        }
+        has    = (lat != 0.0 || lon != 0.0);
+    }
+    if (!has) return;
+
+    int32_t lat_e7 = (int32_t)(lat >= 0 ? lat * 1e7 + 0.5 : lat * 1e7 - 0.5);
+    int32_t lon_e7 = (int32_t)(lon >= 0 ? lon * 1e7 + 0.5 : lon * 1e7 - 0.5);
+
+    uint32_t now = esp_log_timestamp();
+    bool due = (t->last_log_ms == 0) || (now - t->last_log_ms >= LOG_MIN_MS);
+    if (!due) {
+        int64_t dlat = (int64_t)lat_e7 - t->last_log_lat_e7;
+        int64_t dlon = (int64_t)lon_e7 - t->last_log_lon_e7;
+        if (dlat * dlat + dlon * dlon >= (int64_t)LOG_MIN_MOVE_E7 * LOG_MIN_MOVE_E7) {
+            due = true;
+        }
+    }
+    if (!due) return;
+
+    float trk_n = trk;
+    while (trk_n < 0.0f)     trk_n += 360.0f;
+    while (trk_n >= 360.0f)  trk_n -= 360.0f;
+
+    crid_log_rec_t r;
+    memset(&r, 0, sizeof(r));
+    memcpy(r.mac, t->mac, 6);
+    memcpy(r.uid, uid, sizeof(r.uid));
+    r.lat_e7    = lat_e7;
+    r.lon_e7    = lon_e7;
+    r.alt_m     = clamp_i16((long)(alt >= 0 ? alt + 0.5f : alt - 0.5f), -1000, 32000);
+    r.spd_h_dms = clamp_i16((long)(spd_h * 10.0f), 0, 32000);
+    r.spd_v_dms = clamp_i16((long)(spd_v * 10.0f), -32000, 32000);
+    r.trk_ddeg  = (uint16_t)(trk_n * 10.0f + 0.5f);
+    if (r.trk_ddeg > 3599) r.trk_ddeg = 3599;
+    if (agl_ok) {
+        r.agl_m = clamp_i16((long)(agl >= 0 ? agl + 0.5f : agl - 0.5f), -1000, 32000);
+        r.flags |= CRID_LOG_F_AGL;
+    }
+    if (spd_v != 0.0f) r.flags |= CRID_LOG_F_VSPD;
+    r.ua_type = ua;
+    r.status  = st;
+    r.proto   = t->protocol;
+    r.rssi    = t->last_rssi;
+    r.flags  |= CRID_LOG_F_FIX;
+
+    // 设备没对时（手机没打开配置页）就记 0，界面按上电计时显示
+    time_t sec = time(NULL);
+    r.t_unix  = (sec > 1767225600) ? (uint32_t)sec : 0;   // 2026-01-01 之后才算有效
+    r.tick_ms = now;
+
+    crid_log_append(&r);
+    t->last_log_ms     = now;
+    t->last_log_lat_e7 = lat_e7;
+    t->last_log_lon_e7 = lon_e7;
+}
+
+/* ================================================================
  * 解析任务：出队 -> 定位航迹 -> 解码 -> 更新
  * ================================================================ */
 
@@ -397,7 +511,10 @@ static void rx_parse_task(void *pv) {
             }
         }
 
-        if (ok) s_parse_ok++;
+        if (ok) {
+            s_parse_ok++;
+            maybe_log(t);   // 轨迹持久化（内部已按 5 秒 / 30 米降采样）
+        }
     }
     vTaskDelete(NULL);
 }

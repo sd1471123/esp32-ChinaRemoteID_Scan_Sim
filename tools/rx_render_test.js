@@ -86,6 +86,8 @@ const FAKE = {
       has_op_loc:false, op_latitude:0, op_longitude:0, op_altitude_geo:0 },
   ],
 };
+// 页面 poll() 里引用了 OTA 状态位，桩里补上（切片会把 poll 一起带进来）
+global.otaBusy = false;
 global.fetch = async () => ({ json: async () => FAKE });
 
 const fn = new Function(rx + '\nreturn {pollRx, rxCard};');

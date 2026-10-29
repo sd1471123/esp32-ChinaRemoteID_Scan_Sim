@@ -9,6 +9,7 @@
 #include "crid_rx.h"
 #include "crid_gb46750.h"
 #include "crid_ota.h"
+#include "crid_log.h"
 #include "page_gz.h"
 #include "esp_http_server.h"
 #include "esp_log.h"
@@ -259,6 +260,25 @@ static const char PAGE_HTML[] =
 "button:active{transform:scale(.98)}"
 "button.danger{background:#fff;color:#c0392b;border:1px solid #f3b6b0}"
 "button.danger:hover{background:#fdf1f0;filter:none}"
+// ---- 历史轨迹（接收记录持久化） ----
+".lgbar{height:8px;border-radius:5px;background:#eef1f4;overflow:hidden;margin:10px 0}"
+".lgbar i{display:block;width:0;height:100%;background:#1565c0;transition:width .3s}"
+".lgrow{display:flex;align-items:center;gap:8px;padding:8px 10px;border:1px solid #e5e7eb;"
+"border-radius:10px;background:#fbfcfe;font-size:13px;min-width:0;flex-wrap:wrap}"
+".lgrow.sel{border-color:#1565c0;background:#eff6ff}"
+".lgrow .mono{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px;color:#475569}"
+".lgrow .id{font-weight:600;color:#111827;overflow:hidden;text-overflow:ellipsis;"
+"white-space:nowrap;max-width:100%}"
+".lgrow .sp{flex:1 1 16px}"
+".lgrow .mini{font-size:11px;color:#8b95a1}"
+".lgrow button{width:auto;margin:0;padding:6px 10px;font-size:12px;flex:0 0 auto}"
+".lgpt{display:grid;grid-template-columns:74px minmax(0,1fr) 46px 54px 40px;gap:5px;"
+"font-size:11.5px;padding:6px 8px;border-bottom:1px solid #eef2f7;align-items:center}"
+".lgpt.hd{font-weight:700;color:#475569;background:#f4f7fb;border-bottom-color:#dde5ef;"
+"border-radius:6px 6px 0 0}"
+".lgpt .mono{font-family:ui-monospace,Menlo,Consolas,monospace;letter-spacing:-.2px}"
+".lgpt .dim{color:#8b95a1}"
+".lgmore{font-size:12px;color:#6b7280;padding:8px 2px}"
 "#msg{margin-top:10px;font-size:14px;min-height:18px;font-weight:600}"
 // ---- 固件升级（OTA） ----
 ".otainfo{display:flex;gap:6px 16px;flex-wrap:wrap;font-size:12px;color:#4b5563;"
@@ -478,6 +498,32 @@ static const char PAGE_HTML[] =
 "选定后<b>直接唤起已安装的地图 App</b>并进入驾车路线（高德 amapuri / 百度 bdapp 原生协议），"
 "目的地取机型名与经纬度（WGS-84 原始值，由 App 自行转 GCJ-02）；"
 "只有 App 未安装（1.5 秒内没跳走）才退回网页版。</div></details>"
+"</div>"
+// 历史轨迹：接收模式落盘的飞行记录（发射模式也显示，随时可查）
+"<div class='card span2' id='logbox'><h3>历史轨迹</h3>"
+"<div class='otainfo'>"
+"<span>记录 <b id='lgcnt'>--</b> 条</span>"
+"<span>占用 <b id='lgused'>--</b></span>"
+"<span>时间范围 <b id='lgrange'>--</b></span>"
+"</div>"
+"<div class='lgbar'><i id='lgfill'></i></div>"
+"<div class='rxlist' id='lgtargets'></div>"
+"<div class='actions'>"
+"<button class='fbtn' id='lgexport' type='button' onclick='logExport()'>导出 CSV</button>"
+"<button class='fbtn' id='lgclear' type='button' onclick='logClear()'>清空记录</button>"
+"</div>"
+"<div class='rxlist' id='lgpoints'></div>"
+"<details class='tip'><summary>说明：记录了什么、能存多久、时间为什么不对</summary><div>"
+"只有<b>接收模式</b>才写入。每个目标<b>最快 5 秒一条</b>，位置变化超过 30 米时补记一条，"
+"所以高速飞行时点更密、悬停时最省。每条 64 字节，分区 4 MB 约 6.5 万条："
+"单目标约 90 小时，五个目标同时约 18 小时；写满后自动覆盖最旧的记录，不需要手动清理。"
+"<br>一条记录就是一次位置快照：时间、MAC、UAS ID 前 14 位、经纬度、大地高度、相对高度、"
+"水平/垂直速度、航向、机型、运行状态、协议、信号强度。<b>不保存原始报文</b>。"
+"<br>设备没有 RTC，<b>时间以手机为准</b>：打开本页时会把手机时间同步给设备，"
+"同步之前写入的条目只有上电计时，显示为「上电 hh:mm:ss」；断电后上电计时会归零，"
+"但已经存下的时间戳不会变。"
+"<br>「清空记录」只是把日志代次加一，毫秒级完成，不会擦整个分区，之后新记录会自然覆盖旧数据。"
+"</div></details>"
 "</div>"
 // 固件升级：放在最下方、两个模式都显示（升级的是设备本身，与收/发无关）
 "<div class='card span2'><h3>固件升级 (OTA)</h3>"
@@ -1282,13 +1328,88 @@ static const char PAGE_HTML[] =
 "if(Date.now()-sT>600000)syncTime();}"
 // ---- 设备授时：GB46750 数据项 020 需要真实 Unix 毫秒，设备本身无 RTC/不联网 ----
 "var sT=0;"
+// ---- 历史轨迹：统计、目标列表、轨迹点、导出与清空 ----
+"let lgMac='';"
+"function fmtKB(n){n=Number(n)||0;if(n>=1048576)return (n/1048576).toFixed(2)+' MB';"
+"return (n/1024).toFixed(0)+' KB';}"
+"function pad2(x){return String(x).padStart(2,'0');}"
+"function fmtT(u,t){"
+"if(u>0){const d=new Date(u*1000);"
+"return d.getFullYear()+'-'+pad2(d.getMonth()+1)+'-'+pad2(d.getDate())+' '+"
+"pad2(d.getHours())+':'+pad2(d.getMinutes())+':'+pad2(d.getSeconds());}"
+"const s=Math.floor((t||0)/1000);"
+"return '上电 '+pad2(Math.floor(s/3600))+':'+pad2(Math.floor(s%3600/60))+':'+pad2(s%60);}"
+"function logTargets(j){"
+"const box=q('lgtargets');if(!box)return;"
+"const ts=j.targets||[];"
+"if(!ts.length){box.innerHTML='<div class=\"lgmore\">还没有记录。切到接收模式并等周边无人机出现，这里就会列出目标。</div>';return;}"
+"let h='';"
+"for(let i=0;i<ts.length;i++){const t=ts[i];"
+"const sel=(t.mac===lgMac)?' sel':'';"
+"h+='<div class=\"lgrow'+sel+'\" data-mac=\"'+t.mac+'\">'"
+"+'<span class=\"id\">'+(t.uid?esc(t.uid):'(无 UAS ID)')+'</span>'"
+"+'<span class=\"mono\">'+String(t.mac).toUpperCase()+'</span>'"
+"+'<span class=\"sp\"></span>'"
+"+'<span class=\"mini\">'+t.count+' 条 · 最后 '+fmtT(t.newest_unix,t.newest_tick)+'</span>'"
+"+'<button type=\"button\" data-lg=\"'+t.mac+'\">看轨迹</button>'"
+"+'</div>';}"
+"box.innerHTML=h;"
+"Array.prototype.forEach.call(box.querySelectorAll('button[data-lg]'),function(b){"
+"b.onclick=function(){logPoints(b.dataset.lg);};});}"
+"async function logPoints(mac){"
+"lgMac=mac;"
+"const box=q('lgpoints');if(!box)return;"
+"box.innerHTML='<div class=\"lgmore\">读取中…</div>';"
+"try{"
+"const r=await fetch('/api/log/points?limit=120&mac='+encodeURIComponent(mac));"
+"const j=await r.json();"
+"const ps=j.points||[];"
+"if(!ps.length){box.innerHTML='<div class=\"lgmore\">该目标暂无记录。</div>';return;}"
+"let h='<div class=\"lgpt hd\"><span>时间</span><span>经纬度</span><span>高度</span>'"
+"+'<span>速度</span><span>航向</span></div>';"
+"for(let i=0;i<ps.length;i++){const p=ps[i];"
+"h+='<div class=\"lgpt\"><span class=\"mono\">'"
+"+fmtT(p.t,p.tick).replace(/^[0-9]{4}-[0-9]{2}-[0-9]{2} /,'')+'</span>'"
+"+'<span class=\"mono\">'+Number(p.lat).toFixed(5)+', '+Number(p.lon).toFixed(5)+'</span>'"
+"+'<span>'+Math.round(p.alt)+' m</span>'"
+"+'<span>'+Number(p.spd_h).toFixed(1)+' m/s</span>'"
+"+'<span>'+Math.round(p.track)+'°</span></div>';}"
+"h+='<div class=\"lgmore\">共 '+j.total+' 条，这里是最新的 '+ps.length+' 条（新的在上），导出 CSV 可拿到全部。</div>';"
+"box.innerHTML=h;"
+"}catch(e){box.innerHTML='<div class=\"lgmore\">读取失败</div>';}}"
+"async function logRefresh(){"
+"try{const r=await fetch('/api/log/info');const j=await r.json();"
+"const b=q('logbox');"
+"if(!j.ready){if(b)b.style.display='none';return;}"
+"if(b)b.style.display='';"
+"if(q('lgcnt'))q('lgcnt').textContent=j.count;"
+"if(q('lgused'))q('lgused').textContent=fmtKB(j.used)+' / '+fmtKB(j.total);"
+"if(q('lgrange'))q('lgrange').textContent=j.count?"
+"fmtT(j.oldest_unix,j.oldest_tick)+' → '+fmtT(j.newest_unix,j.newest_tick):'暂无记录';"
+"if(q('lgfill'))q('lgfill').style.width=(j.capacity?(j.count*100/j.capacity):0).toFixed(1)+'%';"
+"logTargets(j);"
+"}catch(e){}}"
+"function logExport(){"
+"const a=document.createElement('a');"
+"a.href='/api/log/export'+(lgMac?('?mac='+encodeURIComponent(lgMac)):'');"
+"a.download=lgMac?('crid_track_'+String(lgMac).replace(/:/g,'')+'.csv'):'crid_tracks.csv';"
+"document.body.appendChild(a);a.click();a.remove();}"
+"async function logClear(){"
+"if(!confirm('确定清空全部历史轨迹记录？清空后无法恢复。'))return;"
+"try{const r=await fetch('/api/log/clear',{method:'POST'});const j=await r.json();"
+"if(j.ok){lgMac='';if(q('lgpoints'))q('lgpoints').innerHTML='';"
+"logRefresh();msg('历史记录已清空',true);}"
+"else{msg('清空失败: '+(j.error||'未知错误'),false);}"
+"}catch(e){msg('清空失败: '+e,false);}}"
 "function syncTime(){sT=Date.now();try{fetch('/api/time',{method:'POST',"
 "headers:{'Content-Type':'application/json'},body:JSON.stringify({epoch_ms:sT})})"
 ".catch(function(){});}catch(e){}}"
 "setInterval(poll,2000);"
+"setInterval(logRefresh,8000);"
 "syncTime();"
 "load();"
 "otaLoad();"
+"logRefresh();"
 "</script></body></html>";
 
 // ================================================================
@@ -1774,6 +1895,254 @@ static esp_err_t handler_rx(httpd_req_t *req) {
     return ESP_OK;
 }
 
+/* ================================================================
+ * 历史轨迹：接收端持久化日志的查询、导出与清空
+ * ================================================================ */
+
+// 解析 "AA:BB:CC:DD:EE:FF" / "AA-BB-..." / 12 位纯十六进制
+static bool log_parse_mac(const char *s, uint8_t mac[6]) {
+    if (s == NULL) return false;
+    int n = 0, nib = 0;
+    unsigned v = 0;
+    for (const char *p = s; *p != '\0' && n < 6; p++) {
+        char c = *p;
+        if (c == ':' || c == '-' || c == '.' || c == ' ') continue;
+        int d;
+        if (c >= '0' && c <= '9')      d = c - '0';
+        else if (c >= 'a' && c <= 'f') d = c - 'a' + 10;
+        else if (c >= 'A' && c <= 'F') d = c - 'A' + 10;
+        else return false;
+        v = (v << 4) | (unsigned)d;
+        if (++nib == 2) {
+            mac[n++] = (uint8_t)v;
+            v = 0;
+            nib = 0;
+        }
+    }
+    return n == 6;
+}
+
+#define LOG_POINTS_MAX 120   // 单次最多返回条数：再多 cJSON 树会把堆吃穿
+
+static esp_err_t handler_log_info(httpd_req_t *req) {
+    crid_log_stats_t st;
+    crid_log_get_stats(&st);
+
+    cJSON *j = cJSON_CreateObject();
+    if (j == NULL) {
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "oom");
+        return ESP_FAIL;
+    }
+
+    cJSON_AddBoolToObject(j, "ready", st.ready);
+    cJSON_AddNumberToObject(j, "count", st.count);
+    cJSON_AddNumberToObject(j, "capacity", st.capacity);
+    cJSON_AddNumberToObject(j, "used", st.used_bytes);
+    cJSON_AddNumberToObject(j, "total", st.total_bytes);
+    cJSON_AddNumberToObject(j, "dropped", st.dropped);
+    cJSON_AddNumberToObject(j, "oldest_unix", st.oldest_unix);
+    cJSON_AddNumberToObject(j, "oldest_tick", st.oldest_tick);
+    cJSON_AddNumberToObject(j, "newest_unix", st.newest_unix);
+    cJSON_AddNumberToObject(j, "newest_tick", st.newest_tick);
+
+    cJSON *arr = cJSON_AddArrayToObject(j, "targets");
+    crid_log_target_t tg[16];
+    int n = crid_log_targets(tg, 16);
+    for (int i = 0; arr != NULL && i < n; i++) {
+        cJSON *t = cJSON_CreateObject();
+        if (t == NULL) break;
+        char mac[18];
+        snprintf(mac, sizeof(mac), "%02X:%02X:%02X:%02X:%02X:%02X",
+                 tg[i].mac[0], tg[i].mac[1], tg[i].mac[2],
+                 tg[i].mac[3], tg[i].mac[4], tg[i].mac[5]);
+        cJSON_AddStringToObject(t, "mac", mac);
+        cJSON_AddStringToObject(t, "uid", tg[i].uid);
+        cJSON_AddNumberToObject(t, "count", tg[i].count);
+        cJSON_AddNumberToObject(t, "oldest_unix", tg[i].oldest_unix);
+        cJSON_AddNumberToObject(t, "newest_unix", tg[i].newest_unix);
+        cJSON_AddNumberToObject(t, "newest_tick", tg[i].newest_tick);
+        cJSON_AddNumberToObject(t, "lat", (double)tg[i].last_lat_e7 / 1e7);
+        cJSON_AddNumberToObject(t, "lon", (double)tg[i].last_lon_e7 / 1e7);
+        cJSON_AddNumberToObject(t, "alt", tg[i].last_alt_m);
+        cJSON_AddItemToArray(arr, t);
+    }
+
+    char *s = cJSON_PrintUnformatted(j);
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_set_hdr(req, "Cache-Control", "no-store");
+    if (s != NULL) {
+        httpd_resp_sendstr(req, s);
+        cJSON_free(s);
+    } else {
+        httpd_resp_sendstr(req, "{\"ready\":false}");
+    }
+    cJSON_Delete(j);
+    return ESP_OK;
+}
+
+static esp_err_t handler_log_points(httpd_req_t *req) {
+    char qs[128];
+    char mac_s[24] = { 0 };
+    uint32_t limit = LOG_POINTS_MAX;
+
+    if (httpd_req_get_url_query_str(req, qs, sizeof(qs)) == ESP_OK) {
+        char v[24];
+        if (httpd_query_key_value(qs, "mac", v, sizeof(v)) == ESP_OK) {
+            strncpy(mac_s, v, sizeof(mac_s) - 1);
+        }
+        if (httpd_query_key_value(qs, "limit", v, sizeof(v)) == ESP_OK) {
+            int t = atoi(v);
+            if (t > 0 && (uint32_t)t < limit) limit = (uint32_t)t;
+        }
+    }
+
+    uint8_t mac[6];
+    bool filter = log_parse_mac(mac_s, mac);
+
+    crid_log_rec_t *pts = (crid_log_rec_t *)calloc(limit, sizeof(crid_log_rec_t));
+    if (pts == NULL) {
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "oom");
+        return ESP_FAIL;
+    }
+    int n = crid_log_points(filter ? mac : NULL, limit, pts, 6000);
+
+    cJSON *j = cJSON_CreateObject();
+    cJSON *arr = cJSON_AddArrayToObject(j, "points");
+    if (j == NULL || arr == NULL) {
+        free(pts);
+        if (j) cJSON_Delete(j);
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "oom");
+        return ESP_FAIL;
+    }
+    crid_log_stats_t st;
+    crid_log_get_stats(&st);
+    cJSON_AddNumberToObject(j, "total", st.count);
+    cJSON_AddStringToObject(j, "mac", mac_s);
+    for (int i = 0; i < n; i++) {
+        cJSON *o = cJSON_CreateObject();
+        if (o == NULL) break;
+        cJSON_AddNumberToObject(o, "seq", pts[i].seq);
+        cJSON_AddNumberToObject(o, "t", pts[i].t_unix);
+        cJSON_AddNumberToObject(o, "tick", pts[i].tick_ms);
+        cJSON_AddNumberToObject(o, "lat", (double)pts[i].lat_e7 / 1e7);
+        cJSON_AddNumberToObject(o, "lon", (double)pts[i].lon_e7 / 1e7);
+        cJSON_AddNumberToObject(o, "alt", pts[i].alt_m);
+        if (pts[i].flags & CRID_LOG_F_AGL)
+            cJSON_AddNumberToObject(o, "agl", pts[i].agl_m);
+        cJSON_AddNumberToObject(o, "spd_h", (double)pts[i].spd_h_dms / 10.0);
+        cJSON_AddNumberToObject(o, "spd_v", (double)pts[i].spd_v_dms / 10.0);
+        cJSON_AddNumberToObject(o, "track", (double)pts[i].trk_ddeg / 10.0);
+        cJSON_AddNumberToObject(o, "ua", pts[i].ua_type);
+        cJSON_AddNumberToObject(o, "status", pts[i].status);
+        cJSON_AddNumberToObject(o, "proto", pts[i].proto);
+        cJSON_AddNumberToObject(o, "rssi", pts[i].rssi);
+        cJSON_AddItemToArray(arr, o);
+    }
+    free(pts);
+
+    char *s = cJSON_PrintUnformatted(j);
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_set_hdr(req, "Cache-Control", "no-store");
+    if (s != NULL) {
+        httpd_resp_sendstr(req, s);
+        cJSON_free(s);
+    } else {
+        httpd_resp_sendstr(req, "{\"points\":[]}");
+    }
+    cJSON_Delete(j);
+    return ESP_OK;
+}
+
+typedef struct {
+    httpd_req_t *req;
+    bool         has_mac;
+    uint8_t      mac[6];
+} log_csv_ctx_t;
+
+// 定点整数拆成 "整数.小数" 字符串：避免在固件里用 %f（会拉进整套浮点格式化）
+static void fmt_fixed(char *out, size_t n, long v, int digits) {
+    const char *sign = (v < 0) ? "-" : "";
+    unsigned long av = (unsigned long)(v < 0 ? -v : v);
+    if (digits == 7) {   // 经纬度：1e-7 度
+        snprintf(out, n, "%s%lu.%07lu", sign, av / 10000000UL, av % 10000000UL);
+    } else {             // 速度 / 航向：0.1 单位
+        snprintf(out, n, "%s%lu.%01lu", sign, av / 10UL, av % 10UL);
+    }
+}
+
+static bool log_csv_row(const crid_log_rec_t *r, void *vctx) {
+    log_csv_ctx_t *c = (log_csv_ctx_t *)vctx;
+    if (c->has_mac && memcmp(r->mac, c->mac, 6) != 0) return true;
+
+    char lat[20], lon[20], sh[16], sv[16], trk[16];
+    fmt_fixed(lat, sizeof(lat), r->lat_e7, 7);
+    fmt_fixed(lon, sizeof(lon), r->lon_e7, 7);
+    fmt_fixed(sh, sizeof(sh), r->spd_h_dms, 1);
+    fmt_fixed(sv, sizeof(sv), r->spd_v_dms, 1);
+    fmt_fixed(trk, sizeof(trk), r->trk_ddeg, 1);
+
+    char line[192];
+    int n = snprintf(line, sizeof(line),
+                     "%lu,%lu,%02X:%02X:%02X:%02X:%02X:%02X,%s,%s,%s,%d,%d,%s,%s,%s,%u,%u,%u,%d\r\n",
+                     (unsigned long)r->t_unix, (unsigned long)r->tick_ms,
+                     r->mac[0], r->mac[1], r->mac[2], r->mac[3], r->mac[4], r->mac[5],
+                     r->uid, lat, lon,
+                     (int)r->alt_m,
+                     (r->flags & CRID_LOG_F_AGL) ? (int)r->agl_m : 0,
+                     sh, sv, trk,
+                     (unsigned)r->ua_type, (unsigned)r->status,
+                     (unsigned)r->proto, (int)r->rssi);
+    if (n <= 0) return true;
+    if (n > (int)sizeof(line) - 1) n = (int)sizeof(line) - 1;
+    return httpd_resp_send_chunk(c->req, line, (size_t)n) == ESP_OK;
+}
+
+static esp_err_t handler_log_export(httpd_req_t *req) {
+    char qs[96];
+    log_csv_ctx_t ctx;
+    memset(&ctx, 0, sizeof(ctx));
+    ctx.req = req;
+
+    if (httpd_req_get_url_query_str(req, qs, sizeof(qs)) == ESP_OK) {
+        char v[24];
+        if (httpd_query_key_value(qs, "mac", v, sizeof(v)) == ESP_OK) {
+            ctx.has_mac = log_parse_mac(v, ctx.mac);
+        }
+    }
+
+    httpd_resp_set_type(req, "text/csv; charset=utf-8");
+    httpd_resp_set_hdr(req, "Content-Disposition", "attachment; filename=\"crid_tracks.csv\"");
+    httpd_resp_set_hdr(req, "Cache-Control", "no-store");
+
+    const char *hdr =
+        "unix_time,uptime_ms,mac,uas_id,lat,lon,alt_m,agl_m,spd_h_mps,spd_v_mps,track_deg,ua_type,status,proto,rssi\r\n";
+    if (httpd_resp_send_chunk(req, hdr, strlen(hdr)) != ESP_OK) return ESP_FAIL;
+
+    crid_log_foreach(log_csv_row, &ctx);
+    httpd_resp_send_chunk(req, NULL, 0);   // 结束分块传输
+    return ESP_OK;
+}
+
+static esp_err_t handler_log_clear(httpd_req_t *req) {
+    esp_err_t e = crid_log_clear();
+
+    cJSON *j = cJSON_CreateObject();
+    cJSON_AddBoolToObject(j, "ok", e == ESP_OK);
+    if (e != ESP_OK) cJSON_AddStringToObject(j, "error", esp_err_to_name(e));
+
+    char *s = cJSON_PrintUnformatted(j);
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_set_hdr(req, "Cache-Control", "no-store");
+    if (s != NULL) {
+        httpd_resp_sendstr(req, s);
+        cJSON_free(s);
+    } else {
+        httpd_resp_sendstr(req, "{\"ok\":false}");
+    }
+    cJSON_Delete(j);
+    return ESP_OK;
+}
+
 // 实时广播位置（供网页地图显示蓝点，每 2 秒被前端轮询）
 static esp_err_t handler_status(httpd_req_t *req) {
     cn_crid_config_t *cfg = s_config;
@@ -1883,6 +2252,10 @@ static const httpd_uri_t uris[] = {
     { .uri = "/api/time",  .method = HTTP_POST, .handler = handler_time,      .user_ctx = NULL },
     { .uri = "/api/ota/info",  .method = HTTP_GET,  .handler = crid_ota_handler_info,   .user_ctx = NULL },
     { .uri = "/api/ota/upload",.method = HTTP_POST, .handler = crid_ota_handler_upload, .user_ctx = NULL },
+    { .uri = "/api/log/info",  .method = HTTP_GET,  .handler = handler_log_info,   .user_ctx = NULL },
+    { .uri = "/api/log/points",.method = HTTP_GET,  .handler = handler_log_points, .user_ctx = NULL },
+    { .uri = "/api/log/export",.method = HTTP_GET,  .handler = handler_log_export, .user_ctx = NULL },
+    { .uri = "/api/log/clear", .method = HTTP_POST, .handler = handler_log_clear,  .user_ctx = NULL },
     { .uri = "/favicon.ico",.method = HTTP_GET, .handler = handler_favicon,   .user_ctx = NULL },
 };
 

@@ -252,8 +252,26 @@ class Handler(http.server.BaseHTTPRequestHandler):
         elif path.startswith('/api/ota/info'):
             # 固件升级卡片的信息区（真实固件按 app 描述符与分区表返回同样的字段）
             self._send(200, json.dumps({
-                'ver': '1.2.3', 'part': 'factory', 'part_size': 2097152,
+                'ver': '1.2.4', 'part': 'factory', 'part_size': 2097152,
                 'max': 2097152, 'token': 'demo0001', 'ota': True,
+            }), 'application/json')
+        elif path.startswith('/api/log/info'):
+            # 历史轨迹卡片：统计 + 目标列表（数值取自一次真实接收的样本量级）
+            self._send(200, json.dumps({
+                'ready': True, 'count': 1280, 'capacity': 65472,
+                'used': 86016, 'total': 4186112, 'dropped': 0,
+                'oldest_unix': 1761800000, 'oldest_tick': 1000,
+                'newest_unix': 1761806420, 'newest_tick': 6420000,
+                'targets': [
+                    {'mac': 'AA:BB:CC:DD:EE:01', 'uid': '1581F5QJ8TEST',
+                     'count': 760, 'oldest_unix': 1761800000,
+                     'newest_unix': 1761806420, 'newest_tick': 6420000,
+                     'lat': 22.5412, 'lon': 114.0521, 'alt': 50},
+                    {'mac': 'AA:BB:CC:DD:EE:02', 'uid': '1581F9HECBGY3',
+                     'count': 520, 'oldest_unix': 1761800100,
+                     'newest_unix': 1761806400, 'newest_tick': 6400000,
+                     'lat': 22.5503, 'lon': 114.0617, 'alt': 80},
+                ],
             }), 'application/json')
         elif path == '/rxmap.js':
             with open(RXMAP, 'rb') as f:

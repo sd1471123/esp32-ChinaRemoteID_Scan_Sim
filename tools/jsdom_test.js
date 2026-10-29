@@ -42,9 +42,37 @@ const dom = new JSDOM(patched, {
       })};
       // OTA 信息接口（带 ?n= 轮询参数，用前缀匹配）
       if (String(u).indexOf('/api/ota/info') === 0) return { json: async () => ({
-        ver: '1.2.3', part: 'factory', part_size: 2097152,
+        ver: '1.2.4', part: 'factory', part_size: 2097152,
         max: 2097152, token: 'tk123456', ota: true,
       })};
+      // 历史轨迹：统计 + 目标列表
+      if (String(u).indexOf('/api/log/info') === 0) return { json: async () => ({
+        ready: true, count: 1280, capacity: 65472,
+        used: 86016, total: 4186112, dropped: 0,
+        oldest_unix: 1761800000, oldest_tick: 1000,
+        newest_unix: 1761806420, newest_tick: 6420000,
+        targets: [
+          { mac: 'AA:BB:CC:DD:EE:01', uid: '1581F5QJ8TEST', count: 760,
+            oldest_unix: 1761800000, newest_unix: 1761806420, newest_tick: 6420000,
+            lat: 22.54, lon: 114.05, alt: 50 },
+          { mac: 'AA:BB:CC:DD:EE:02', uid: '1581F9HECBGY3', count: 520,
+            oldest_unix: 1761800100, newest_unix: 1761806400, newest_tick: 6400000,
+            lat: 22.55, lon: 114.06, alt: 80 },
+        ],
+      })};
+      // 历史轨迹：某目标的轨迹点
+      if (String(u).indexOf('/api/log/points') === 0) return { json: async () => ({
+        total: 1280, mac: 'AA:BB:CC:DD:EE:01',
+        points: [
+          { seq: 10, t: 1761806420, tick: 6420000, lat: 22.5401, lon: 114.0502,
+            alt: 51, agl: 30, spd_h: 5.5, spd_v: 0.2, track: 90.0,
+            ua: 2, status: 2, proto: 4, rssi: -55 },
+          { seq: 9, t: 1761806410, tick: 6410000, lat: 22.5400, lon: 114.0501,
+            alt: 50, agl: 29, spd_h: 5.4, spd_v: 0.1, track: 89.5,
+            ua: 2, status: 2, proto: 4, rssi: -57 },
+        ],
+      })};
+      if (String(u).indexOf('/api/log/clear') === 0) return { json: async () => ({ ok: true }) };
       return { json: async () => ({}) };
     };
     window.confirm = () => true;
@@ -434,6 +462,14 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
       '| btn disabled:', d.getElementById('otabtn').disabled);
     if (!/正在重启/.test(d.getElementById('otatxt').textContent)) console.log('OTA SUCCESS TEXT FAIL');
   } catch (e) { console.log('ota ui THREW:', e.message); }
+
+  // 历史轨迹：卡片渲染与刷新（只做观察输出，不影响退出码）
+  console.log('=== 历史轨迹 ===');
+  console.log('  logbox 存在:', !!document.getElementById('logbox'));
+  console.log('  目标行数:', document.querySelectorAll('#lgtargets .lgrow').length);
+  console.log('  占用文案:', (document.getElementById('lgused') || {}).textContent);
+  console.log('  进度条宽度:', (document.getElementById('lgfill') || {}).style
+    ? document.getElementById('lgfill').style.width : '');
 
   console.log('=== 运行后错误 ===');
   console.log(w._pageErrors.length ? w._pageErrors : '(none)');

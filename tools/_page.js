@@ -672,10 +672,84 @@ trailPush(j.latitude,j.longitude);}
 catch(e){}
 if(Date.now()-sT>600000)syncTime();}
 var sT=0;
+let lgMac='';
+function fmtKB(n){n=Number(n)||0;if(n>=1048576)return (n/1048576).toFixed(2)+' MB';
+return (n/1024).toFixed(0)+' KB';}
+function pad2(x){return String(x).padStart(2,'0');}
+function fmtT(u,t){
+if(u>0){const d=new Date(u*1000);
+return d.getFullYear()+'-'+pad2(d.getMonth()+1)+'-'+pad2(d.getDate())+' '+
+pad2(d.getHours())+':'+pad2(d.getMinutes())+':'+pad2(d.getSeconds());}
+const s=Math.floor((t||0)/1000);
+return '上电 '+pad2(Math.floor(s/3600))+':'+pad2(Math.floor(s%3600/60))+':'+pad2(s%60);}
+function logTargets(j){
+const box=q('lgtargets');if(!box)return;
+const ts=j.targets||[];
+if(!ts.length){box.innerHTML='<div class="lgmore">还没有记录。切到接收模式并等周边无人机出现，这里就会列出目标。</div>';return;}
+let h='';
+for(let i=0;i<ts.length;i++){const t=ts[i];
+const sel=(t.mac===lgMac)?' sel':'';
+h+='<div class="lgrow'+sel+'" data-mac="'+t.mac+'">'
++'<span class="id">'+(t.uid?esc(t.uid):'(无 UAS ID)')+'</span>'
++'<span class="mono">'+String(t.mac).toUpperCase()+'</span>'
++'<span class="sp"></span>'
++'<span class="mini">'+t.count+' 条 · 最后 '+fmtT(t.newest_unix,t.newest_tick)+'</span>'
++'<button type="button" data-lg="'+t.mac+'">看轨迹</button>'
++'</div>';}
+box.innerHTML=h;
+Array.prototype.forEach.call(box.querySelectorAll('button[data-lg]'),function(b){
+b.onclick=function(){logPoints(b.dataset.lg);};});}
+async function logPoints(mac){
+lgMac=mac;
+const box=q('lgpoints');if(!box)return;
+box.innerHTML='<div class="lgmore">读取中…</div>';
+try{
+const r=await fetch('/api/log/points?limit=120&mac='+encodeURIComponent(mac));
+const j=await r.json();
+const ps=j.points||[];
+if(!ps.length){box.innerHTML='<div class="lgmore">该目标暂无记录。</div>';return;}
+let h='<div class="lgpt hd"><span>时间</span><span>经纬度</span><span>高度</span>'
++'<span>速度</span><span>航向</span></div>';
+for(let i=0;i<ps.length;i++){const p=ps[i];
+h+='<div class="lgpt"><span class="mono">'
++fmtT(p.t,p.tick).replace(/^[0-9]{4}-[0-9]{2}-[0-9]{2} /,'')+'</span>'
++'<span class="mono">'+Number(p.lat).toFixed(5)+', '+Number(p.lon).toFixed(5)+'</span>'
++'<span>'+Math.round(p.alt)+' m</span>'
++'<span>'+Number(p.spd_h).toFixed(1)+' m/s</span>'
++'<span>'+Math.round(p.track)+'°</span></div>';}
+h+='<div class="lgmore">共 '+j.total+' 条，这里是最新的 '+ps.length+' 条（新的在上），导出 CSV 可拿到全部。</div>';
+box.innerHTML=h;
+}catch(e){box.innerHTML='<div class="lgmore">读取失败</div>';}}
+async function logRefresh(){
+try{const r=await fetch('/api/log/info');const j=await r.json();
+const b=q('logbox');
+if(!j.ready){if(b)b.style.display='none';return;}
+if(b)b.style.display='';
+if(q('lgcnt'))q('lgcnt').textContent=j.count;
+if(q('lgused'))q('lgused').textContent=fmtKB(j.used)+' / '+fmtKB(j.total);
+if(q('lgrange'))q('lgrange').textContent=j.count?
+fmtT(j.oldest_unix,j.oldest_tick)+' → '+fmtT(j.newest_unix,j.newest_tick):'暂无记录';
+if(q('lgfill'))q('lgfill').style.width=(j.capacity?(j.count*100/j.capacity):0).toFixed(1)+'%';
+logTargets(j);
+}catch(e){}}
+function logExport(){
+const a=document.createElement('a');
+a.href='/api/log/export'+(lgMac?('?mac='+encodeURIComponent(lgMac)):'');
+a.download=lgMac?('crid_track_'+String(lgMac).replace(/:/g,'')+'.csv'):'crid_tracks.csv';
+document.body.appendChild(a);a.click();a.remove();}
+async function logClear(){
+if(!confirm('确定清空全部历史轨迹记录？清空后无法恢复。'))return;
+try{const r=await fetch('/api/log/clear',{method:'POST'});const j=await r.json();
+if(j.ok){lgMac='';if(q('lgpoints'))q('lgpoints').innerHTML='';
+logRefresh();msg('历史记录已清空',true);}
+else{msg('清空失败: '+(j.error||'未知错误'),false);}
+}catch(e){msg('清空失败: '+e,false);}}
 function syncTime(){sT=Date.now();try{fetch('/api/time',{method:'POST',
 headers:{'Content-Type':'application/json'},body:JSON.stringify({epoch_ms:sT})})
 .catch(function(){});}catch(e){}}
 setInterval(poll,2000);
+setInterval(logRefresh,8000);
 syncTime();
 load();
 otaLoad();
+logRefresh();

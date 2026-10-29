@@ -29,6 +29,7 @@
 #include "crid_wifi.h"
 #include "crid_web.h"
 #include "crid_ota.h"
+#include "crid_log.h"
 #include "crid_patrol.h"
 #include "crid_rx.h"
 
@@ -224,6 +225,8 @@ void app_main(void) {
 
     // 8. 启动网页配置服务器（手机连接热点后访问 http://192.168.4.1）
     crid_ota_init();   // 本次上电的 OTA 上传令牌
+    // 接收端轨迹持久化：分区缺失（旧分区表）时只在日志里警告，不影响收发
+    crid_log_init();
     if (crid_web_start(&g_config) != ESP_OK) {
         ESP_LOGE(TAG, "Web config server failed to start!");
     }

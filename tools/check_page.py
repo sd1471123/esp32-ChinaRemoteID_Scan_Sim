@@ -169,6 +169,18 @@ checks = {
     "OTA:重启后比对版本再刷新": ("function otaWaitReboot(" in html
                             and "location.reload()" in html),
     "OTA:升级说明折叠": "<summary>说明：升级流程、断电保护与风险</summary>" in html,
+    # 历史轨迹（接收端持久化日志）
+    "轨迹:卡片存在": "<h3>历史轨迹</h3>" in html,
+    "轨迹:统计三栏": all(("id='%s'" % i) in html for i in ('lgcnt', 'lgused', 'lgrange')),
+    "轨迹:容量进度条": "class='lgbar'" in html and "id='lgfill'" in html,
+    "轨迹:目标列表容器": "id='lgtargets'" in html and "id='lgpoints'" in html,
+    "轨迹:导出与清空按钮": "onclick='logExport()'" in html and "onclick='logClear()'" in html,
+    "轨迹:四个接口都在": all(("/api/log/%s" % i) in html
+                        for i in ('info', 'points', 'export', 'clear')),
+    "轨迹:轮询刷新": "setInterval(logRefresh,8000)" in html,
+    "轨迹:未对时降级为上面计时": ("上电 '" in html and "fmtT(" in html),
+    "轨迹:说明折叠": "<summary>说明：记录了什么、能存多久、时间为什么不对</summary>" in html,
+    "轨迹:说明写出降采样与容量": ("最快 5 秒一条" in html and "6.5 万条" in html),
 }
 for k, v in checks.items():
     print(("OK   " if v else "FAIL ") + k)
