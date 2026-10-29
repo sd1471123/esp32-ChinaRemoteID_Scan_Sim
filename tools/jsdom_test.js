@@ -43,7 +43,7 @@ const dom = new JSDOM(patched, {
       })};
       // OTA 信息接口（带 ?n= 轮询参数，用前缀匹配）
       if (String(u).indexOf('/api/ota/info') === 0) return { json: async () => ({
-        ver: '1.3.0', part: 'factory', part_size: 2097152,
+        ver: '2.0.0', part: 'factory', part_size: 2097152,
         max: 2097152, token: 'tk123456', ota: true,
       })};
       // 历史轨迹：统计 + 目标列表
@@ -460,11 +460,11 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
     console.log('ota info:', d.getElementById('otaver').textContent,
       '|', d.getElementById('otapart').textContent,
       '|', d.getElementById('otacan').textContent);
-    if (d.getElementById('otaver').textContent !== '1.3.0') console.log('OTA INFO FAIL');
+    if (d.getElementById('otaver').textContent !== '2.0.0') console.log('OTA INFO FAIL');
     // 顶部横幅：项目名带 <wbr> 断点，入口按钮第二行显示同一版本号
     console.log('hdr name:', (d.querySelector('.hdr-nm') || {}).textContent,
       '| 入口版本:', (d.getElementById('otavh') || {}).textContent);
-    if ((d.getElementById('otavh') || {}).textContent !== 'v1.3.0') console.log('HDR VER FAIL');
+    if ((d.getElementById('otavh') || {}).textContent !== 'v2.0.0') console.log('HDR VER FAIL');
 
     // 未选文件：只提示，不许发请求
     w.otaStart();

@@ -43,30 +43,34 @@ static const char PAGE_HTML[] =
 "*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}"
 "body{font-family:-apple-system,'Segoe UI',Roboto,'PingFang SC','Microsoft YaHei',sans-serif;"
 "margin:0;background:#eef1f5;color:#1f2937;line-height:1.5;overflow-x:hidden}"
-".hdr{background:linear-gradient(135deg,#0b3d2e,#0f8a4d);color:#fff;padding:14px 16px}"
+".hdr{background:linear-gradient(135deg,#0b3d2e,#0f8a4d);color:#fff;padding:10px 16px}"
 ".hdr-in{max-width:1080px;margin:0 auto}"
 // 顶部：第一行左边项目名、右边「固件升级」入口；仓库地址与副标题各占整行，
 // 这样窄屏下地址有整屏宽度可用，不必折行（折行的 url 很难看且读不出来）
-".hdr-row{display:flex;align-items:flex-start;gap:10px}"
+".hdr-row{display:flex;align-items:flex-start;gap:10px;position:relative}"
+// 标题列就是普通流：按钮改成绝对定位挂在右上角，不参与这一行的高度。
+// 否则按钮两行比标题高，行被撑高，标题与地址之间就凭空多出一行空白。
 ".hdr-tt{flex:1;min-width:0}"
 // 项目名只在「_Scan_Sim」前留一个断点（<wbr>）：手机窄屏下断成
-// 「ESP32-ChinaRemoteID」+「_Scan_Sim」两行，不会把 ID 拆到中间
-".hdr h2{margin:0;font-size:17px;line-height:1.28;display:flex;align-items:flex-start;gap:8px;"
-"overflow-wrap:break-word}"
+// 「ESP32-ChinaRemoteID」+「_Scan_Sim」两行，不会把 ID 拆到中间。
+// padding-right 给右上角按钮让位，标题永远不会压到按钮上。
+".hdr h2{margin:0;padding-right:72px;font-size:17px;line-height:1.28;display:flex;"
+"align-items:flex-start;gap:8px;overflow-wrap:break-word}"
 ".dot{width:10px;height:10px;border-radius:50%;background:#4ade80;display:inline-block;"
 "box-shadow:0 0 6px #4ade80;flex:none;margin-top:6px}"
 ".hdr-nm{min-width:0}"
-".hdr-url{display:block;margin-top:5px;font-size:11px;color:#b8ecd2;text-decoration:none;"
+".hdr-url{display:block;margin-top:1px;font-size:11px;color:#b8ecd2;text-decoration:none;"
 "font-family:ui-monospace,Menlo,Consolas,monospace;white-space:nowrap;overflow:hidden;"
 "text-overflow:ellipsis}"
 ".hdr-url:hover{color:#fff;text-decoration:underline}"
-".hdr .sub{margin:5px 0 0;font-size:11px;opacity:.78}"
-// 右上角入口：上「固件升级」下版本号，两行居中
-".hdr-ota{flex:none;width:auto;margin:0;padding:6px 10px;border-radius:9px;font-size:12px;"
+".hdr .sub{margin:1px 0 0;font-size:11px;opacity:.78}"
+// 右上角入口：上「固件升级」下版本号，两行居中；绝对定位，不影响标题行高
+".hdr-ota{position:absolute;top:0;right:0;width:auto;margin:0;padding:4px 9px;"
+"border-radius:8px;font-size:11px;"
 "font-weight:700;font-family:inherit;color:#0b3d2e;background:rgba(255,255,255,.93);"
 "border:1px solid rgba(255,255,255,.5);box-shadow:0 1px 3px rgba(0,0,0,.16);"
-"display:flex;flex-direction:column;align-items:center;gap:1px;line-height:1.15}"
-".hdr-ota .ota-v{font-size:10px;font-weight:600;color:#0f8a4d;"
+"display:flex;flex-direction:column;align-items:center;gap:0;line-height:1.15}"
+".hdr-ota .ota-v{font-size:9.5px;font-weight:600;color:#0f8a4d;"
 "font-family:ui-monospace,Menlo,Consolas,monospace}"
 ".hdr-ota:active{transform:scale(.97);background:#fff;filter:none}"
 ".wrap{max-width:1080px;margin:0 auto;padding:14px}"
@@ -327,7 +331,7 @@ static const char PAGE_HTML[] =
 ".foot{font-size:12px;color:#9ca3af;margin:10px 2px}"
 // 窄屏（小屏手机）把地址与副标题再收一点字号，保证整条 url 一行放得下
 "@media(max-width:400px){"
-".hdr{padding:12px 14px}"
+".hdr{padding:9px 14px}"
 ".hdr h2{font-size:16px}"
 ".hdr-url{font-size:10px;letter-spacing:-.2px}"
 ".hdr-ota{padding:5px 9px}"

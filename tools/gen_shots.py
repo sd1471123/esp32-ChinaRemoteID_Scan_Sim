@@ -253,7 +253,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
         elif path.startswith('/api/ota/info'):
             # 固件升级卡片的信息区（真实固件按 app 描述符与分区表返回同样的字段）
             self._send(200, json.dumps({
-                'ver': '1.3.0', 'part': 'factory', 'part_size': 2097152,
+                'ver': '2.0.0', 'part': 'factory', 'part_size': 2097152,
                 'max': 2097152, 'token': 'demo0001', 'ota': True,
             }), 'application/json')
         elif path.startswith('/api/log/info'):
