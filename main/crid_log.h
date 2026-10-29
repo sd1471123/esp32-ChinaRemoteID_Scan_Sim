@@ -128,15 +128,18 @@ void crid_log_get_stats(crid_log_stats_t *out);
 int crid_log_targets(crid_log_target_t *out, int max);
 
 /**
- * @brief 取某个目标的轨迹点（从新到旧）
+ * @brief 取某个目标的轨迹点（从新到旧），支持分页
  * @param mac       目标 MAC；传 NULL 表示不过滤
+ * @param skip      跳过最新的多少条（分页偏移，网页第 N 页传 N*每页条数）
  * @param limit     最多返回条数
  * @param out       输出数组（调用方分配 limit 个元素）
- * @param scan_max  最多回扫多少条（防止在大分区里空转）
- * @return 实际条数
+ * @param scan_max  最多回扫多少条（防止在大分区里空转）；传 0 表示扫全部
+ * @param matched   可选输出：回扫范围内命中的总条数（用于算总页数）；
+ *                  传 NULL 则命中 limit 条即提前结束，不做统计
+ * @return 实际写入 out 的条数
  */
-int crid_log_points(const uint8_t mac[6], uint32_t limit,
-                    crid_log_rec_t *out, uint32_t scan_max);
+int crid_log_points(const uint8_t mac[6], uint32_t skip, uint32_t limit,
+                    crid_log_rec_t *out, uint32_t scan_max, uint32_t *matched);
 
 /** 遍历回调：返回 false 可提前终止 */
 typedef bool (*crid_log_cb_t)(const crid_log_rec_t *r, void *ctx);

@@ -182,7 +182,7 @@ int main(void) {
     crid_log_get_stats(&st);
     check(st.count == 10, "count=10");
     crid_log_rec_t buf[32] __attribute__((aligned(4)));
-    int n = crid_log_points(NULL, 32, buf, 0);
+    int n = crid_log_points(NULL, 0, 32, buf, 0, NULL);
     check(n == 10, "points 返回 10 条");
     check(buf[0].seq == 10 && buf[9].seq == 1, "按新到旧排序（seq 10→1）");
     check(buf[0].lat_e7 == 1009, "最新点坐标正确");
@@ -194,9 +194,9 @@ int main(void) {
         store(&r);
     }
     const uint8_t mac2[6] = { 0xAA, 0, 0, 0, 0, 0x02 };
-    n = crid_log_points(mac2, 32, buf, 0);
+    n = crid_log_points(mac2, 0, 32, buf, 0, NULL);
     check(n == 3, "只取到该 MAC 的 3 条");
-    n = crid_log_points(NULL, 32, buf, 0);
+    n = crid_log_points(NULL, 0, 32, buf, 0, NULL);
     check(n == 13, "全部 13 条");
 
     printf("[4] 模拟掉电重启\n");
@@ -204,7 +204,7 @@ int main(void) {
     check(crid_log_init() == ESP_OK, "重启 init 成功");
     crid_log_get_stats(&st);
     check(st.count == 13, "重启后仍认到 13 条");
-    n = crid_log_points(NULL, 32, buf, 0);
+    n = crid_log_points(NULL, 0, 32, buf, 0, NULL);
     check(n == 13 && buf[0].seq == 13, "重启后最新 seq=13");
     crid_log_target_t tg[8];
     int nt = crid_log_targets(tg, 8);
@@ -219,7 +219,7 @@ int main(void) {
     crid_log_get_stats(&st);
     check(st.count == 960, "count 封顶 960");
     check(st.used_bytes == st.total_bytes, "占用达到分区总容量");
-    n = crid_log_points(NULL, 1000, g_big, 0);
+    n = crid_log_points(NULL, 0, 1000, g_big, 0, NULL);
     check(n == 960, "取回 960 条");
     // 共写入 13 + 1200 = 1213 条，seq 14..1213 里最新的 960 条 = 254..1213
     check(g_big[0].seq == 1213, "最新 seq=1213");
@@ -237,7 +237,7 @@ int main(void) {
     check(crid_log_clear() == ESP_OK, "clear 返回 OK");
     crid_log_get_stats(&st);
     check(st.count == 0, "清空后 count=0");
-    n = crid_log_points(NULL, 32, buf, 0);
+    n = crid_log_points(NULL, 0, 32, buf, 0, NULL);
     check(n == 0, "清空后读不到旧数据");
     c = (collect_t){ 0, 0, 0, true };
     crid_log_foreach(collect_cb, &c);
@@ -249,7 +249,7 @@ int main(void) {
     }
     crid_log_get_stats(&st);
     check(st.count == 3, "清空后新写 3 条");
-    n = crid_log_points(NULL, 32, buf, 0);
+    n = crid_log_points(NULL, 0, 32, buf, 0, NULL);
     check(n == 3 && buf[0].lat_e7 == 7002, "新记录可正常读取");
 
     printf("[8] 清空后再重启（代次持久化）\n");

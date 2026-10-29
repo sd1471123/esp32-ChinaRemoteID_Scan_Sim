@@ -88,7 +88,12 @@ checks = {
     "地图为独立资源": "/rxmap.js?v=1" in html,
     "接收端地图逻辑不内联": "L.map('rxmap')" not in html and "initRxMap" not in html
                           and "updateRxMap" not in html and "rxFocus" not in html,
-    "页面仅通过 RXMAP 钩子调用": len([l for l in html.splitlines() if "RXMAP" in l]) == 5,
+    # 页面里对地图模块的调用必须限定在这几个钩子上（含航线回放三个）
+    "页面仅通过 RXMAP 钩子调用": all(
+        tok in ("RXMAP.boot", "RXMAP.update", "RXMAP.resize", "RXMAP.focus",
+                "RXMAP.replay", "RXMAP.replayMark", "RXMAP.replayEnd", "window.RXMAP",
+                "RXMAP&&")
+        for tok in re.findall(r"RXMAP\.\w+", html)),
     "离线网格容器在": "id='rxgrid'" in html and "id='rxgridnote'" in html,
     "标题已更新": "<title>ESP32-ChinaRemoteID_Scan_Sim</title>" in html
                 and "ESP32-ChinaRemoteID<wbr>_Scan_Sim</span></h2>" in html
@@ -186,7 +191,12 @@ checks = {
                             and "location.reload()" in html),
     "OTA:升级说明折叠": "<summary>说明：升级流程、断电保护与风险</summary>" in html,
     # 历史轨迹（接收端持久化日志）：只有接收模式落盘，发射模式整卡隐藏
-    "轨迹:卡片存在": "<h3>历史轨迹</h3>" in html,
+    "轨迹:卡片存在": ("id='logbox'" in html and "历史轨迹" in html
+                  and "id='lghd'" in html),
+    "轨迹:标题可折叠": ("onclick='logFold()'" in html and "id='lgbody'" in html
+                    and "id='lgtog'" in html),
+    "轨迹:详情可收起": ("id='lgdet'" in html and "onclick='logClose()'" in html
+                    and "收起轨迹" in html),
     "轨迹:仅接收端显示": ("class='card span2 rxonly' id='logbox'" in html
                        and "lg.style.display=rx?'':'none'" in html
                        and "if(roleTx())return;" in html),
@@ -198,6 +208,15 @@ checks = {
                         for i in ('info', 'points', 'export', 'clear')),
     "轨迹:轮询刷新": "setInterval(logRefresh,8000)" in html,
     "轨迹:未对时降级为上面计时": ("上电 '" in html and "fmtT(" in html),
+    # 分页：30 条一页、最多 10 页，更早的只能导出 CSV
+    "轨迹:每页30条最多10页": ("const LG_PER=30,LG_MAXP=10;" in html),
+    "轨迹:分页带偏移": ("'&offset='+(lgPage*LG_PER)" in html),
+    "轨迹:页码按钮": ("data-pg=" in html and "上一页" in html and "下一页" in html
+                  and "更早的请导出 CSV" in html),
+    # 航线回放：地图走独立模块 RXMAP.replay，页内只留 canvas 兜底
+    "轨迹:回放控制": all(("id='%s'" % i) in html for i in ('lgpp', 'lgrs', 'lgnow', 'lgrate')),
+    "轨迹:地图与canvas兜底": ("id='lgmap'" in html and "id='lgcv'" in html
+                          and "RXMAP.replay(" in html and "function lgCanvas(){" in html),
     "轨迹:说明折叠": "<summary>说明：记录了什么、能存多久、时间为什么不对</summary>" in html,
     "轨迹:说明写出降采样与容量": ("最快 5 秒一条" in html and "6.5 万条" in html),
     # 热点密码（WPA2）：挡住陌生人连入热点改参数 / 上传固件

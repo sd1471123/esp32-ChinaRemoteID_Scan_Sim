@@ -1,7 +1,8 @@
 /* 接收端信号地图 —— 独立资源 /rxmap.js，按需加载
  *
  * 隔离原则（与发射端地图互不干扰的关键）：
- *   1. 只向 window 暴露一个对象 RXMAP（boot/update/resize/focus），不新增其它全局变量；
+ *   1. 只向 window 暴露一个对象 RXMAP（boot/update/resize/focus/
+ *      replay/replayMark/replayEnd），不新增其它全局变量；
  *   2. 全部状态收在闭包内（m / lay / hist / autoFit），绝不使用 map、opMarker、dMarker、
  *      circle、ginit、dotIcon、drawCircle 等发射端地图的变量与函数；
  *   3. 容器 id 为 rxmap / rxmapbox，与发射端的 map 完全不同；
@@ -305,6 +306,7 @@
   // 容器显示状态变化后调用
   function resize() {
     try {
+      if (rm) rm.invalidateSize();
       if (mode === 'grid') { drawRxGrid(lastTracks || []); return; }
       if (m) m.invalidateSize();
     } catch (e) {}
@@ -460,5 +462,74 @@
     } catch (e) {}
   }
 
-  window.RXMAP = { boot: boot, update: update, resize: resize, focus: focus };
+  // ---- 航线回放：历史轨迹卡内的独立小地图 ----
+  // 与实时地图共用同一个 Leaflet，但容器（lgmap）与图层全部独立，互不干扰。
+  // 容器不可见或没有 Leaflet 时返回 false，由页面自己退回 canvas 折线图。
+  var rm = null, rlay = null, rpts = null;
+
+  function replayEnd() {
+    try {
+      if (rm) { rm.remove(); }
+    } catch (e) {}
+    rm = null; rlay = null; rpts = null;
+  }
+
+  function replay(boxId, pts) {
+    try {
+      var l = window.L;
+      if (!l || !l.map) { replayEnd(); return false; }
+      var box = q(boxId);
+      if (!box || box.clientWidth < 40 || box.clientHeight < 40) return false;
+      var ll = [], i;
+      for (i = 0; pts && i < pts.length; i++) {
+        var la = Number(pts[i].lat), lo = Number(pts[i].lon);
+        if (!isFinite(la) || !isFinite(lo)) continue;
+        if (la === 0 && lo === 0) continue;
+        ll.push([la, lo]);
+      }
+      if (!ll.length) { replayEnd(); return false; }
+      LB = l;
+      if (!rm) {
+        rm = l.map(boxId, { attributionControl: false, zoomControl: true });
+        l.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+          { maxZoom: 19, attribution: '&copy; OpenStreetMap' }).addTo(rm);
+        rlay = {
+          line: l.polyline([], { color: '#1565c0', weight: 4, opacity: 0.85 }).addTo(rm),
+          a: l.circleMarker([0, 0], { radius: 6, color: '#fff', weight: 2,
+            fillColor: '#0f8a4d', fillOpacity: 1 }).addTo(rm),
+          b: l.circleMarker([0, 0], { radius: 6, color: '#fff', weight: 2,
+            fillColor: '#c0392b', fillOpacity: 1 }).addTo(rm),
+          cur: l.circleMarker([0, 0], { radius: 7, color: '#1565c0', weight: 3,
+            fillColor: '#fff', fillOpacity: 1 }).addTo(rm)
+        };
+      }
+      rpts = ll;
+      rlay.line.setLatLngs(ll);
+      rlay.a.setLatLng(ll[0]);
+      rlay.b.setLatLng(ll[ll.length - 1]);
+      rlay.cur.setLatLng(ll[ll.length - 1]);
+      if (ll.length > 1) rm.fitBounds(l.latLngBounds(ll).pad(0.12), { maxZoom: 17 });
+      else rm.setView(ll[0], 17);
+      // 面板刚显示出来时容器尺寸可能还没定，下一帧再刷一次
+      setTimeout(function () { try { rm.invalidateSize(); } catch (e) {} }, 60);
+      return true;
+    } catch (e) {
+      replayEnd();
+      return false;
+    }
+  }
+
+  function replayMark(i) {
+    try {
+      if (!rm || !rlay || !rpts || !rpts.length) return;
+      var k = (i < 0 || i >= rpts.length) ? rpts.length - 1 : i;
+      rlay.cur.setLatLng(rpts[k]);
+      if (!rm.getBounds().contains(rpts[k])) {
+        rm.panTo(rpts[k], { animate: false });
+      }
+    } catch (e) {}
+  }
+
+  window.RXMAP = { boot: boot, update: update, resize: resize, focus: focus,
+                   replay: replay, replayMark: replayMark, replayEnd: replayEnd };
 })();

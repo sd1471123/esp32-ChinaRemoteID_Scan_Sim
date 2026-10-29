@@ -61,18 +61,26 @@ const dom = new JSDOM(patched, {
             lat: 22.55, lon: 114.06, alt: 80 },
         ],
       })};
-      // 历史轨迹：某目标的轨迹点
-      if (String(u).indexOf('/api/log/points') === 0) return { json: async () => ({
-        total: 1280, mac: 'AA:BB:CC:DD:EE:01',
-        points: [
-          { seq: 10, t: 1761806420, tick: 6420000, lat: 22.5401, lon: 114.0502,
-            alt: 51, agl: 30, spd_h: 5.5, spd_v: 0.2, track: 90.0,
-            ua: 2, status: 2, proto: 4, rssi: -55 },
-          { seq: 9, t: 1761806410, tick: 6410000, lat: 22.5400, lon: 114.0501,
-            alt: 50, agl: 29, spd_h: 5.4, spd_v: 0.1, track: 89.5,
-            ua: 2, status: 2, proto: 4, rssi: -57 },
-        ],
-      })};
+      // 历史轨迹：某目标的轨迹点（带 offset 分页，一次 30 条）
+      if (String(u).indexOf('/api/log/points') === 0) {
+        const uo = new URL(String(u), 'http://device');
+        const off = Number(uo.searchParams.get('offset') || 0);
+        window._logReq = String(u);
+        const pts = [];
+        for (let i = 0; i < 30; i++) {
+          pts.push({
+            seq: 1000 - off - i, t: 1761806420 - (off + i) * 10,
+            tick: 6420000 - (off + i) * 10000,
+            lat: 22.5400 + (off + i) * 0.00002, lon: 114.0501 + (off + i) * 0.00003,
+            alt: 50 + i, agl: 29 + i, spd_h: 5.4, spd_v: 0.1,
+            track: 89.5, ua: 2, status: 2, proto: 4, rssi: -57,
+          });
+        }
+        return { json: async () => ({
+          total: 1280, matched: 760, offset: off, limit: 30,
+          mac: 'AA:BB:CC:DD:EE:01', points: pts,
+        }) };
+      }
       if (String(u).indexOf('/api/log/clear') === 0) return { json: async () => ({ ok: true }) };
       return { json: async () => ({}) };
     };
@@ -506,6 +514,38 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
   console.log('  占用文案:', (ld.getElementById('lgused') || {}).textContent);
   console.log('  进度条宽度:', (ld.getElementById('lgfill') || {}).style
     ? ld.getElementById('lgfill').style.width : '');
+
+  // 打开某个目标的轨迹：分页 + 航线回放 + 可收起
+  console.log('  --- 详情 / 分页 / 回放 ---');
+  ld.querySelector('button[data-lg]').click();
+  await new Promise((r) => setTimeout(r, 40));
+  console.log('  详情展开:', ld.getElementById('lgdet').style.display === '');
+  console.log('  点位行数:', ld.querySelectorAll('#lgpoints .lgpt[data-i]').length);
+  console.log('  页码按钮数:', ld.querySelectorAll('#lgpage button[data-pg]').length);
+  console.log('  分页文案:', (ld.querySelector('#lgpage .info') || {}).textContent);
+  console.log('  首页请求带 offset=0:', /[?&]offset=0/.test(w._logReq || ''));
+  ld.querySelector('#lgpage button[data-pg="1"]').click();
+  await new Promise((r) => setTimeout(r, 40));
+  console.log('  第2页请求:', /offset=30/.test(w._logReq || ''));
+  console.log('  第2页高亮页码:', (ld.querySelector('#lgpage button.on') || {}).textContent);
+  w.lgPlayToggle();
+  await new Promise((r) => setTimeout(r, 480));
+  console.log('  回放按钮转为暂停:', ld.getElementById('lgpp').textContent === '暂停');
+  console.log('  回放行高亮:', ld.querySelectorAll('#lgpoints .lgpt.cur').length);
+  w.lgReset();
+  console.log('  重置后按钮回播放:', ld.getElementById('lgpp').textContent === '播放',
+    '| 高亮行', ld.querySelectorAll('#lgpoints .lgpt.cur').length);
+  // 再点同一个目标应直接收起（原来打开后收不回去）
+  ld.querySelector('button[data-lg]').click();
+  await new Promise((r) => setTimeout(r, 40));
+  console.log('  再点同目标收起:', ld.getElementById('lgdet').style.display === 'none');
+  // 卡片标题折叠 / 展开
+  w.logFold();
+  console.log('  卡片折叠:', ld.getElementById('lgbody').style.display === 'none',
+    '| 标签', ld.getElementById('lgtog').textContent);
+  w.logFold();
+  console.log('  卡片展开:', ld.getElementById('lgbody').style.display === '',
+    '| 标签', ld.getElementById('lgtog').textContent);
 
   console.log('=== 运行后错误 ===');
   console.log(w._pageErrors.length ? w._pageErrors : '(none)');

@@ -153,6 +153,20 @@ window.addEventListener('load', function () {
 </script>
 """
 
+# 历史轨迹：加载后自动点开第一个目标的「看轨迹」，展示分页 + 航线回放面板
+INJECT_TRACK = """
+<script>
+window.addEventListener('load', function () {
+  var n = 0;
+  var t = setInterval(function () {
+    var b = document.querySelector('#lgtargets button[data-lg]');
+    if (b && !window._opened) { window._opened = 1; b.click(); }
+    if (++n > 40) clearInterval(t);
+  }, 500);
+});
+</script>
+"""
+
 # 截图高度自适应：先加载一次把 documentElement.scrollHeight 写进 body 属性，
 # 用 --dump-dom 读回来，再按真实高度截图。固定高度会随页面改动被截断（或留白）。
 INJECT_MEASURE = """
@@ -232,6 +246,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 html = f.read()
             if STATE['mode'] == 'rx':
                 html = html.replace('</body>', INJECT_RX + '</body>')
+            if 'track=1' in (parsed.query or ''):
+                html = html.replace('</body>', INJECT_TRACK + '</body>')
             if 'measure=1' in (parsed.query or ''):
                 html = html.replace('</body>', INJECT_MEASURE + '</body>')
             if 'pick=1' in (parsed.query or ''):
@@ -255,6 +271,28 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self._send(200, json.dumps({
                 'ver': '2.0.0', 'part': 'factory', 'part_size': 2097152,
                 'max': 2097152, 'token': 'demo0001', 'ota': True,
+            }), 'application/json')
+        elif path.startswith('/api/log/points'):
+            # 航线回放用的轨迹点：30 条一圈的往复航线（数值按真实记录量级）
+            import math
+            pts = []
+            for i in range(30):
+                a = i * 0.14
+                pts.append({
+                    'seq': 900 + (29 - i),
+                    't': 1761806420 - (29 - i) * 5,
+                    'tick': 6420000 - (29 - i) * 5000,
+                    'lat': round(22.5407 + math.sin(a) * 0.0016, 7),
+                    'lon': round(113.9538 + (math.cos(a) - 0.55) * 0.0019, 7),
+                    'alt': 120 + int(math.sin(a) * 12),
+                    'agl': 82,
+                    'spd_h': round(8.5 + math.sin(a * 2) * 1.5, 1),
+                    'spd_v': 0.2, 'track': round((a * 57.3 * 2) % 360, 1),
+                    'ua': 2, 'status': 2, 'proto': 4, 'rssi': -52,
+                })
+            self._send(200, json.dumps({
+                'total': 1280, 'matched': 760, 'offset': 0, 'limit': 30,
+                'mac': 'AA:BB:CC:DD:EE:01', 'points': list(reversed(pts)),
             }), 'application/json')
         elif path.startswith('/api/log/info'):
             # 历史轨迹卡片：统计 + 目标列表（数值取自一次真实接收的样本量级）
@@ -303,14 +341,14 @@ def _edge_base(profile, width, height):
     ]
 
 
-def measure_height(port, mode, width=1160):
+def measure_height(port, mode, width=1160, query=''):
     """用 --dump-dom 读回整页 scrollHeight，供截图按真实内容高度出图。"""
     STATE['mode'] = mode
     profile = os.path.join(ROOT, 'build', '_shot_measure_%s' % mode)
     cmd = _edge_base(profile, width, 900) + [
         '--virtual-time-budget=22000',
         '--dump-dom',
-        'http://127.0.0.1:%d/?measure=1' % port,
+        'http://127.0.0.1:%d/?measure=1%s' % (port, ('&' + query[1:]) if query else ''),
     ]
     try:
         r = subprocess.run(cmd, capture_output=True, timeout=180,
@@ -340,7 +378,7 @@ def shoot(port, mode, out_name, height=None, width=1160, query=''):
     out = os.path.join(DOCS, out_name)
     profile = os.path.join(ROOT, 'build', '_shot_profile_%s' % mode)
     if height is None:
-        height = measure_height(port, mode, width)
+        height = measure_height(port, mode, width, query)
         if not height:
             print('    !! 跳过 %s（无法确定高度）' % out_name)
             return
@@ -370,6 +408,9 @@ def main():
             shoot(port, 'tx', 'webui_tx.png', width=1160)
         if 'rx' in want:
             shoot(port, 'rx', 'webui_rx.png', width=1000)
+        if 'track' in want:
+            # 航线回放面板：接收模式 + 自动点开第一个目标
+            shoot(port, 'rx', 'webui_track.png', width=1000, query='?track=1')
     finally:
         httpd.shutdown()
 

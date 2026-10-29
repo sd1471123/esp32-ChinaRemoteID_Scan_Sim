@@ -376,22 +376,31 @@ int crid_log_targets(crid_log_target_t *out, int max) {
     return n;
 }
 
-int crid_log_points(const uint8_t mac[6], uint32_t limit,
-                    crid_log_rec_t *out, uint32_t scan_max) {
+int crid_log_points(const uint8_t mac[6], uint32_t skip, uint32_t limit,
+                    crid_log_rec_t *out, uint32_t scan_max, uint32_t *matched) {
+    if (matched != NULL) *matched = 0;
     if (!s_ready || out == NULL || limit == 0 || s_count == 0) return 0;
 
     uint32_t cap = capacity();
     uint32_t na  = newest_abs();
     uint32_t n   = 0;
+    uint32_t hit = 0;
     uint32_t lim = limit < s_count ? limit : s_count;
     if (scan_max == 0 || scan_max > s_count) scan_max = s_count;
 
-    for (uint32_t i = 0; i < scan_max && n < lim; i++) {
+    for (uint32_t i = 0; i < scan_max; i++) {
         crid_log_rec_t r;
         if (!read_abs((na + cap - i) % cap, &r)) continue;
         if (mac != NULL && memcmp(r.mac, mac, 6) != 0) continue;
-        out[n++] = r;
+        hit++;
+        // skip 之前的是"更新的一页"，直接数过去但不拷出来
+        if (hit > skip && n < lim) {
+            out[n++] = r;
+            // 不要求统计总数时，凑够一页就走人（分页只需 offset 时最省）
+            if (matched == NULL && n >= lim) break;
+        }
     }
+    if (matched != NULL) *matched = hit;
     return (int)n;
 }
 
