@@ -217,6 +217,15 @@ checks = {
     "轨迹:回放控制": all(("id='%s'" % i) in html for i in ('lgpp', 'lgrs', 'lgnow', 'lgrate')),
     "轨迹:地图与canvas兜底": ("id='lgmap'" in html and "id='lgcv'" in html
                           and "RXMAP.replay(" in html and "function lgCanvas(){" in html),
+    # 回放用的是 10 页合并后的完整航线（最多 300 条），不是当前页那 30 条
+    "轨迹:回放合并全部页": ("lgRebuildPath" in html and "lgAllLoaded" in html
+                        and "lgPages[lgPage]=lgRev" in html),
+    "轨迹:后台补齐剩余页": ("async function lgFill(){" in html
+                        and "'&offset='+(p*LG_PER)" in html),
+    "轨迹:地图喂完整航线": "RXMAP.replay('lgmap',lgPath)" in html,
+    "轨迹:回放跨页自动翻页": ("p.pg!==lgPage&&lgPages[p.pg]" in html
+                        and "lgPath[lgPlay].ri" in html),
+    "轨迹:说明写出合并300条": "合并成一条完整航线" in html and "最多 300 条" in html,
     "轨迹:说明折叠": "<summary>说明：记录了什么、能存多久、时间为什么不对</summary>" in html,
     "轨迹:说明写出降采样与容量": ("最快 5 秒一条" in html and "6.5 万条" in html),
     # 热点密码（WPA2）：挡住陌生人连入热点改参数 / 上传固件

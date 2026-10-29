@@ -66,6 +66,8 @@ const dom = new JSDOM(patched, {
         const uo = new URL(String(u), 'http://device');
         const off = Number(uo.searchParams.get('offset') || 0);
         window._logReq = String(u);
+        window._logReqs = window._logReqs || [];
+        window._logReqs.push(String(u));
         const pts = [];
         for (let i = 0; i < 30; i++) {
           pts.push({
@@ -515,23 +517,32 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
   console.log('  进度条宽度:', (ld.getElementById('lgfill') || {}).style
     ? ld.getElementById('lgfill').style.width : '');
 
-  // 打开某个目标的轨迹：分页 + 航线回放 + 可收起
+  // 打开某个目标的轨迹：分页 + 全程航线回放 + 可收起
   console.log('  --- 详情 / 分页 / 回放 ---');
   ld.querySelector('button[data-lg]').click();
-  await new Promise((r) => setTimeout(r, 40));
+  await new Promise((r) => setTimeout(r, 150));
   console.log('  详情展开:', ld.getElementById('lgdet').style.display === '');
-  console.log('  点位行数:', ld.querySelectorAll('#lgpoints .lgpt[data-i]').length);
+  console.log('  点位行数（当前页）:', ld.querySelectorAll('#lgpoints .lgpt[data-i]').length);
   console.log('  页码按钮数:', ld.querySelectorAll('#lgpage button[data-pg]').length);
   console.log('  分页文案:', (ld.querySelector('#lgpage .info') || {}).textContent);
-  console.log('  首页请求带 offset=0:', /[?&]offset=0/.test(w._logReq || ''));
+  console.log('  首屏请求带 offset=0:',
+    (w._logReqs || []).some((u) => /[?&]offset=0(&|$)/.test(u)));
+  // 后台自动把 10 页全部取回并合并成一条航线
+  console.log('  取回的页数:', (w._logReqs || []).length);
+  const lgnowTxt = ld.getElementById('lgnow').textContent;
+  console.log('  合并完成（300 条）:', /航线 300 条/.test(lgnowTxt), '|', lgnowTxt);
+  const nReq = (w._logReqs || []).length;
   ld.querySelector('#lgpage button[data-pg="1"]').click();
-  await new Promise((r) => setTimeout(r, 40));
-  console.log('  第2页请求:', /offset=30/.test(w._logReq || ''));
+  await new Promise((r) => setTimeout(r, 60));
+  console.log('  翻页走缓存不再请求:', (w._logReqs || []).length === nReq);
   console.log('  第2页高亮页码:', (ld.querySelector('#lgpage button.on') || {}).textContent);
   w.lgPlayToggle();
-  await new Promise((r) => setTimeout(r, 480));
+  await new Promise((r) => setTimeout(r, 400));
   console.log('  回放按钮转为暂停:', ld.getElementById('lgpp').textContent === '暂停');
-  console.log('  回放行高亮:', ld.querySelectorAll('#lgpoints .lgpt.cur').length);
+  // 回放从最旧的点开始，所以表格应自动翻回第 10 页
+  console.log('  回放自动翻到第10页:', (ld.querySelector('#lgpage button.on') || {}).textContent);
+  console.log('  回放行高亮:', ld.querySelectorAll('#lgpoints .lgpt.cur').length === 1);
+  console.log('  回放进度含总数:', /\/300 /.test(ld.getElementById('lgnow').textContent));
   w.lgReset();
   console.log('  重置后按钮回播放:', ld.getElementById('lgpp').textContent === '播放',
     '| 高亮行', ld.querySelectorAll('#lgpoints .lgpt.cur').length);

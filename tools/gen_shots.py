@@ -272,18 +272,23 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 'ver': '2.0.0', 'part': 'factory', 'part_size': 2097152,
                 'max': 2097152, 'token': 'demo0001', 'ota': True,
             }), 'application/json')
-        elif path.startswith('/api/log/points'):
-            # 航线回放用的轨迹点：30 条一圈的往复航线（数值按真实记录量级）
+        elif parsed.path.startswith('/api/log/points'):
+            # 航线回放用的轨迹点：按 offset 生成整条航线的第 off..off+29 个点
+            # （g=0 是最新的，随 g 增大往回走，画出来是一圈圈盘旋的航线）
             import math
+            import urllib.parse
+            qs = urllib.parse.parse_qs(parsed.query or '')
+            off = int((qs.get('offset') or ['0'])[0])
             pts = []
             for i in range(30):
-                a = i * 0.14
+                g = off + i
+                a = g * 0.05
                 pts.append({
-                    'seq': 900 + (29 - i),
-                    't': 1761806420 - (29 - i) * 5,
-                    'tick': 6420000 - (29 - i) * 5000,
-                    'lat': round(22.5407 + math.sin(a) * 0.0016, 7),
-                    'lon': round(113.9538 + (math.cos(a) - 0.55) * 0.0019, 7),
+                    'seq': 1200 - g,
+                    't': 1761806420 - g * 5,
+                    'tick': 6420000 - g * 5000,
+                    'lat': round(22.5407 + math.sin(a) * (0.0012 + 0.000004 * g), 7),
+                    'lon': round(113.9538 + (math.cos(a) - 0.55) * (0.0014 + 0.000005 * g), 7),
                     'alt': 120 + int(math.sin(a) * 12),
                     'agl': 82,
                     'spd_h': round(8.5 + math.sin(a * 2) * 1.5, 1),
@@ -291,7 +296,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     'ua': 2, 'status': 2, 'proto': 4, 'rssi': -52,
                 })
             self._send(200, json.dumps({
-                'total': 1280, 'matched': 760, 'offset': 0, 'limit': 30,
+                'total': 1280, 'matched': 760, 'offset': off, 'limit': 30,
                 'mac': 'AA:BB:CC:DD:EE:01', 'points': list(reversed(pts)),
             }), 'application/json')
         elif path.startswith('/api/log/info'):

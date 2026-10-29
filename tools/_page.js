@@ -681,6 +681,7 @@ catch(e){}
 if(Date.now()-sT>600000)syncTime();}
 var sT=0;
 let lgMac='',lgPage=0,lgPts=[],lgPlay=-1,lgTimer=null,lgRate=1;
+let lgPath=[],lgPages=[],lgMatched=0,lgLoading=false;
 let lgOpen='';
 let lgHasMap=false;
 const LG_PER=30,LG_MAXP=10;
@@ -725,31 +726,68 @@ if(mac===lgOpen&&typeof page==='undefined'){logClose();return;}
 const same=(mac===lgMac);
 lgOpen=mac;lgMac=mac;
 if(typeof page==='number')lgPage=page;else if(!same)lgPage=0;
-lgStop();lgPlay=-1;lgPts=[];
+lgStop();lgPlay=-1;lgPts=[];lgPath=[];lgPages=[];lgMatched=0;lgLoading=false;
 const d=q('lgdet');if(d)d.style.display='';
 const w=q('lgwho');if(w)w.textContent=String(mac).toUpperCase()+' · 航线回放';
 lgMarkSel();
 await lgFetch();}
 function logClose(){
-lgStop();lgOpen='';lgMac='';lgPts=[];lgPlay=-1;lgPage=0;lgHasMap=false;
+lgStop();lgOpen='';lgMac='';lgPts=[];lgPath=[];lgPages=[];lgMatched=0;lgLoading=false;lgPlay=-1;lgPage=0;lgHasMap=false;
 try{if(window.RXMAP&&RXMAP.replayEnd)RXMAP.replayEnd();}catch(e){}
 const d=q('lgdet');if(d)d.style.display='none';
 const b=q('lgpoints');if(b)b.innerHTML='';
 const p=q('lgpage');if(p)p.innerHTML='';
 lgMarkSel();}
+function lgRev(a){return (a||[]).slice().reverse();}
+function lgPageCount(){
+let n=Math.ceil(lgMatched/LG_PER);if(n<1)n=1;if(n>LG_MAXP)n=LG_MAXP;return n;}
+function lgAllLoaded(){
+const n=lgPageCount();
+for(let p=0;p<n;p++){if(!lgPages[p])return false;}return true;}
+function lgRebuildPath(){
+const arr=[];
+for(let p=lgPages.length-1;p>=0;p--){const a=lgPages[p];if(!a)continue;
+for(let i=0;i<a.length;i++){a[i].pg=p;a[i].ri=i;arr.push(a[i]);}}
+lgPath=arr;}
 async function lgFetch(){
 const box=q('lgpoints');
 if(box)box.innerHTML='<div class="lgmore">读取中…</div>';
+const who=lgMac;
 try{
 const r=await fetch('/api/log/points?limit='+LG_PER+'&offset='+(lgPage*LG_PER)
 +'&mac='+encodeURIComponent(lgMac));
 const j=await r.json();
-lgPts=(j.points||[]).slice().reverse();
+if(who!==lgMac)return;
+lgMatched=Number(j.matched||0)||0;
+lgPages[lgPage]=lgRev(j.points);
+lgPts=lgPages[lgPage];
 lgPlay=-1;
-lgRender();lgPager(j);lgNow();
-lgHasMap=lgMapTry();
-lgDraw(false);
+lgRebuildPath();
+lgRender();lgPager();lgNow();
+lgPathDraw();
+if(!lgAllLoaded())lgFill();
 }catch(e){if(box)box.innerHTML='<div class="lgmore">读取失败</div>';}}
+async function lgFill(){
+if(lgLoading||!lgMac)return;
+lgLoading=true;
+const who=lgMac;
+const n=lgPageCount();
+lgNow();
+for(let p=0;p<n;p++){
+if(lgPages[p])continue;
+try{
+const r=await fetch('/api/log/points?limit='+LG_PER+'&offset='+(p*LG_PER)
++'&mac='+encodeURIComponent(who));
+const j=await r.json();
+if(who!==lgMac)return;
+const a=lgRev(j.points);
+if(!a.length)break;
+lgPages[p]=a;
+}catch(e){break;}
+lgRebuildPath();lgNow();}
+lgLoading=false;
+if(who!==lgMac)return;
+lgPager();lgNow();lgPathDraw();}
 function lgRender(){
 const box=q('lgpoints');if(!box)return;
 if(!lgPts.length){box.innerHTML='<div class="lgmore">'
@@ -767,12 +805,10 @@ h+='<div class="lgpt" data-i="'+i+'">'
 +'<span data-l="速 ">'+Number(p.spd_h).toFixed(1)+' m/s</span>'
 +'<span data-l="向 ">'+Math.round(p.track)+'°</span></div>';}
 box.innerHTML=h;}
-function lgPager(j){
+function lgPager(){
 const box=q('lgpage');if(!box)return;
-const mine=Number(j.matched||lgPts.length)||0;
-let pages=Math.ceil(mine/LG_PER);
-if(pages<1)pages=1;
-if(pages>LG_MAXP)pages=LG_MAXP;
+const mine=lgMatched||0;
+let pages=lgPageCount();
 if(lgPage+1>pages)pages=lgPage+1;
 let from=0;
 if(pages>5)from=Math.min(Math.max(lgPage-2,0),pages-5);
@@ -784,49 +820,69 @@ h+='<button type="button" data-pg="'+i+'"'+(i===lgPage?' class="on"':'')+'>'+(i+
 h+='<button type="button" data-pg="'+(lgPage+1)+'"'+(lgPage>=pages-1?' disabled':'')
 +'>下一页</button>';
 h+='<span class="info">第 '+(lgPage+1)+' / '+pages+' 页 · 每页 '+LG_PER+' 条 · 共 '+mine+' 条'
-+(mine>LG_PER*LG_MAXP?('（只保留最近 '+(LG_PER*LG_MAXP)+' 条可在线翻页，更早的请导出 CSV）'):'')
++(mine>LG_PER*LG_MAXP?('（只保留最近 '+(LG_PER*LG_MAXP)+' 条，更早的请导出 CSV）'):'')
 +'</span>';
 box.innerHTML=h;
 Array.prototype.forEach.call(box.querySelectorAll('button[data-pg]'),function(b){
 b.onclick=function(){
 const v=Number(b.getAttribute('data-pg'));
 if(!(v>=0)||v===lgPage)return;
-lgPage=v;lgStop();lgFetch();};});}
+lgStop();lgPlay=-1;lgPage=v;
+if(lgPages[v]){lgPts=lgPages[v];lgRender();lgPager();lgNow();lgRowMark();}
+else lgFetch();};});}
 function lgStop(){if(lgTimer){clearInterval(lgTimer);lgTimer=null;}
 const b=q('lgpp');if(b)b.textContent='播放';}
 function lgPlayToggle(){
-if(lgPts.length<2){msg('本页只有一个点，无法回放',false);return;}
+if(lgLoading){msg('正在读取全部航线点，稍等一下',false);return;}
+if(lgPath.length<2){msg('这个目标只有一个点，无法回放',false);return;}
 if(lgTimer){lgStop();return;}
-if(lgPlay<0||lgPlay>=lgPts.length-1)lgPlay=0;
+if(lgPlay<0||lgPlay>=lgPath.length-1)lgPlay=0;
 const b=q('lgpp');if(b)b.textContent='暂停';
 lgSeek(lgPlay);
 lgTimer=setInterval(function(){
-if(lgPlay>=lgPts.length-1){lgStop();return;}
-lgSeek(lgPlay+1);},Math.round(420/lgRate));}
+if(lgPlay>=lgPath.length-1){lgStop();lgNow();return;}
+lgSeek(lgPlay+1);},Math.round((lgPath.length>150?280:420)/lgRate));}
 function lgSeek(i){
-if(i<0||i>=lgPts.length)return;
-lgPlay=i;lgNow();lgDraw(true);lgRowMark();}
+if(i<0||i>=lgPath.length)return;
+lgPlay=i;
+const p=lgPath[i];
+if(p&&p.pg!==lgPage&&lgPages[p.pg]){lgPage=p.pg;lgPts=lgPages[p.pg];lgRender();lgPager();}
+lgNow();lgDraw(true);lgRowMark();}
 function lgReset(){lgStop();lgPlay=-1;lgNow();lgDraw(true);lgRowMark();}
 function lgSetRate(v){lgRate=Number(v)||1;
 if(lgTimer){lgStop();lgPlayToggle();}}
 function lgNow(){
 const el=q('lgnow');if(!el)return;
-if(!lgPts.length){el.textContent='';return;}
-if(lgPlay<0){el.textContent='本页 '+lgPts.length+' 条，点「播放」按时间顺序回放';return;}
-const p=lgPts[lgPlay];
-el.textContent=fmtT(p.t,p.tick)+'  '+(lgPlay+1)+'/'+lgPts.length
+if(!lgPath.length){el.textContent='';return;}
+if(lgPlay<0){
+if(lgLoading){el.textContent='正在合并全部航线点（已 '+lgPath.length+' 条）…';return;}
+el.textContent='航线 '+lgPath.length+' 条'
++(lgPath.length>LG_PER?('（'+lgPageCount()+' 页合并）'):'')+'，点「播放」按时间顺序回放';
+return;}
+const p=lgPath[lgPlay];
+el.textContent=fmtT(p.t,p.tick)+'  '+(lgPlay+1)+'/'+lgPath.length
 +'  高 '+Math.round(p.alt)+' m  速 '+Number(p.spd_h).toFixed(1)+' m/s  向 '
 +Math.round(p.track)+'°';}
 function lgRowMark(){
 const box=q('lgpoints');if(!box)return;
+const cur=(lgPlay>=0&&lgPath[lgPlay]&&lgPath[lgPlay].pg===lgPage)?lgPath[lgPlay].ri:-1;
 Array.prototype.forEach.call(box.querySelectorAll('.lgpt[data-i]'),function(r){
-r.className='lgpt'+(Number(r.getAttribute('data-i'))===lgPlay?' cur':'');});}
+r.className='lgpt'+(Number(r.getAttribute('data-i'))===cur?' cur':'');});}
 function lgMapTry(){
-if(!lgPts.length)return false;
+if(!lgPath.length)return false;
 if(!(window.RXMAP&&typeof RXMAP.replay==='function'))return false;
 const mb=q('lgmap');
 if(!mb||mb.offsetParent===null||mb.clientWidth<40)return false;
-try{return !!RXMAP.replay('lgmap',lgPts);}catch(e){return false;}}
+try{return !!RXMAP.replay('lgmap',lgPath);}catch(e){return false;}}
+function lgPathDraw(){
+if(!lgPath.length)return;
+if(lgTimer){lgDraw(true);return;}
+if(lgHasMap){
+if(window.RXMAP&&RXMAP.replay){
+try{if(!RXMAP.replay('lgmap',lgPath))lgHasMap=false;}catch(e){lgHasMap=false;}
+}
+}else lgHasMap=lgMapTry();
+lgDraw(false);}
 function lgDraw(move){
 try{
 const cv=q('lgcv'),mb=q('lgmap');
@@ -845,10 +901,10 @@ lgCanvas();
 }catch(e){}}
 function lgResize(){
 try{if(window.RXMAP&&RXMAP.resize)RXMAP.resize();}catch(e){}
-if(!lgHasMap&&lgPts.length)lgHasMap=lgMapTry();
+if(!lgHasMap&&lgPath.length)lgHasMap=lgMapTry();
 lgDraw(false);}
 function lgCanvas(){
-const cv=q('lgcv');if(!cv||!lgPts.length)return;
+const cv=q('lgcv');if(!cv||!lgPath.length)return;
 const w=Math.max(1,Math.round(cv.clientWidth||320));
 const h=Math.max(1,Math.round(cv.clientHeight||230));
 const dpr=Math.min(window.devicePixelRatio||1,2);
@@ -862,14 +918,14 @@ for(let x=0.5;x<w;x+=32){g.moveTo(x,0);g.lineTo(x,h);}
 for(let y=0.5;y<h;y+=32){g.moveTo(0,y);g.lineTo(w,y);}
 g.stroke();
 let mnla=90,mxla=-90,mnlo=180,mxlo=-180,n=0;
-for(let i=0;i<lgPts.length;i++){
-const la=Number(lgPts[i].lat),lo=Number(lgPts[i].lon);
+for(let i=0;i<lgPath.length;i++){
+const la=Number(lgPath[i].lat),lo=Number(lgPath[i].lon);
 if(!isFinite(la)||!isFinite(lo)||(la===0&&lo===0))continue;
 n++;
 if(la<mnla)mnla=la;if(la>mxla)mxla=la;
 if(lo<mnlo)mnlo=lo;if(lo>mxlo)mxlo=lo;}
 g.font='12px sans-serif';g.fillStyle='#8b95a1';
-if(!n){g.fillText('本页记录没有有效坐标',12,24);return;}
+if(!n){g.fillText('这条航线没有有效坐标',12,24);return;}
 const la0=(mnla+mxla)/2,lo0=(mnlo+mxlo)/2;
 const kx=Math.cos(la0*Math.PI/180)||1;
 const sx=(mxlo-mnlo)*kx*111320,sy=(mxla-mnla)*111320;
@@ -879,8 +935,8 @@ const S=(isFinite(sc)&&sc>0)?sc:1;
 function XY(la,lo){
 return [w/2+(lo-lo0)*kx*111320*S,h/2-(la-la0)*111320*S];}
 function each(f){
-for(let i=0;i<lgPts.length;i++){
-const la=Number(lgPts[i].lat),lo=Number(lgPts[i].lon);
+for(let i=0;i<lgPath.length;i++){
+const la=Number(lgPath[i].lat),lo=Number(lgPath[i].lon);
 if(!isFinite(la)||!isFinite(lo)||(la===0&&lo===0))continue;
 f(XY(la,lo),i);}}
 g.strokeStyle='rgba(21,101,192,.9)';g.lineWidth=3;g.lineJoin='round';
@@ -890,12 +946,12 @@ g.stroke();
 g.fillStyle='#1565c0';
 each(function(p){g.beginPath();g.arc(p[0],p[1],2.5,0,6.284);g.fill();});
 each(function(p,i){
-if(i!==0&&i!==lgPts.length-1)return;
+if(i!==0&&i!==lgPath.length-1)return;
 g.fillStyle=(i===0)?'#0f8a4d':'#c0392b';
 g.beginPath();g.arc(p[0],p[1],6,0,6.284);g.fill();
 g.strokeStyle='#fff';g.lineWidth=2;g.stroke();});
-if(lgPlay>=0&&lgPts[lgPlay]){
-const cla=Number(lgPts[lgPlay].lat),clo=Number(lgPts[lgPlay].lon);
+if(lgPlay>=0&&lgPath[lgPlay]){
+const cla=Number(lgPath[lgPlay].lat),clo=Number(lgPath[lgPlay].lon);
 if(isFinite(cla)&&isFinite(clo)&&!(cla===0&&clo===0)){
 const cp=XY(cla,clo);
 g.fillStyle='#fff';g.strokeStyle='#1565c0';g.lineWidth=3;
