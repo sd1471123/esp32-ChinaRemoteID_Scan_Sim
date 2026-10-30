@@ -16,6 +16,11 @@ param(
   # 显式声明 -p/-Port：否则 PowerShell 会把未识别的 "-p COM3" 直接丢弃，
   # 导致 idf.py 收不到端口、esptool 自动挑串口（两块板同时插着时会挑错芯片）
   [Alias('p')][string]$Port,
+  # 显式声明 -B/-BuildDir：未声明时能否落进 $IDFArgs 取决于 PowerShell 的解析规则，
+  # 靠不住（[CmdletBinding()] 对未知参数的处理与位置参数收集并不一致）。
+  # 这里明确接住再转成 idf.py 的 -B，多目标构建才稳定。
+  #   powershell -File tools\build.ps1 -B build_c5 -p COM5 build flash
+  [Alias('B')][string]$BuildPath,
   # 见下方 ccache --zero-stats 处的说明：默认不做清零，需要时显式加 -ZeroStats
   [switch]$ZeroStats,
   [Parameter(ValueFromRemainingArguments=$true)][string[]]$IDFArgs = @('build')
@@ -24,6 +29,9 @@ param(
 $ErrorActionPreference = 'Stop'
 
 if ($Port) { $IDFArgs = @('-p', $Port) + $IDFArgs }
+# 注意参数名不能叫 $BuildDir：PowerShell 变量名不区分大小写，会与下面解析出来的
+# $buildDir 撞成同一个变量，切换芯片的逻辑直接失效。
+if ($BuildPath) { $IDFArgs = @('-B', $BuildPath) + $IDFArgs }
 Write-Host "idf.py $($IDFArgs -join ' ')" -ForegroundColor DarkGray
 
 # 每次编译前重新生成内置网页的 gzip 版（页面改动后自动同步）

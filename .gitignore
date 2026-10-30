@@ -15,10 +15,8 @@ main/page_gz.h
 # Python
 __pycache__/
 *.pyc
-# 临时构建日志 / 烧录日志
-build_*.log
-flash_*.log
-*_role.log
+# 临时构建日志 / 烧录日志 / 串口抓包（dryrun.log、ser_*.log 之类一律不入库）
+*.log
 # 抓取的串口启动日志
 build_*.txt
 boot_*.txt
@@ -29,5 +27,9 @@ sdkconfig
 !sdkconfig.defaults*
 # 每颗芯片各存一份本机 sdkconfig 快照（build.ps1 切目标时来回搬），同样不入库
 sdkconfig.esp32*
-# 本地编译出的 OTA 升级包（网页升级用，按芯片分开，不进仓库）
-dist/
+# 本地编译出的 OTA 升级包（网页升级用，按芯片分开）。
+# v2.0.0 起把两份正式镜像一起入库，别人下载后可直接网页升级；其它临时产物仍忽略。
+# 注意顺序：必须先忽略目录内容再放行，写成 dist/ 的话 git 根本不会进入该目录，
+# 后面的 !dist/*.bin 也就不会生效。
+dist/*
+!dist/*.bin

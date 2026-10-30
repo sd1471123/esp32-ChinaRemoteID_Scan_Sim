@@ -21,6 +21,15 @@ extern "C" {
  */
 esp_err_t crid_web_start(cn_crid_config_t *config);
 
+/**
+ * @brief 主动回收两台服务器上的全部客户端会话
+ *
+ * 手机断开热点后，设备侧收不到对方消失的通知，旧连接会继续占着 httpd 的
+ * 客户端槽与 lwIP 的 TCP PCB；重连后新连接排队，页面表现为「一直转圈、超时」。
+ * 事件回调与 web_guard_task 都会自动调用它，一般不需要手动调用。
+ */
+void crid_web_purge_sessions(void);
+
 #ifdef __cplusplus
 }
 #endif

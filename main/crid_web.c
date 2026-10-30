@@ -1,6 +1,6 @@
 /**
  * @file crid_web.c
- * @brief 内置配置网页服务器：手机连接热点后访问 http://192.168.4.1
+ * @brief 内置配置网页服务器：手机连接热点后访问 https://192.168.4.1
  *        可在线修改 UAS ID / 坐标 / 高度 / 速度 / 巡游参数 / 热点参数
  */
 
@@ -16,8 +16,11 @@
 #include "esp_http_server.h"
 #include "esp_log.h"
 #include "esp_err.h"
+#include "esp_event.h"
+#include "esp_wifi.h"
 #include "esp_heap_caps.h"
 #include "esp_system.h"
+#include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "cJSON.h"
@@ -762,7 +765,7 @@ static const char PAGE_HTML[] =
 "</div></details>"
 "<button class='navcancel' type='button' onclick='otaClose()'>关闭</button>"
 "</div></div>"
-"<p class='foot'>手机连接本机热点后访问 http://192.168.4.1 打开此页。"
+"<p class='foot'>手机连接本机热点后用 https://192.168.4.1 打开此页（首次会提示证书不安全，点继续访问即可）。"
 "修改 SSID / 信道 / 广播间隔保存后需重新连接热点。配置已持久化，断电不丢失。</p>"
 "</div>"
 "<script>"
@@ -3009,6 +3012,36 @@ static esp_err_t handler_time_get(httpd_req_t *req) {
     return ESP_OK;
 }
 
+/**
+ * @brief 明文端口的唯一职责：把请求 302 到 https
+ *
+ * 页面与接口现在只挂在 443 上，书签或习惯里输 http://192.168.4.1 会打不开。
+ * 所以 80 端口保留一个通配 handler，原样带上网址与查询串跳到 https，用户什么都不用改。
+ *
+ * 用 302 而不是 301：301 会被浏览器长期缓存，一旦以后要回退成明文，缓存里那条
+ * 永久跳转几乎清不掉（用户只能清缓存或换浏览器）。302 每次都会重新问一次。
+ */
+static esp_err_t handler_redirect_https(httpd_req_t *req) {
+    // 缓冲区要按最坏情况给足：req->uri 最长 CONFIG_HTTPD_MAX_URI_LEN（512），
+    // 查询串再占一段。给少了 snprintf 会被 -Werror=format-truncation 判成潜在截断。
+    char qs[256];
+    char loc[864];
+    if (httpd_req_get_url_query_str(req, qs, sizeof(qs)) == ESP_OK && qs[0] != '\0') {
+        snprintf(loc, sizeof(loc), "https://192.168.4.1%s?%s", req->uri, qs);
+    } else {
+        snprintf(loc, sizeof(loc), "https://192.168.4.1%s", req->uri);
+    }
+    httpd_resp_set_status(req, "302 Found");
+    httpd_resp_set_hdr(req, "Location", loc);
+    httpd_resp_set_hdr(req, "Cache-Control", "no-store");
+    httpd_resp_send(req, NULL, 0);
+    return ESP_OK;
+}
+
+static const httpd_uri_t uri_redirect = {
+    .uri = "/*", .method = HTTP_ANY, .handler = handler_redirect_https, .user_ctx = NULL
+};
+
 static const httpd_uri_t uris[] = {
     { .uri = "/",          .method = HTTP_GET,  .handler = handler_page,      .user_ctx = NULL },
     { .uri = "/rxmap.js",  .method = HTTP_GET,  .handler = handler_rxmapjs,   .user_ctx = NULL },
@@ -3031,6 +3064,16 @@ static const httpd_uri_t uris[] = {
     { .uri = "/favicon.ico",.method = HTTP_GET, .handler = handler_favicon,   .user_ctx = NULL },
 };
 
+/** 把全部页面/接口挂到指定服务器（HTTPS 正常路径与 HTTP 降级路径共用） */
+static void register_all_uris(httpd_handle_t srv) {
+    for (size_t i = 0; i < sizeof(uris) / sizeof(uris[0]); i++) {
+        esp_err_t r = httpd_register_uri_handler(srv, &uris[i]);
+        if (r != ESP_OK) {
+            ESP_LOGE(TAG, "register uri %s failed: %s", uris[i].uri, esp_err_to_name(r));
+        }
+    }
+}
+
 // 证书由 CMakeLists 的 EMBED_TXTFILES 打进固件（main/certs/ 下的 PEM）
 extern const uint8_t servercert_pem_start[] asm("_binary_servercert_pem_start");
 extern const uint8_t servercert_pem_end[]   asm("_binary_servercert_pem_end");
@@ -3038,15 +3081,59 @@ extern const uint8_t prvtkey_pem_start[]    asm("_binary_prvtkey_pem_start");
 extern const uint8_t prvtkey_pem_end[]      asm("_binary_prvtkey_pem_end");
 
 /**
- * @brief 起一个 HTTPS 副本，供网页使用 Web Bluetooth
+ * @brief 起 HTTPS 主服务：页面与接口的唯一入口
  *
  * 浏览器只在「安全上下文」里暴露 navigator.bluetooth，而 http://192.168.4.1
- * 属于不安全来源，蓝牙会被直接隐藏。所以另开 443 端口跑同一套 handler：
- * 用 https://192.168.4.1 打开时页面才拿得到蓝牙；用 http 打开则一切照旧。
+ * 属于不安全来源，蓝牙会被直接隐藏。既然必须走 https 才有完整功能，就没必要再
+ * 维护一份明文页面：80 端口只留一个 302 跳转（见 handler_redirect_https），
+ * 全部 handler 只在 443 上注册，两边的行为不会再有分叉。
  *
  * 证书是自签的（main/certs，ECDSA P-256，有效期到 2046），浏览器首次会提示
  * 不安全，点「继续访问」即可——这不影响功能，只是没有第三方背书。
+ *
+ * 返回 NULL 表示 TLS 没起来（多为内存不足），调用方会退回明文 HTTP 提供全部页面。
  */
+/* ---------------- 会话登记表 ---------------- */
+/*
+ * 记下每个被 accept 的连接「什么时刻进来的」，用来区分「重连之前留下的死连接」与
+ * 「重连之后刚建立的新连接」。没有这个时间戳就只能一刀切全关，会误杀用户重连后
+ * 刚发出的第一个请求。
+ * 容量 10 足够：两台服务器最多 3+2 个并发槽，留足余量防 fd 复用错位。
+ */
+#define WEB_SESS_SLOTS 10
+static struct { int fd; int64_t ms; } s_sess_tab[WEB_SESS_SLOTS];
+
+static int64_t web_now_ms(void) {
+    return esp_timer_get_time() / 1000;
+}
+
+static void web_sess_note(int fd) {
+    int64_t now = web_now_ms();
+    int free_i = -1, oldest = 0;
+    for (int i = 0; i < WEB_SESS_SLOTS; i++) {
+        if (s_sess_tab[i].fd == fd) { s_sess_tab[i].ms = now; return; }   // fd 复用，刷新时间
+        if (s_sess_tab[i].fd <= 0) { if (free_i < 0) free_i = i; }
+        if (s_sess_tab[i].ms < s_sess_tab[oldest].ms) oldest = i;
+    }
+    int i = (free_i >= 0) ? free_i : oldest;
+    s_sess_tab[i].fd = fd;
+    s_sess_tab[i].ms = now;
+}
+
+static void web_sess_forget(int fd) {
+    for (int i = 0; i < WEB_SESS_SLOTS; i++) {
+        if (s_sess_tab[i].fd == fd) { s_sess_tab[i].fd = 0; s_sess_tab[i].ms = 0; return; }
+    }
+}
+
+/* 该 fd 的建立时刻（ms）；0 表示没有记录（例如明文 302 服务器上的会话） */
+static int64_t web_sess_ms(int fd) {
+    for (int i = 0; i < WEB_SESS_SLOTS; i++) {
+        if (s_sess_tab[i].fd == fd) return s_sess_tab[i].ms;
+    }
+    return 0;
+}
+
 /**
  * @brief 新 TLS 连接建立前打点（只在内存偏紧时告警）
  *
@@ -3056,6 +3143,7 @@ extern const uint8_t prvtkey_pem_end[]      asm("_binary_prvtkey_pem_end");
  */
 static esp_err_t ssl_sess_open(httpd_handle_t hd, int sockfd) {
     (void)hd;
+    web_sess_note(sockfd);
     size_t free_sz = esp_get_free_heap_size();
     size_t blk = (size_t)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT);
     // 阈值取「真的快撑不住」的水位：空闲基线本身只有约 70KB，一次握手就会把
@@ -3070,7 +3158,139 @@ static esp_err_t ssl_sess_open(httpd_handle_t hd, int sockfd) {
     return ESP_OK;
 }
 
-static void start_https_server(void) {
+/** 会话关闭时把登记表里的 fd 清掉，避免 fd 复用后拿旧时间戳误判新旧 */
+static void ssl_sess_close(httpd_handle_t hd, int sockfd) {
+    (void)hd;
+    web_sess_forget(sockfd);
+}
+
+/**
+ * @brief 回收残留会话
+ *
+ * 现象：手机连上热点打开网页，把 Wi-Fi 关掉再连回来，页面就一直转圈、超时打不开，
+ * 而且是「再也」打不开，不会自己好。机制（对着 httpd_main.c 的主循环看）：
+ *   设备侧收不到对方离开的通知，旧会话既不产生可读事件，也不会自己超时；
+ *   3 个客户端槽一旦被这些死会话占满，httpd 就不再监听 listen_fd（只有
+ *   httpd_is_sess_available() 为真时才把 listen_fd 放进 select），
+ *   新连接根本不 accept → backlog 挤满 → lwIP 丢 SYN → 客户端一路重传到超时。
+ * 同时 lwIP 的 TIME_WAIT 也占着 active PCB 配额（默认 16 条），所以此前把 MSL
+ * 从 60s 降到 8s、把 PCB 上限提到 24（见 sdkconfig.defaults）。
+ *
+ * 本函数把两台服务器的会话全部关掉，把槽位立刻还给新连接。只在 num==0 时调用：
+ * 还有别的手机连着时不动，避免误杀正在进行的请求——尤其不能碰正在上传的 OTA 会话。
+ */
+static httpd_handle_t s_srv_http  = NULL;
+static httpd_handle_t s_srv_https = NULL;
+
+static int web_purge_one(httpd_handle_t hd) {
+    if (hd == NULL) return 0;
+    int fds[12];
+    size_t n = sizeof(fds) / sizeof(fds[0]);   // 入参=容量，出参=实际条数
+    if (httpd_get_client_list(hd, &n, fds) != ESP_OK) return 0;
+    int closed = 0;
+    for (size_t i = 0; i < n; i++) {
+        if (httpd_sess_trigger_close(hd, fds[i]) == ESP_OK) closed++;
+    }
+    return closed;
+}
+
+/**
+ * @brief 只关掉「早于某个时刻建立」的会话
+ *
+ * 新客户端一接入，之前那批连接就全是死的；但同一时刻浏览器可能已经在发第一个请求，
+ * 新会话必须留着。用建立时间戳区分，比一刀切安全得多。
+ */
+static int web_purge_before(httpd_handle_t hd, int64_t before_ms) {
+    if (hd == NULL) return 0;
+    int fds[12];
+    size_t n = sizeof(fds) / sizeof(fds[0]);
+    if (httpd_get_client_list(hd, &n, fds) != ESP_OK) return 0;
+    int closed = 0;
+    for (size_t i = 0; i < n; i++) {
+        int64_t t = web_sess_ms(fds[i]);
+        if (t == 0 || t >= before_ms) continue;    // 无记录或新会话，不动
+        if (httpd_sess_trigger_close(hd, fds[i]) == ESP_OK) closed++;
+    }
+    return closed;
+}
+
+void crid_web_purge_sessions(void) {
+    int a = web_purge_one(s_srv_http);
+    int b = web_purge_one(s_srv_https);
+    if (a + b > 0) {
+        ESP_LOGW(TAG, "客户端已断开，回收残留会话 http=%d https=%d（空闲堆 %u）",
+                 a, b, (unsigned)esp_get_free_heap_size());
+    }
+}
+
+/* 新客户端接入的时刻，交给看门狗延迟清理「接入之前」的旧会话 */
+static volatile int64_t s_purge_before_ms = 0;
+
+static void web_wifi_event(void *arg, esp_event_base_t base, int32_t id, void *data) {
+    (void)arg; (void)data;
+    if (base != WIFI_EVENT) return;
+    if (id == WIFI_EVENT_AP_STADISCONNECTED) {
+        wifi_sta_list_t lst;
+        memset(&lst, 0, sizeof(lst));
+        if (esp_wifi_ap_get_sta_list(&lst) == ESP_OK && lst.num == 0) {
+            crid_web_purge_sessions();
+        }
+    } else if (id == WIFI_EVENT_AP_STACONNECTED) {
+        // 有新客户端接入了：它之前的所有连接都已经作废（同一台手机重连时尤其如此）。
+        // 但此刻不能直接关——accept 刚发生，浏览器可能已经在发第一个请求，
+        // 所以记下时刻，交给看门狗延迟 800ms 后按时间戳只关旧的那些。
+        s_purge_before_ms = web_now_ms();
+    }
+}
+
+/**
+ * @brief 死连接的兜底回收（每 500ms 看一次）
+ *
+ * 为什么非关不可：看 httpd_main.c 的主循环，
+ *   select(maxfd + 1, &read_set, NULL, NULL, NULL)      // 超时 = 无限等
+ *   并且只有 httpd_is_sess_available() 为真时才会把 listen_fd 放进 read_set。
+ * 也就是说：客户端消失后，它留下的会话既不会产生可读事件（select 永远不返回它），
+ * 也不会自己超时释放；只要 3 个槽被这样的死会话占满，httpd 连 listen_fd 都不再监听，
+ * 新连接一律不接受 → backlog 挤满 → lwIP 丢 SYN → 手机侧 ERR_CONNECTION_TIMED_OUT，
+ * 而且永远不会自愈（这正是「断开 Wi-Fi 再连就再也打不开」的机制）。
+ *
+ * 所以必须有外力主动回收，两条判据互为补充：
+ *   1) 新客户端接入 → 关掉它接入之前建立的会话（st 主路径，延迟 800ms 避开新请求）
+ *   2) AP 上一个客户端都没有 → 全关（事件可能读不到已归零的 sta 列表，靠轮询兜底）
+ */
+static void web_guard_task(void *arg) {
+    (void)arg;
+    for (;;) {
+        vTaskDelay(pdMS_TO_TICKS(500));
+        int64_t now = web_now_ms();
+
+        // 判据 1：新客户端接入后的延迟清理（只碰「接入之前」建立的会话）
+        int64_t pb = s_purge_before_ms;
+        if (pb > 0 && now - pb >= 800) {
+            s_purge_before_ms = 0;
+            int oa = web_purge_before(s_srv_http,  pb);
+            int ob = web_purge_before(s_srv_https, pb);
+            if (oa + ob > 0) {
+                ESP_LOGW(TAG, "新客户端接入，清掉旧会话 http=%d https=%d（heap=%u）",
+                         oa, ob, (unsigned)esp_get_free_heap_size());
+            }
+        }
+
+        // 判据 2：一个客户端都没有时，残留会话必然全是死的
+        wifi_sta_list_t lst;
+        memset(&lst, 0, sizeof(lst));
+        if (esp_wifi_ap_get_sta_list(&lst) != ESP_OK) continue;
+        if (lst.num > 0) continue;          // 有人连着就不动，可能是多机共用
+        int a = web_purge_one(s_srv_http);
+        int b = web_purge_one(s_srv_https);
+        if (a + b > 0) {
+            ESP_LOGW(TAG, "无客户端在线，清掉残留会话 http=%d https=%d（heap=%u）",
+                     a, b, (unsigned)esp_get_free_heap_size());
+        }
+    }
+}
+
+static httpd_handle_t start_https_server(void) {
     httpd_ssl_config_t ssl_cfg = HTTPD_SSL_CONFIG_DEFAULT();
     ssl_cfg.servercert     = servercert_pem_start;
     ssl_cfg.servercert_len = (size_t)(servercert_pem_end - servercert_pem_start);
@@ -3079,6 +3299,7 @@ static void start_https_server(void) {
 
     ssl_cfg.httpd.max_uri_handlers = sizeof(uris) / sizeof(uris[0]) + 2;
     ssl_cfg.httpd.open_fn          = ssl_sess_open;
+    ssl_cfg.httpd.close_fn         = ssl_sess_close;   // 会话结束时清登记表，防 fd 复用误判
     // 不能开 lru_purge：槽位不够时它会掐掉「最久未使用」的连接，而被掐的往往正是
     // 正在发 /api/config 的那条，页面拿不到配置就会参数全空。宁可让新连接在
     // backlog 里排队等槽位释放（keep_alive 默认关，响应完即关闭，等不了几毫秒）。
@@ -3094,55 +3315,105 @@ static void start_https_server(void) {
     // 表现为「页面加载慢、个别接口偶发失败」。3 个槽预计把最低水位压到约 22KB，
     // 仍高于 mbedtls 分配失败的门槛，是并发与安全的折中点。
     ssl_cfg.httpd.max_open_sockets = 3;
+    // 死连接尽快让出槽位：客户端拔网后设备侧收不到 RST，只能等超时。
+    // 默认 5s 偏保守，改 3s——正常请求都是毫秒级完成，不会误杀。
+    ssl_cfg.httpd.recv_wait_timeout = 3;
+    ssl_cfg.httpd.send_wait_timeout = 3;
     ssl_cfg.httpd.server_port      = 443;
     ssl_cfg.port_secure            = 443;
-    ssl_cfg.tls_handshake_timeout_ms = 8000;
+    // 握手必须尽快失败：httpd 任务是一个个串行握手的，客户端已经消失时，一个卡住的
+    // 握手会把整个服务器挡住——期间新连接只能堆在 backlog 里，堆满就开始丢 SYN，
+    // 手机侧就是 ERR_CONNECTION_TIMED_OUT。默认 8s 太长（3 个槽全卡 = 24s 毫无响应），
+    // 局域网内真实握手在 100~300ms 内完成，1.5s 足够宽松。
+    ssl_cfg.tls_handshake_timeout_ms = 1500;
+    // 重连瞬间浏览器会并发开 6 条，槽位只有 3 个，其余必须能在 backlog 里等。
+    // 默认 5 太小，一轮并发就填满，调大后多扛几条能明显减少「第一次打不开」。
+    ssl_cfg.httpd.backlog_conn = 8;
 
     httpd_handle_t srv = NULL;
     esp_err_t ret = httpd_ssl_start(&srv, &ssl_cfg);
     if (ret != ESP_OK) {
-        // 内存不够时 TLS 起不来是常有的事，退化成只有 HTTP，功能不受影响
-        ESP_LOGW(TAG, "HTTPS 未启动（%s），蓝牙数据通道不可用，HTTP 正常",
-                 esp_err_to_name(ret));
-        return;
+        // 内存不够时 TLS 起不来。此时没有 https 可用，调用方会退回「HTTP 提供全部页面」，
+        // 功能不受影响，只是蓝牙数据通道不可用。
+        ESP_LOGW(TAG, "HTTPS 未启动（%s），将退回 HTTP", esp_err_to_name(ret));
+        return NULL;
     }
-    for (size_t i = 0; i < sizeof(uris) / sizeof(uris[0]); i++) {
-        httpd_register_uri_handler(srv, &uris[i]);
-    }
+    register_all_uris(srv);
+    s_srv_https = srv;      // 供客户端断开时回收残留会话
     ESP_LOGI(TAG, "HTTPS 已启动: https://192.168.4.1 (heap=%u hblk=%u)",
              (unsigned)esp_get_free_heap_size(),
              (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
+    return srv;
 }
 
 esp_err_t crid_web_start(cn_crid_config_t *config) {
     if (config == NULL) return ESP_ERR_INVALID_ARG;
     s_config = config;
 
+    // 先把 HTTPS 起起来：它是页面与接口的唯一入口。
+    // 起不来（内存不足）才退回明文 HTTP 提供全部 handler，保证网页总打得开。
+    bool https_ok = (start_https_server() != NULL);
+
     httpd_handle_t server = NULL;
     httpd_config_t http_cfg = HTTPD_DEFAULT_CONFIG();
-    // 槽位数必须覆盖 uris[] 全部条目（IDF 6.1 默认为 8，路由表已 9 条），
-    // 否则超出部分会以 ESP_ERR_HTTPD_HANDLERS_FULL 静默失败、对应接口 404。
-    http_cfg.max_uri_handlers = sizeof(uris) / sizeof(uris[0]) + 2;
+    // 默认的 uri_match_fn 是「字符串全等」，认不出 "/*"；跳转 handler 要靠通配匹配所有路径
+    http_cfg.uri_match_fn = httpd_uri_match_wildcard;
+    if (https_ok) {
+        // 正常路径：80 端口只做 302 跳转，一个通配 handler 足够
+        http_cfg.max_uri_handlers = 2;
+        // 只需要「一条 TCP 在建跳转 + 3 个内部 socket」的余量；省下的池子留给 HTTPS 与蓝牙
+        http_cfg.max_open_sockets = 2;
+        http_cfg.stack_size = 4096;
+    } else {
+        // 降级路径：跟以前一样，全部 handler 挂到 80 端口
+        // 槽位数必须覆盖 uris[] 全部条目（IDF 6.1 默认为 8，路由表已 19 条），
+        // 否则超出部分会以 ESP_ERR_HTTPD_HANDLERS_FULL 静默失败、对应接口 404。
+        http_cfg.max_uri_handlers = sizeof(uris) / sizeof(uris[0]) + 2;
+        // 默认 4KB 栈对 OTA 升级偏紧：esp_ota_begin/end 要做 SHA256 校验与分区操作，
+        // 加上 cJSON 构包，留 8KB 更稳妥（只有一个 httpd 任务，代价可忽略）
+        http_cfg.stack_size = 8192;
+        http_cfg.max_open_sockets = 6;
+    }
     http_cfg.lru_purge_enable = false;   // 理由见 start_https_server() 里的注释
-    // 槽位预算见 start_https_server()：HTTP 6 个客户端槽 + 3 个内部 socket
-    http_cfg.max_open_sockets = 6;
-    // 默认 4KB 栈对 OTA 升级偏紧：esp_ota_begin/end 要做 SHA256 校验与分区操作，
-    // 加上 cJSON 构包，留 8KB 更稳妥（只有一个 httpd 任务，代价可忽略）
-    http_cfg.stack_size = 8192;
+    // 死连接别占着槽位等默认的 5 秒（重连卡死的问题见 web_wifi_event 的注释）
+    http_cfg.recv_wait_timeout = 3;
+    http_cfg.send_wait_timeout = 3;
 
     esp_err_t ret = httpd_start(&server, &http_cfg);
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "httpd_start failed: %s", esp_err_to_name(ret));
-        return ret;
+        // HTTPS 已经跑起来了就不算致命：页面照样能开，只是少了 http 跳转
+        return https_ok ? ESP_OK : ret;
     }
-    for (size_t i = 0; i < sizeof(uris) / sizeof(uris[0]); i++) {
-        esp_err_t r = httpd_register_uri_handler(server, &uris[i]);
+    if (https_ok) {
+        esp_err_t r = httpd_register_uri_handler(server, &uri_redirect);
         if (r != ESP_OK) {
-            ESP_LOGE(TAG, "register uri %s failed: %s", uris[i].uri, esp_err_to_name(r));
+            ESP_LOGW(TAG, "注册 https 跳转失败（%s），直接输 http 会打不开", esp_err_to_name(r));
+        }
+        ESP_LOGI(TAG, "Web 已就绪: https://192.168.4.1（80 端口仅 302 跳转）");
+    } else {
+        register_all_uris(server);
+        ESP_LOGW(TAG, "Web 已就绪: http://192.168.4.1（HTTPS 未启动，蓝牙通道不可用）");
+    }
+    s_srv_http = server;    // 供客户端断开时回收残留会话
+
+    // 手机把 Wi-Fi 关掉再连回来时，旧连接在设备侧是「半死」的：既不会收到 FIN，
+    // 也不会报错，只占着客户端槽位与 lwIP 的 TCP PCB，新连接于是排队到浏览器超时。
+    // 订阅「客户端断开」事件，最后一个客户端走光就把两边会话一起回收（非阻塞，
+    // 只是往 httpd 任务里投递关闭请求）。
+    esp_err_t er = esp_event_handler_instance_register(
+        WIFI_EVENT, WIFI_EVENT_AP_STADISCONNECTED, web_wifi_event, NULL, NULL);
+    if (er != ESP_OK) {
+        ESP_LOGW(TAG, "订阅 Wi-Fi 断开事件失败（%s），重连后可能卡住", esp_err_to_name(er));
+    }
+    // 事件可能读不到「已归零」的 sta 列表，再加一层轮询兜底（理由见 web_guard_task）
+    static bool guard_started = false;
+    if (!guard_started) {
+        if (xTaskCreate(web_guard_task, "web_guard", 3072, NULL, 2, NULL) == pdPASS) {
+            guard_started = true;
+        } else {
+            ESP_LOGW(TAG, "看门狗任务创建失败，重连后需等旧会话自己超时");
         }
     }
-
-    ESP_LOGI(TAG, "Web config server started: http://192.168.4.1");
-    start_https_server();
     return ESP_OK;
 }

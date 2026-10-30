@@ -34,9 +34,9 @@ CFG_TX = {
     'rid_standard': 1,               # 1 = GB 46750 新国标
     'uas_id': '1581F5QJDHDSQA00B1',
     'drone_name': 'DJI Air 3S',
-    'operator_id': 'ESP32-CRID-4BD4',
+    'operator_id': 'ESP32-CRID-FFF0',
     'realname_id': 'CN00AB12',
-    'ssid': 'ESP32-CRID-4BD4',
+    'ssid': 'ESP32-CRID-FFF0',
     'ap_password': 'sd1471123',
     'channel': 6,
     'beacon_interval_ms': 200,
@@ -92,7 +92,7 @@ TRACKS = [
         'msg_count': 186, 'age_ms': 900, 'first_age_ms': 45200,
         'active': True, 'ua_type': 1, 'realname_id': 'CN00AB12',
         'has_op_loc': True, 'op_latitude': 22.539800, 'op_longitude': 113.952000,
-        'op_altitude_geo': 56.0, 'operator_id': 'ESP32-CRID-4BD4',
+        'op_altitude_geo': 56.0, 'operator_id': 'ESP32-CRID-FFF0',
         'op_loc_type': 1, 'coord_sys': 0, 'h_acc': 11, 'v_acc': 5,
         'spd_acc': 3, 'ts_unix_ms': NOW - 900, 'ts_acc': 4, 'agl_type': 2,
     },
@@ -332,8 +332,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
         self._send(200, json.dumps({'ok': True}), 'application/json')
 
 
-def _edge_base(profile, width, height):
-    return [
+def _edge_base(profile, width, height, use_proxy=True):
+    args = [
         EDGE,
         '--headless=new',
         '--disable-gpu',
@@ -341,40 +341,61 @@ def _edge_base(profile, width, height):
         '--no-first-run',
         '--disable-extensions',
         '--user-data-dir=' + profile,
-        '--proxy-server=' + PROXY,
         '--window-size=%d,%d' % (width, height),
     ]
+    # 接收页要拉 Leaflet CDN 与 OSM 瓦片，走代理时个别请求会长时间挂住，
+    # --dump-dom 迟迟不返回（表现就是「高度探测超时」）。重试时干脆不带代理：
+    # 瓦片拉不到会退回内置离线网格，高度照样量得准。
+    if use_proxy and PROXY:
+        args.insert(-1, '--proxy-server=' + PROXY)
+    return args
 
 
 def measure_height(port, mode, width=1160, query=''):
     """用 --dump-dom 读回整页 scrollHeight，供截图按真实内容高度出图。"""
     STATE['mode'] = mode
+    url = 'http://127.0.0.1:%d/?measure=1%s' % (port, ('&' + query[1:]) if query else '')
     profile = os.path.join(ROOT, 'build', '_shot_measure_%s' % mode)
-    cmd = _edge_base(profile, width, 900) + [
-        '--virtual-time-budget=22000',
-        '--dump-dom',
-        'http://127.0.0.1:%d/?measure=1%s' % (port, ('&' + query[1:]) if query else ''),
-    ]
+    r = None
+    # 三轮：代理 → 直连 → 直连且把外部域名全部指到本机（CDN/瓦片秒失败）。
+    # 接收页在无外网时最容易卡住 load 事件，最后一轮能保证 dump-dom 立刻返回。
+    attempts = ((True, 22000, 150, []),
+                (False, 9000, 90, []),
+                (False, 9000, 90, ['--host-resolver-rules=MAP * 127.0.0.1']))
+    for use_proxy, budget, tmo, extra in attempts:
+        cmd = _edge_base(profile, width, 900, use_proxy) + extra + [
+            '--virtual-time-budget=%d' % budget,
+            '--dump-dom',
+            url,
+        ]
+        try:
+            r = subprocess.run(cmd, capture_output=True, timeout=tmo,
+                               text=True, encoding='utf-8', errors='replace')
+            break
+        except subprocess.TimeoutExpired:
+            print('    ! 高度探测超时（%s，%ds）%s' % (
+                ("走代理" if use_proxy else "直连") + ("+屏蔽外网" if extra else ""), tmo,
+                '→ 改直连重试' if use_proxy else ''))
+            r = None
+    out = (r.stdout or '') if r else ''
     try:
-        r = subprocess.run(cmd, capture_output=True, timeout=180,
-                           text=True, encoding='utf-8', errors='replace')
-        m = re.findall(r'data-pageh="(\d+)"', r.stdout or '')
-        c = re.findall(r'data-colh="([\d,]+)"', r.stdout or '')
+        m = re.findall(r'data-pageh="(\d+)"', out)
+        c = re.findall(r'data-colh="([\d,]+)"', out)
         if c:
             hs = [int(x) for x in c[-1].split(',')]
             if len(hs) >= 2:
                 print('    两列高度 = %s（差 %d px）' % (hs, abs(hs[0] - hs[1])))
-        cd = re.findall(r'data-cardh="([^"]+)"', r.stdout or '')
+        cd = re.findall(r'data-cardh="([^"]+)"', out)
         if cd:
             print('    卡片高度 = %s' % cd[-1])
-        ov = re.findall(r'data-ovf="(-?\d+)"', r.stdout or '')
+        ov = re.findall(r'data-ovf="(-?\d+)"', out)
         if ov:
             print('    横向溢出 = %s px%s' % (ov[-1], '  << 有溢出' if int(ov[-1]) > 0 else ''))
         if m:
             return int(m[-1])
         print('    !! 高度探测失败（DOM 里没有 data-pageh）')
-    except subprocess.TimeoutExpired:
-        print('    !! 高度探测超时')
+    except Exception as e:                     # 解析异常不该让整轮截图挂掉
+        print('    !! 高度探测异常：%s' % e)
     return None
 
 

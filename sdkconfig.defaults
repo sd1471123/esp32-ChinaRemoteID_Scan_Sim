@@ -27,6 +27,33 @@ CONFIG_ESP_COEX_SW_COEXIST_ENABLE=y
 # 浏览器只在安全上下文（https / localhost）里暴露 navigator.bluetooth，
 # 所以网页要能通过 https://192.168.4.1 打开。证书是自签的，见 main/certs/。
 CONFIG_ESP_HTTPS_SERVER_ENABLE=y
-# TLS 收发缓冲 16KB -> 4KB：设备同时跑 Wi-Fi AP + BLE + 日志，RAM 要省着用
+# TLS 收发缓冲 16KB -> 4KB/2KB：C5 跑起 Wi-Fi AP + BLE 后空闲堆只有 70KB，
+# 一条 TLS 会话的峰值约 19~30KB，实测 4 条并发就会 OOM 并把 Wi-Fi 一起拖垮。
+#   IN=4096 收（客户端请求，不能太小，浏览器不协商 max_fragment_length 时会发 16KB 记录）
+#   OUT=2048 发（响应用，mbedtls 会自动分片，页面 gzip 31KB 拆成 16 个记录照样能发）
 CONFIG_MBEDTLS_SSL_IN_CONTENT_LEN=4096
-CONFIG_MBEDTLS_SSL_OUT_CONTENT_LEN=4096
+CONFIG_MBEDTLS_SSL_OUT_CONTENT_LEN=2048
+# 动态收发缓冲：不用时把缓冲还给堆，会话空闲期间只留 mbedTLS 上下文。
+# 这是给 C5 这种小内存 + 并发 TLS 场景最关键的一项，能把最低水位从 9KB 抬回 20KB 以上。
+CONFIG_MBEDTLS_DYNAMIC_BUFFER=y
+
+# ---- lwIP socket 池 ----
+# 关键：esp_http_server 每个实例除了 max_open_sockets 个客户端槽，还要额外占 3 个
+# socket（TCP 监听 + 收/发 UDP 控制口），见 httpd_main.c 的 sanity check。
+# 本项目同时跑 80（HTTP）和 443（HTTPS）两个实例，默认 10 个根本不够：
+#   6+3(HTTP) + 4+3(HTTPS) = 16，再加蓝牙桥接的 http 客户端 1 个、DHCP 服务 1 个，
+#   合计 18。池子只有 10 时固定超支，表现为「网页时好时坏 / https 下参数全空 /
+#   接口 socket hang up」，且失败位置随机（谁抢不到槽谁死）。
+CONFIG_LWIP_MAX_SOCKETS=20
+
+# ---- lwIP TCP：让「手机断开热点」留下的死连接尽快释放 ----
+# 现象：手机开着网页把 Wi-Fi 关掉再连回来，页面一直转圈、超时，等一两分钟才恢复。
+# 原因是设备侧收不到对方消失的通知：旧连接还占着 httpd 的客户端槽（HTTP 6 / HTTPS 3），
+# 新连接只能在 backlog 里排队；同时 lwIP 的 TCP PCB 也被 TIME_WAIT 占着（默认只有
+# 16 条），重连瞬间挤满就再也接不上新连接。
+#   MSL 60s -> 8s：TIME_WAIT / FIN_WAIT 从 2×60s 降到 2×8s，PCB 十几秒就回池
+#   MAX_ACTIVE_TCP 16 -> 24：多留 8 条余量给浏览器的并发重连（每条 PCB 约 200 字节，
+#   收发缓冲按需分配，对 C5 的空闲堆影响在 2KB 量级）
+# 配套改动见 crid_web.c：客户端断开（只剩 0 个 station）时主动回收残留会话。
+CONFIG_LWIP_TCP_MSL=8000
+CONFIG_LWIP_MAX_ACTIVE_TCP=24
