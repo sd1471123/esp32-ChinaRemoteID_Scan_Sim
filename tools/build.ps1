@@ -103,6 +103,42 @@ $buildDir = 'build'
 for ($i = 0; $i -lt $IDFArgs.Count - 1; $i++) {
   if ($IDFArgs[$i] -eq '-B') { $buildDir = $IDFArgs[$i + 1]; break }
 }
+
+# ---- sdkconfig 按芯片分开存，切目标不再互相覆盖 ----
+# 根目录只有一份 sdkconfig：C5 编一次它就被写成 esp32c5，接着编 S3 直接报
+#   Project sdkconfig 'sdkconfig' was generated for target 'esp32c5',
+#   but CMakeCache.txt contains 'esp32s3'
+# 以前只能 set-target / fullclean，代价是把另一个目标的构建目录和缓存一起牵进去。
+# 现在两颗芯片各存一份快照，进 idf.py 前按 -B 目录挑一份放回根目录、编完再存回去：
+#   build\    -> sdkconfig.esp32s3      build_c5\ -> sdkconfig.esp32c5
+# 两个构建目录互不影响，来回切换只是复制一个文本文件，不删任何产物。
+$root = Split-Path $PSScriptRoot -Parent
+$wantChip = if ((Split-Path -Leaf $buildDir).ToLower() -like '*c5*') { 'esp32c5' } else { 'esp32s3' }
+# 显式 set-target 时以命令行写的为准（否则会被目录名带偏）
+$stIdx = [array]::IndexOf($IDFArgs, 'set-target')
+if ($stIdx -ge 0 -and $IDFArgs.Count -gt ($stIdx + 1) -and $IDFArgs[$stIdx + 1] -match '^esp32[a-z0-9]+$') {
+  $wantChip = $IDFArgs[$stIdx + 1]
+}
+$rootSc = Join-Path $root 'sdkconfig'
+$curChip = ''
+if (Test-Path $rootSc) {
+  $tline = Select-String -Path $rootSc -Pattern '^CONFIG_IDF_TARGET=' -ErrorAction SilentlyContinue |
+           Select-Object -First 1
+  if ($tline -and $tline.Line -match '"([^"]+)"') { $curChip = $Matches[1] }
+}
+if ($curChip -ne $wantChip) {
+  if ($curChip) {
+    Copy-Item $rootSc (Join-Path $root "sdkconfig.$curChip") -Force
+    Write-Host "sdkconfig: 先把当前 $curChip 配置存到 sdkconfig.$curChip" -ForegroundColor DarkGray
+  }
+  $wantSc = Join-Path $root "sdkconfig.$wantChip"
+  if (Test-Path $wantSc) {
+    Copy-Item $wantSc $rootSc -Force
+    Write-Host "sdkconfig: 切到 $wantChip（sdkconfig.$wantChip -> sdkconfig）" -ForegroundColor Cyan
+  } else {
+    Write-Host "*** 缺少 sdkconfig.$wantChip，无法切换目标；先确认 $buildDir 该编哪颗芯片 ***" -ForegroundColor Red
+  }
+}
 # 先 Test-Path 再删：管道为空时 Remove-Item 会报 missing path operand，
 # 而部分环境的安全删除钩子会把它变成终止错误。
 # 本机的 safe-delete 钩子走「回收站」，回收站不可用时会 fail-closed 抛错
@@ -126,6 +162,10 @@ idf.py @IDFArgs
 $rc = $LASTEXITCODE
 $ErrorActionPreference = $__eap
 $t.Stop()
+
+# 编完把根 sdkconfig 存回本芯片的快照：menuconfig 之类的改动不会丢，
+# 下次切回这颗芯片直接就用这份。
+if (Test-Path $rootSc) { Copy-Item $rootSc (Join-Path $root "sdkconfig.$wantChip") -Force }
 
 if ($cc -and ($IDFArgs -notcontains 'fullclean') -and ($IDFArgs -notcontains 'menuconfig')) {
   Write-Host "`n=== build time: $([math]::Round($t.Elapsed.TotalSeconds,1)) s ===" -ForegroundColor Cyan

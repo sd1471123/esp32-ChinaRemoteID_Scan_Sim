@@ -27,5 +27,7 @@ docs/std/
 # target 生成的本机配置，不入库（CI 由 sdkconfig.defaults* 生成）
 sdkconfig
 !sdkconfig.defaults*
+# 每颗芯片各存一份本机 sdkconfig 快照（build.ps1 切目标时来回搬），同样不入库
+sdkconfig.esp32*
 # 本地编译出的 OTA 升级包（网页升级用，按芯片分开，不进仓库）
 dist/
