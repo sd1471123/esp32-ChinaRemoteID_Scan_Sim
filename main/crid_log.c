@@ -20,9 +20,13 @@
 #include "crid_log.h"
 
 #include <string.h>
+#include <stdlib.h>
 
 #include "esp_log.h"
 #include "esp_partition.h"
+#ifndef CRID_LOG_HOST_TEST
+#include "nvs.h"      // 主机端单元测试没有 NVS，墓碑表在那里退化成纯 RAM
+#endif
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
 #include "freertos/task.h"
@@ -56,7 +60,7 @@ static uint16_t s_wslot;        // 扇区内槽位 0..PER_SEC-1
 static uint32_t s_count;
 static uint32_t s_dropped;
 static bool     s_ready;
-static volatile bool s_enabled;   // 记录开关：上电默认关闭，等网页授时后再开
+static volatile bool s_enabled;   // 记录开关：默认关闭，用户拨一次即落 NVS，重启沿用
 
 static QueueHandle_t     s_q;
 static SemaphoreHandle_t s_mux;
@@ -64,6 +68,94 @@ static crid_log_target_t s_tg[MAX_TARGETS];
 static int               s_tgn;
 // 遍历用扇区缓冲：不放栈（httpd 任务栈只有 8 KB），且要求 4 字节对齐
 static uint8_t s_sbuf[SECTOR_SIZE] __attribute__((aligned(4)));
+
+/* ---------------- 单目标删除的墓碑表 ----------------
+ * 环形日志是追加写，没法就地删掉某个目标的记录（擦除最小单位是 4 KB 扇区，
+ * 里面还混着别的目标）。所以删除做成「记一个 seq 上界」：该 MAC 的 seq 不超过
+ * 上界的记录，在扫描/分页/导出时直接当不存在。之后这台无人机再飞回来，新记录
+ * 的 seq 更大，不受影响。
+ * 墓碑必须落 NVS —— 上电会从 flash 重建目标表，只放 RAM 的话重启后就会复活。
+ */
+#define DEL_NS   "cridlog"
+#define DEL_KEY  "del"
+#define EN_KEY   "en"
+#define MAX_DEL  8
+
+typedef struct __attribute__((packed)) {
+    uint8_t  mac[6];
+    uint16_t rsv;
+    uint32_t cut;       // seq <= cut 的记录视为已删除
+} del_ent_t;
+
+static del_ent_t s_del[MAX_DEL];
+static int       s_deln;
+
+static void del_load(void) {
+    s_deln = 0;
+#ifdef CRID_LOG_HOST_TEST
+    // 主机端没有 NVS：墓碑只活在内存里，测试正需要这种「重启即清空」
+    return;
+#else
+    nvs_handle_t h;
+    if (nvs_open(DEL_NS, NVS_READONLY, &h) != ESP_OK) return;
+    size_t len = 0;
+    if (nvs_get_blob(h, DEL_KEY, NULL, &len) == ESP_OK && len > 0 && len <= sizeof(s_del)) {
+        if (nvs_get_blob(h, DEL_KEY, s_del, &len) == ESP_OK) {
+            s_deln = (int)(len / sizeof(del_ent_t));
+            if (s_deln > MAX_DEL) s_deln = MAX_DEL;
+        }
+    }
+    nvs_close(h);
+    if (s_deln) ESP_LOGI(TAG, "载入 %d 个已删除目标的墓碑", s_deln);
+#endif
+}
+
+static esp_err_t del_save(void) {
+#ifdef CRID_LOG_HOST_TEST
+    return ESP_OK;
+#else
+    nvs_handle_t h;
+    esp_err_t e = nvs_open(DEL_NS, NVS_READWRITE, &h);
+    if (e != ESP_OK) return e;
+    e = nvs_set_blob(h, DEL_KEY, s_del, (size_t)s_deln * sizeof(del_ent_t));
+    if (e == ESP_OK) e = nvs_commit(h);
+    nvs_close(h);
+    return e;
+#endif
+}
+
+// 记录开关持久化：用户每拨一次就落 NVS，下次上电沿用上次的选择。
+// 出厂/擦除后没有这个键 ⇒ 默认关闭，符合「不授时就不写记录」的原则。
+static bool en_load(void) {
+#ifdef CRID_LOG_HOST_TEST
+    return false;
+#else
+    nvs_handle_t h;
+    uint8_t v = 0;
+    if (nvs_open(DEL_NS, NVS_READONLY, &h) != ESP_OK) return false;
+    if (nvs_get_u8(h, EN_KEY, &v) != ESP_OK) v = 0;
+    nvs_close(h);
+    return v != 0;
+#endif
+}
+
+static void en_save(bool on) {
+#ifdef CRID_LOG_HOST_TEST
+    (void)on;
+#else
+    nvs_handle_t h;
+    if (nvs_open(DEL_NS, NVS_READWRITE, &h) != ESP_OK) return;
+    if (nvs_set_u8(h, EN_KEY, on ? 1 : 0) == ESP_OK) nvs_commit(h);
+    nvs_close(h);
+#endif
+}
+
+static bool del_hit(const uint8_t mac[6], uint32_t seq) {
+    for (int i = 0; i < s_deln; i++) {
+        if (memcmp(s_del[i].mac, mac, 6) == 0 && seq <= s_del[i].cut) return true;
+    }
+    return false;
+}
 
 /* ---------------- 基础工具 ---------------- */
 
@@ -92,6 +184,12 @@ static bool rec_ok(const crid_log_rec_t *r) {
            r->crc == crc16(r, offsetof(crid_log_rec_t, crc));
 }
 
+// 存活判定：物理上有效，且没被「单目标删除」的墓碑标记掉。
+// 只有读路径用它；定位写指针那几处必须用 rec_ok（被删的记录仍然占着槽位）。
+static bool rec_live(const crid_log_rec_t *r) {
+    return rec_ok(r) && !del_hit(r->mac, r->seq);
+}
+
 static bool read_abs(uint32_t abs, crid_log_rec_t *r) {
     uint16_t sec  = (uint16_t)(abs / PER_SEC);
     uint16_t slot = (uint16_t)(abs % PER_SEC);
@@ -102,7 +200,7 @@ static bool read_abs(uint32_t abs, crid_log_rec_t *r) {
                            &tmp, CRID_LOG_REC_SIZE) != ESP_OK) {
         return false;
     }
-    if (!rec_ok(&tmp)) return false;
+    if (!rec_live(&tmp)) return false;
     *r = tmp;
     return true;
 }
@@ -244,6 +342,8 @@ esp_err_t crid_log_init(void) {
         ESP_LOGI(TAG, "日志分区首次使用，已建立 meta（gen=1）");
     }
     s_gen = m.gen;
+    del_load();     // 先载入墓碑，后面重建目标表时才知道哪些记录已被删掉
+    s_enabled = en_load();   // 沿用上次用户拨的开关；没有记录则默认关闭
 
     s_mux = xSemaphoreCreateMutex();
     s_q   = xQueueCreate(QUEUE_LEN, sizeof(crid_log_rec_t));
@@ -324,8 +424,10 @@ bool crid_log_ready(void) {
 }
 
 void crid_log_set_enabled(bool on) {
+    if (s_enabled == on) return;      // 值没变就不碰 NVS，省擦写寿命
     s_enabled = on;
-    ESP_LOGI(TAG, "记录%s", on ? "已开启" : "已关闭");
+    en_save(on);
+    ESP_LOGI(TAG, "记录%s（已保存，重启后保持）", on ? "已开启" : "已关闭");
 }
 
 bool crid_log_enabled(void) {
@@ -425,10 +527,87 @@ void crid_log_foreach(crid_log_cb_t cb, void *ctx) {
         if (esp_partition_read(s_part, sec_off(sec), s_sbuf, SECTOR_SIZE) != ESP_OK) continue;
         for (int k = 0; k < PER_SEC; k++) {
             crid_log_rec_t *r = (crid_log_rec_t *)(void *)(s_sbuf + (size_t)k * CRID_LOG_REC_SIZE);
-            if (!rec_ok(r)) continue;
+            if (!rec_live(r)) continue;
             if (!cb(r, ctx)) return;
         }
     }
+}
+
+/* ---------------- 单目标删除 ---------------- */
+
+// 按存活记录重算总条数与各目标计数（删除后调用，一次 4 MB 顺序读，约 0.1~0.5 s）
+//
+// 这里刻意不复用 s_sbuf：那块缓冲是 crid_log_foreach（CSV 导出）在用的，而 80 和
+// 443 是两个独立的 httpd 任务，导出与删除完全可能真的同时在跑，共用缓冲会互相踩。
+// 改用一次性 malloc 的 4 KB，用完就还；分配不到就退化成逐条读（慢一点，但正确）。
+static void rebuild_locked(void) {
+    s_tgn = 0;
+    uint32_t n = 0;
+    uint8_t *buf = (uint8_t *)malloc(SECTOR_SIZE);
+
+    for (uint16_t i = 0; i < s_secs; i++) {
+        if (buf != NULL) {
+            if (esp_partition_read(s_part, sec_off(i), buf, SECTOR_SIZE) != ESP_OK) continue;
+            for (int k = 0; k < PER_SEC; k++) {
+                crid_log_rec_t *r = (crid_log_rec_t *)(void *)(buf + (size_t)k * CRID_LOG_REC_SIZE);
+                if (!rec_live(r)) continue;
+                n++;
+                target_update(r, true);
+            }
+        } else {
+            for (int k = 0; k < PER_SEC; k++) {
+                crid_log_rec_t r;
+                if (esp_partition_read(s_part, sec_off(i) + (uint32_t)k * CRID_LOG_REC_SIZE,
+                                       &r, CRID_LOG_REC_SIZE) != ESP_OK) continue;
+                if (!rec_live(&r)) continue;
+                n++;
+                target_update(&r, true);
+            }
+        }
+    }
+    if (buf != NULL) free(buf);
+    s_count = n;
+}
+
+esp_err_t crid_log_delete_target(const uint8_t mac[6]) {
+    if (!s_ready || mac == NULL) return ESP_ERR_INVALID_ARG;
+    if (xSemaphoreTake(s_mux, pdMS_TO_TICKS(5000)) != pdTRUE) return ESP_ERR_TIMEOUT;
+
+    // 上界取「当前最大已用 seq」：此刻之前的记录全部作废，之后新写的仍然有效
+    uint32_t cut = (s_seq > 0) ? (s_seq - 1) : 0;
+
+    int slot = -1;
+    for (int i = 0; i < s_deln; i++) {
+        if (memcmp(s_del[i].mac, mac, 6) == 0) { slot = i; break; }
+    }
+    if (slot < 0) {
+        if (s_deln < MAX_DEL) {
+            slot = s_deln++;
+        } else {
+            // 表满：淘汰上界最早（删得最久）的那条，保证最近删的总是有效
+            slot = 0;
+            for (int i = 1; i < s_deln; i++) {
+                if (s_del[i].cut < s_del[slot].cut) slot = i;
+            }
+        }
+    }
+    memset(&s_del[slot], 0, sizeof(s_del[slot]));
+    memcpy(s_del[slot].mac, mac, 6);
+    s_del[slot].cut = cut;
+
+    rebuild_locked();
+    esp_err_t err = del_save();
+    uint32_t left = s_count;
+    xSemaphoreGive(s_mux);
+
+    if (err == ESP_OK) {
+        ESP_LOGI(TAG, "已删除目标 %02X:%02X:%02X:%02X:%02X:%02X 的历史记录（cut=%u），剩余 %u 条",
+                 mac[0], mac[1], mac[2], mac[3], mac[4], mac[5],
+                 (unsigned)cut, (unsigned)left);
+    } else {
+        ESP_LOGW(TAG, "删除标记已生效，但写入 NVS 失败: %s（重启后会恢复）", esp_err_to_name(err));
+    }
+    return err;
 }
 
 esp_err_t crid_log_clear(void) {

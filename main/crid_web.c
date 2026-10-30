@@ -16,6 +16,8 @@
 #include "esp_http_server.h"
 #include "esp_log.h"
 #include "esp_err.h"
+#include "esp_heap_caps.h"
+#include "esp_system.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "cJSON.h"
@@ -153,6 +155,10 @@ static const char PAGE_HTML[] =
 ".dd-item:hover{background:#ecfdf5;color:#0b3d2e}"
 "#liveinfo{font-size:12px;color:#1565c0;margin-top:8px;min-height:14px;"
 "font-family:monospace;background:#eff6ff;border-radius:6px;padding:5px 8px}"
+"#tstat{font-size:12px;margin:2px 0 8px;padding:5px 8px;border-radius:6px;"
+"font-family:monospace;background:#fff7ed;color:#b45309;border:1px solid #fed7aa}"
+"#tstat.ok{background:#ecfdf5;color:#0f8a4d;border-color:#a7f3d0}"
+"#tstat.bad{background:#fef2f2;color:#b91c1c;border-color:#fecaca}"
 "#hint{font-size:12px;color:#9ca3af;margin-top:8px}"
 // ---- 接收监测 ----
 ".rxbar{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0 4px}"
@@ -294,12 +300,12 @@ static const char PAGE_HTML[] =
 // ---- 历史轨迹（接收记录持久化） ----
 // 卡片标题兼折叠开关：点一下收起/展开，右侧箭头指示当前状态
 ".lghd{cursor:pointer;-webkit-user-select:none;user-select:none}"
-".lghd .tog{margin-left:auto;font-style:normal;font-size:11.5px;font-weight:600;color:#0f8a4d;"
+".lghd .tog{margin-left:8px;font-style:normal;font-size:11.5px;font-weight:600;color:#0f8a4d;"
 "background:#eef7f1;border:1px solid #cfe8db;border-radius:12px;padding:2px 9px;flex:none;"
 "letter-spacing:0}"
 ".lghd .tog:after{content:'\\25BE';margin-left:4px;font-size:9px}"
 ".lghd.open .tog:after{content:'\\25B4'}"
-// 记录开关：固件上电默认关闭，网页授时成功后才自动打开（避免未对时的记录）
+// 记录开关：默认关闭，用户拨一次就存进 NVS，授时不再自动打开它
 ".lgsw{margin-left:auto;flex:none;font-family:inherit;font-size:11.5px;font-weight:600;"
 "color:#9a6b00;background:#fff8e6;border:1px solid #f0d8a0;border-radius:12px;"
 "padding:2px 9px;cursor:pointer;letter-spacing:0}"
@@ -313,6 +319,7 @@ static const char PAGE_HTML[] =
 "color:#0b3d2e;background:#fff;border:1px solid #cfd8e3;border-radius:12px;"
 "padding:3px 10px;cursor:pointer}"
 ".blebar .bfbtn:active{transform:scale(.97)}"
+".blebar .blenk{text-decoration:none;line-height:1.45}"
 ".lgbar{height:8px;border-radius:5px;background:#eef1f4;overflow:hidden;margin:10px 0}"
 ".lgbar i{display:block;width:0;height:100%;background:#1565c0;transition:width .3s}"
 ".lgrow{display:flex;align-items:center;gap:8px;padding:8px 10px;border:1px solid #e5e7eb;"
@@ -324,6 +331,9 @@ static const char PAGE_HTML[] =
 ".lgrow .sp{flex:1 1 16px}"
 ".lgrow .mini{font-size:11px;color:#8b95a1}"
 ".lgrow button{width:auto;margin:0;padding:6px 10px;font-size:12px;flex:0 0 auto}"
+// 单目标删除：低调的红边，别和「看轨迹」抢注意力
+".lgrow .lgdel{color:#b3261e;border-color:#f0c9c5;background:#fdf4f3}"
+".lgrow .lgdel:active{transform:scale(.97)}"
 // 轨迹点表格：每列按内容定宽（不再用 1fr，否则经纬度会被拉成一整片空白），
 // 数字列右对齐，小数点自然对齐
 ".lgpt{display:grid;align-items:center;gap:6px;font-size:12px;padding:6px 8px;"
@@ -426,6 +436,9 @@ static const char PAGE_HTML[] =
 "</div></div>"
 "<div class='wrap'><div class='grid'>"
 "<div class='card span2'><h3>运行模式</h3>"
+// 授时状态条放在「运行模式」框架内：发射与接收两种角色下都常驻可见，
+// 不用切回发射页也能确认设备时钟是否已校准。
+"<div id='tstat'>时间未校准 · 报文时间字段按「未知」发送</div>"
 "<span class='lbl'>工作角色（拨动选择，单射频二选一）</span>"
 "<div class='seg'>"
 "<label><input type='radio' name='role' value='rx'><span>接收<br>监听周边</span></label>"
@@ -610,6 +623,7 @@ static const char PAGE_HTML[] =
 // 蓝牙取数：连上后网页的所有 /api 查询改走 BLE，Wi-Fi 可以断开去用流量看地图
 "<div class='blebar' id='blebar'>"
 "<span id='bletxt'>蓝牙取数未连接</span>"
+"<a class='bfbtn blenk' id='blelnk' href='#' onclick='bleGo();return false' style='display:none'>改用 https 打开</a>"
 "<button class='bfbtn' id='blebtn' type='button' onclick='bleGo()'>连接蓝牙</button>"
 "<button class='bfbtn' id='bleoff' type='button' onclick='bleStop()' style='display:none'>断开</button>"
 "</div>"
@@ -643,13 +657,13 @@ static const char PAGE_HTML[] =
 // 历史轨迹：接收模式落盘才有内容，因此只在接收模式显示，发射模式整卡隐藏
 "<div class='card span2 rxonly' id='logbox' style='display:none'>"
 "<h3 class='lghd open' id='lghd' onclick='logFold()'>历史轨迹"
+"<button class='lgsw' id='lgsw' type='button' onclick='logToggle();event.stopPropagation()'>记录：关</button>"
 "<i class='tog' id='lgtog'>收起</i></h3>"
 "<div id='lgbody'>"
 "<div class='otainfo'>"
 "<span>记录 <b id='lgcnt'>--</b> 条</span>"
 "<span>占用 <b id='lgused'>--</b></span>"
 "<span>时间范围 <b id='lgrange'>--</b></span>"
-"<button class='lgsw' id='lgsw' type='button' onclick='logToggle()'>记录：关</button>"
 "</div>"
 "<div class='lgbar'><i id='lgfill'></i></div>"
 "<div class='rxlist' id='lgtargets'></div>"
@@ -678,9 +692,9 @@ static const char PAGE_HTML[] =
 "</div>"
 "<details class='tip'><summary>说明：记录了什么、能存多久、时间为什么不对</summary><div>"
 "<b>记录默认关闭</b>：设备没有 RTC，上电时时间是空的，先写下的条目只能记「上电计时」。"
-"所以固件上电不记录，打开本页时先<b>把手机时间同步给设备</b>，同步成功后才自动打开记录；"
-"首次打开卡片右侧的开关显示「记录：关」，授时完成后会变成绿色「记录：开」。"
-"手动点开关关掉后，这台手机下次打开页面不会再自动打开（想恢复就再点一次）。"
+"所以固件上电<b>不会自动开始记录</b>，请在<b>授时成功</b>（页面顶部「运行模式」里那条状态变绿）之后再点开开关。"
+"开关<i>每拨一次就存进设备</i>，断电重启会沿用你上次的选择；想回到默认就在页面上关掉它。"
+"<br>授时<b>不会</b>替你打开记录，开关始终由你决定，看到「记录：开」才是真的在记。"
 "<br>只有<b>接收模式</b>才写入。每个目标<b>最快 5 秒一条</b>，位置变化超过 30 米时补记一条，"
 "所以高速飞行时点更密、悬停时最省。每条 64 字节，分区 4 MB 约 6.5 万条："
 "单目标约 90 小时，五个目标同时约 18 小时；写满后自动覆盖最旧的记录，不需要手动清理。"
@@ -696,6 +710,10 @@ static const char PAGE_HTML[] =
 "同步之前写入的条目只有上电计时，显示为「上电 hh:mm:ss」；断电后上电计时会归零，"
 "但已经存下的时间戳不会变。"
 "<br>「清空记录」只是把日志代次加一，毫秒级完成，不会擦整个分区，之后新记录会自然覆盖旧数据。"
+"<br>只想删掉其中<b>一台</b>无人机，点它那一行的「<b>删除</b>」：设备给这个目标记一个"
+"「到此为止」的标记（同样毫秒级，不擦 flash），它从此不再出现在列表里、也翻不到轨迹，"
+"其他目标完全不受影响；这台无人机要是再飞回来，之后的新记录照常显示。"
+"这个标记存在 NVS 里，<b>重启后依然有效</b>，不会从 flash 里被重新扫出来。"
 "</div></details>"
 "</div>"
 "<div class='actions span2'>"
@@ -1514,28 +1532,44 @@ static const char PAGE_HTML[] =
 "'  高度 '+j.altitude_msl.toFixed(1)+'m  航向 '+j.heading.toFixed(0)+'°';"
 "document.getElementById('liveinfo').textContent=t;"
 "if(live){live.setLatLng([j.latitude,j.longitude]);}"
-"trailPush(j.latitude,j.longitude);}"
+"trailPush(j.latitude,j.longitude);"
+"tStat(!!j.tsync,j.tnow);tLast=j.tsync?1:0;}"
 "catch(e){}"
-"if(Date.now()-sT>600000)syncTime();}"
+"tAuto();}"
 // ---- 设备授时：GB46750 数据项 020 需要真实 Unix 毫秒，设备本身无 RTC/不联网 ----
-"var sT=0;"
+"var sT=0,tTries=0,tDone=false,tBad='',tNext=0,tLast=-1;"
+// 授时状态条：设备有没有拿到真实时间，一眼能看见。未校准时报文里的时间字段
+// 一律按标准写「未知」，绝不拿「1970+开机秒数」冒充真实时间。tBad 缓存上次
+// 失败原因，这样每 2 秒的轮询不会把「为什么失败」刷掉。
+"function tClock(sec){var d=new Date(sec*1000);"
+"return pad2(d.getHours())+':'+pad2(d.getMinutes())+':'+pad2(d.getSeconds());}"
+"function tStat(ok,sec){var e=document.getElementById('tstat');if(!e)return;"
+"if(ok&&sec){tBad='';e.className='ok';"
+"e.textContent='时间已校准 · 设备时钟 '+tClock(sec)+'（报文按此时间发送）';}"
+"else if(tBad){e.className='bad';"
+"e.textContent='授时失败 · '+tBad+'（报文时间按「未知」发送）';}"
+"else{e.className='';e.textContent='时间未校准 · 报文时间字段按「未知」发送';}}"
+// 何时该自动授时：每 10 分钟刷一次（防手机时间被调整），另外设备重启/OTA 后
+// 校准会丢失，tLast 从 1 变 0 时立刻补一次——否则用户要干等 10 分钟才恢复。
+"function tAuto(){if(tTries>0)return;if(Date.now()<tNext)return;"
+"if(Date.now()-sT>600000){syncTime();return;}"
+"if(tLast===0)syncTime();}"
 // ---- 历史轨迹：统计、目标列表、分页轨迹点、航线回放、导出与清空 ----
 // 分页固定 30 条一页、最多 10 页（最近 300 条可在线翻），更早的走 CSV
 "let lgMac='',lgPage=0,lgPts=[],lgPlay=-1,lgTimer=null,lgRate=1;"
-// 记录开关状态：固件上电默认关闭，页面授时成功后自动打开（用户手动关过则本机记住）
+// 记录开关：默认关闭，状态由设备保存（NVS），页面每次打开都从 /api/log/info 回填。
+// 授时不再自动打开记录——开关完全由用户手动决定，避免「以为没开却在写」或反之。
 "let lgOn=false;"
 "function lgSw(on){lgOn=!!on;var b=document.getElementById('lgsw');if(!b)return;"
 "b.textContent='记录：'+(lgOn?'开':'关');b.classList.toggle('on',lgOn);}"
-"function lgStore(v){try{localStorage.setItem('lgoff',v?'0':'1');}catch(e){}}"
-"async function lgEnable(on){try{const r=await fetch('/api/log/enable',{method:'POST',"
-"headers:{'Content-Type':'application/json'},body:JSON.stringify({on:on?1:0})});"
+"async function lgEnable(on){try{var r;"
+"if(bleOn){r=await fetch('/api/log/enable?on='+(on?1:0));}"
+"else{r=await fetch('/api/log/enable',{method:'POST',"
+"headers:{'Content-Type':'application/json'},body:JSON.stringify({on:on?1:0})});}"
 "const j=await r.json();if(j&&j.ok){lgSw(j.on);return true;}}catch(e){}return false;}"
 "function logToggle(){const want=!lgOn;lgEnable(want).then(function(ok){if(!ok){lgSw(lgOn);"
-"msg('记录开关失败',false);return;}lgStore(want);msg(want?'轨迹记录已开启':'轨迹记录已关闭',true);"
+"msg('记录开关失败',false);return;}msg(want?'轨迹记录已开启（已保存）':'轨迹记录已关闭（已保存）',true);"
 "if(want)logRefresh();});}"
-// 授时完成后再打开记录：设备无 RTC，未对时写下的记录时间是 0（1970）
-"function lgAutoOn(){if(lgOn)return;var off=false;try{off=localStorage.getItem('lgoff')==='1';}catch(e){}"
-"if(off)return;lgEnable(true);}"
 // 回放要的是整个 300 条航线，不是当前页那 30 条：
 // lgPages[p] 缓存第 p 页（已翻成旧->新），lgPath 是各页按时间拼成的完整航线
 "let lgPath=[],lgPages=[],lgMatched=0,lgLoading=false;"
@@ -1572,10 +1606,13 @@ static const char PAGE_HTML[] =
 "+'<span class=\"sp\"></span>'"
 "+'<span class=\"mini\">'+t.count+' 条 · 最后 '+fmtT(t.newest_unix,t.newest_tick)+'</span>'"
 "+'<button type=\"button\" data-lg=\"'+t.mac+'\">看轨迹</button>'"
+"+'<button type=\"button\" class=\"lgdel\" data-del=\"'+t.mac+'\">删除</button>'"
 "+'</div>';}"
 "box.innerHTML=h;"
 "Array.prototype.forEach.call(box.querySelectorAll('button[data-lg]'),function(b){"
-"b.onclick=function(){logPoints(b.dataset.lg);};});}"
+"b.onclick=function(){logPoints(b.dataset.lg);};});"
+"Array.prototype.forEach.call(box.querySelectorAll('button[data-del]'),function(b){"
+"b.onclick=function(){logDel(b.dataset.del);};});}"
 "function lgMarkSel(){const box=q('lgtargets');if(!box)return;"
 "Array.prototype.forEach.call(box.querySelectorAll('.lgrow'),function(r){"
 "r.className='lgrow'+(r.getAttribute('data-mac')===lgMac?' sel':'');});}"
@@ -1865,40 +1902,79 @@ static const char PAGE_HTML[] =
 "logRefresh();msg('历史记录已清空',true);}"
 "else{msg('清空失败: '+(j.error||'未知错误'),false);}"
 "}catch(e){msg('清空失败: '+e,false);}}"
-"function syncTime(){sT=Date.now();try{fetch('/api/time',{method:'POST',"
-"headers:{'Content-Type':'application/json'},body:JSON.stringify({epoch_ms:sT})})"
-".then(function(r){return r.json();}).then(function(j){if(j&&j.ok)lgAutoOn();})"
-".catch(function(){});}catch(e){}}"
+// 删除单个目标：只作废这台无人机的记录，其他目标不受影响。设备端用 seq 墓碑实现，
+// 不擦 flash，所以毫秒级完成，而且重启后不会复活。
+"async function logDel(mac){"
+"if(!confirm('删除 '+String(mac).toUpperCase()+' 的全部历史轨迹？\\n删除后该目标会从列表消失，其他目标不受影响。'))return;"
+"try{const r=await fetch('/api/log/del',{method:'POST',"
+"headers:{'Content-Type':'application/json'},body:JSON.stringify({mac:mac})});const j=await r.json();"
+"if(j.ok){if(lgMac===mac)logClose();logRefresh();msg('已删除该目标的历史记录',true);}"
+"else{msg('删除失败: '+(j.error||'未知错误'),false);}"
+"}catch(e){msg('删除失败: '+e,false);}}"
+"async function syncTime(){sT=Date.now();tNext=sT+20000;var bad='请求失败';var j=null;"
+"try{var r;"
+"if(bleOn){r=await fetch('/api/time?ms='+sT);j=await r.json();}"
+"else{r=await fetch('/api/time',{method:'POST',"
+"headers:{'Content-Type':'application/json'},body:JSON.stringify({epoch_ms:sT})});j=await r.json();}"
+"}catch(e){bad=(e&&e.message)||'请求失败';j=null;}"
+"if(j&&j.ok){tTries=0;tNext=0;tLast=1;tStat(true,j.now);"
+"if(!tDone){tDone=true;msg('设备时间已校准：'+tClock(j.now)+'，轨迹按真实时间写入',true);}"
+"return;}"
+"if(j&&!j.ok)bad='设备拒绝了这个时间（检查手机系统时间是否准确）';"
+// 首屏那一次很容易和别的请求挤在一起失败；失败就退避重试，否则要等 10 分钟
+// 才会再发，这段时间写下的轨迹时间全是「未知」。
+"tTries++;tBad=bad;tStat(false,0);"
+"if(tTries<3){msg('授时未完成（'+bad+'），正在重试 '+tTries+'/2…',false);"
+"setTimeout(syncTime,2000*tTries);}"
+"else{tTries=0;tNext=Date.now()+60000;msg('授时失败：'+bad,false);}}"
 // ---- 蓝牙取数：手机离开热点后网页照样能读设备（Wi-Fi 腾出来给地图瓦片） ----
 // 只认 https + 支持 Web Bluetooth 的浏览器（浏览器不给 http://192.168.x.x 暴露蓝牙）
 "var BLE_SVC='6e400001-b5a3-f393-e0a9-e50e24dcca9e';"
 "var BLE_RXC='6e400002-b5a3-f393-e0a9-e50e24dcca9e';"
 "var BLE_TXC='6e400003-b5a3-f393-e0a9-e50e24dcca9e';"
 "var bleDev=null,bleRx=null,bleTx=null,bleOn=false,bleQ=Promise.resolve();"
-"var bleWait=null,bleBytes=[],bleTimer=null;"
+"var bleWait=null,bleBytes=[],bleTimer=null,bleNotifyOn=false,bleRetry=0;"
 "function bleSecure(){return location.protocol==='https:'&&!!navigator.bluetooth;}"
-"function bleUI(){var bar=q('blebar'),t=q('bletxt'),b=q('blebtn'),o=q('bleoff');if(!bar)return;"
+"function bleUI(){var bar=q('blebar'),t=q('bletxt'),b=q('blebtn'),o=q('bleoff'),l=q('blelnk');if(!bar)return;"
+"var http=(location.protocol!=='https:'),nb=!navigator.bluetooth;"
 "bar.classList.toggle('on',bleOn);"
 "if(t)t.textContent=bleOn?'蓝牙已连接，可以关掉 Wi-Fi 用流量看地图':"
-"(bleSecure()?'蓝牙取数未连接':'蓝牙需要 https://'+location.hostname+' 打开');"
-"if(b)b.style.display=bleOn?'none':'';if(o)o.style.display=bleOn?'':'none';}"
-"async function bleGo(){"
-"if(location.protocol!=='https:'){msg('蓝牙只能在 https://'+location.hostname+' 下启用',false);return;}"
-"if(!navigator.bluetooth){msg('这个浏览器不支持网页蓝牙（iPhone 自带 Safari 不支持）',false);return;}"
-"try{"
-"bleDev=await navigator.bluetooth.requestDevice({filters:[{namePrefix:'ESP32-CRID'}],"
-"optionalServices:[BLE_SVC]});"
-"bleDev.addEventListener('gattserverdisconnected',bleDown);"
-"const srv=await bleDev.gatt.connect();"
+"(http?'蓝牙取数需要 https 打开（首次会提示证书不安全，点「继续前往」）':"
+"(nb?'这个浏览器不支持网页蓝牙（iPhone 自带的 Safari 不支持）':'蓝牙未连接'));"
+"if(l)l.style.display=(!bleOn&&http)?'':'none';"
+"if(b){b.style.display=(bleOn||http||nb)?'none':'';"
+"if(!bleOn&&bleDev)b.textContent='重新连接';}"
+"if(o)o.style.display=bleOn?'':'none';}"
+"async function bleAttach(dev){"
+"if(!dev||!dev.gatt)throw new Error('设备不可用');"
+"bleDev=dev;"
+"try{dev.removeEventListener('gattserverdisconnected',bleDown);}catch(e){}"
+"dev.addEventListener('gattserverdisconnected',bleDown);"
+"const srv=await dev.gatt.connect();"
 "const svc=await srv.getPrimaryService(BLE_SVC);"
 "bleRx=await svc.getCharacteristic(BLE_RXC);"
 "bleTx=await svc.getCharacteristic(BLE_TXC);"
-"await bleTx.startNotifications();"
-"bleTx.addEventListener('characteristicvaluechanged',bleData);"
-"bleOn=true;bleUI();msg('蓝牙已连接，现在可以关闭 Wi-Fi',true);"
+"if(!bleNotifyOn){await bleTx.startNotifications();"
+"bleTx.addEventListener('characteristicvaluechanged',bleData);bleNotifyOn=true;}"
+"bleOn=true;bleRetry=0;bleUI();msg('蓝牙已连接，现在可以关闭 Wi-Fi',true);}"
+"async function bleGo(){"
+"if(location.protocol!=='https:'){location.href='https://'+location.host+'/';return;}"
+"if(!navigator.bluetooth){msg('这个浏览器不支持网页蓝牙（iPhone 自带的 Safari 不支持）',false);return;}"
+"try{"
+"if(!bleDev&&navigator.bluetooth.getDevices){"
+"try{const ds=await navigator.bluetooth.getDevices();"
+"for(let i=0;i<ds.length;i++){const n=ds[i].name||'';"
+"if(n.indexOf('ESP32-CRID')===0){bleDev=ds[i];break;}}}catch(e){}}"
+"if(!bleDev){bleDev=await navigator.bluetooth.requestDevice({filters:[{namePrefix:'ESP32-CRID'}],"
+"optionalServices:[BLE_SVC]});}"
+"await bleAttach(bleDev);"
 "}catch(e){msg('蓝牙连接失败: '+((e&&e.message)||e),false);}}"
-"function bleDown(){bleOn=false;bleRx=null;bleTx=null;bleBytes=[];bleWait=null;bleUI();}"
-"function bleStop(){try{if(bleDev&&bleDev.gatt.connected)bleDev.gatt.disconnect();}catch(e){}"
+"function bleDown(){bleOn=false;bleRx=null;bleTx=null;bleNotifyOn=false;bleBytes=[];bleWait=null;bleUI();"
+"if(bleDev&&bleRetry<5){bleRetry++;"
+"setTimeout(function(){if(bleOn||!bleDev)return;"
+"bleAttach(bleDev).catch(function(){});},1200);}}"
+"function bleStop(){bleRetry=9;"
+"try{if(bleDev&&bleDev.gatt.connected)bleDev.gatt.disconnect();}catch(e){}"
 "bleDown();msg('蓝牙已断开',true);}"
 // 帧解析：01 起始(4 字节长度) / 02 数据 / 03 结束 / 04 错误
 "function bleData(ev){const dv=ev.target.value,t=dv.getUint8(0);let i;"
@@ -1926,12 +2002,13 @@ static const char PAGE_HTML[] =
 "if(bleOn&&isApi)return bleFetch(s);"
 "return _fetch(u,o);};"
 "bleUI();"
+// 首屏原本同时发 5 个请求（config / status / time / ota / log），httpd 的客户端槽
+// 只有几个，排队等槽时浏览器容易判超时或收到连接重置——表现就是「页面参数全空」。
+// 改成串行：配置到手后再拉版本与日志统计，肉眼无差别，但不再抢槽。
+"syncTime();"
+"load().then(function(){otaLoad();logRefresh();},function(){otaLoad();logRefresh();});"
 "setInterval(poll,2000);"
 "setInterval(logRefresh,8000);"
-"syncTime();"
-"load();"
-"otaLoad();"
-"logRefresh();"
 "</script></body></html>";
 
 // ================================================================
@@ -2702,7 +2779,55 @@ static esp_err_t handler_log_clear(httpd_req_t *req) {
     return ESP_OK;
 }
 
-// 记录开关：{on:0|1}。开关只存在 RAM，上电默认关闭，网页授时成功后再打开
+// 删除单个目标的历史记录：{mac:"44:BD:8D:69:06:31"}
+// 「清空记录」是整片作废，而列表里往往是好几台无人机，只想删掉其中一台时用它。
+static esp_err_t handler_log_del(httpd_req_t *req) {
+    char buf[96];
+    int len = httpd_req_recv(req, buf, sizeof(buf) - 1);
+    if (len <= 0) {
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "no body");
+        return ESP_FAIL;
+    }
+    buf[len] = '\0';
+
+    uint8_t mac[6];
+    bool ok = false;
+    cJSON *j = cJSON_Parse(buf);
+    if (j != NULL) {
+        cJSON *it = cJSON_GetObjectItem(j, "mac");
+        if (cJSON_IsString(it) && it->valuestring != NULL) ok = log_parse_mac(it->valuestring, mac);
+        cJSON_Delete(j);
+    }
+
+    esp_err_t e = ok ? crid_log_delete_target(mac) : ESP_ERR_INVALID_ARG;
+
+    cJSON *o = cJSON_CreateObject();
+    cJSON_AddBoolToObject(o, "ok", e == ESP_OK);
+    if (e != ESP_OK) cJSON_AddStringToObject(o, "error", esp_err_to_name(e));
+
+    char *s = cJSON_PrintUnformatted(o);
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_set_hdr(req, "Cache-Control", "no-store");
+    if (s != NULL) {
+        httpd_resp_sendstr(req, s);
+        cJSON_free(s);
+    } else {
+        httpd_resp_sendstr(req, e == ESP_OK ? "{\"ok\":true}" : "{\"ok\":false}");
+    }
+    cJSON_Delete(o);
+    return ESP_OK;
+}
+
+// 记录开关：{on:0|1}。状态落在 NVS（crid_log 模块负责），上电沿用上次设置，
+// 出厂无记录时为关闭。授时不会自动改这个开关。
+static void log_enable_reply(httpd_req_t *req, bool on) {
+    crid_log_set_enabled(on);
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_set_hdr(req, "Cache-Control", "no-store");
+    httpd_resp_sendstr(req, on ? "{\"ok\":true,\"on\":true}"
+                               : "{\"ok\":true,\"on\":false}");
+}
+
 static esp_err_t handler_log_enable(httpd_req_t *req) {
     char buf[64];
     int len = httpd_req_recv(req, buf, sizeof(buf) - 1);
@@ -2720,13 +2845,20 @@ static esp_err_t handler_log_enable(httpd_req_t *req) {
         else if (cJSON_IsBool(it)) on = cJSON_IsTrue(it);
         cJSON_Delete(j);
     }
+    log_enable_reply(req, on);
+    return ESP_OK;
+}
 
-    crid_log_set_enabled(on);
-
-    httpd_resp_set_type(req, "application/json");
-    httpd_resp_set_hdr(req, "Cache-Control", "no-store");
-    httpd_resp_sendstr(req, on ? "{\"ok\":true,\"on\":true}"
-                               : "{\"ok\":true,\"on\":false}");
+// 蓝牙模式下授时走 GET，紧接着自动开记录也只能走 GET，否则「授时成功但
+// 记录打不开」，用户看到的是时间对了、轨迹却一条不写。
+static esp_err_t handler_log_enable_get(httpd_req_t *req) {
+    char qs[32], v[12];
+    bool on = false;
+    if (httpd_req_get_url_query_str(req, qs, sizeof(qs)) == ESP_OK &&
+        httpd_query_key_value(qs, "on", v, sizeof(v)) == ESP_OK) {
+        on = (strtoul(v, NULL, 10) != 0);
+    }
+    log_enable_reply(req, on);
     return ESP_OK;
 }
 
@@ -2743,6 +2875,19 @@ static esp_err_t handler_status(httpd_req_t *req) {
     cJSON_AddNumberToObject(j, "altitude_msl", cfg->altitude_msl);
     cJSON_AddNumberToObject(j, "heading", cfg->heading);
     cJSON_AddNumberToObject(j, "speed", cfg->speed_horizontal);
+    // 堆诊断：TLS 会话是这台机器上最吃内存的东西，一旦握手时分配到 ESP_ERR_MBEDTLS_SSL_SETUP_FAILED
+    // 就会连 Wi-Fi 一起被拖垮（驱动自己也要大块连续内存）。把这三个数暴露出来，
+    // 网页每 2 秒轮询一次就能画出内存曲线，出问题不用瞎猜。
+    //   heap  = 当前可用；hmin = 开机以来最低水位；hblk = 最大连续块（决定能否再开一条 TLS）
+    cJSON_AddNumberToObject(j, "heap", (double)esp_get_free_heap_size());
+    cJSON_AddNumberToObject(j, "hmin", (double)esp_get_minimum_free_heap_size());
+    cJSON_AddNumberToObject(j, "hblk", (double)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
+    // 授时状态：设备无 RTC，时间全靠网页上报。页面据此显示「已校准/未校准」，
+    // 并显示设备当前时钟——秒针在走就是授时成功最直接的证据。
+    //   tsync = 1 已校准；tnow = 设备 Unix 秒（未校准时为 0）
+    uint64_t tnow = crid_time_epoch_ms();
+    cJSON_AddNumberToObject(j, "tsync", tnow ? 1 : 0);
+    cJSON_AddNumberToObject(j, "tnow", (double)(tnow / 1000));
 
     const char *s = cJSON_PrintUnformatted(j);
     httpd_resp_set_type(req, "application/json");
@@ -2804,6 +2949,29 @@ static esp_err_t handler_favicon(httpd_req_t *req) {
     return ESP_OK;
 }
 
+// 授时结果统一从这里出。关键：不能只看「传进来的值非零」就报成功——
+// crid_time 会拒绝 2023~2100 之外的时间（手机时间设错、刚开机取到 1970），
+// 那种情况下报文其实还是「未知」，页面必须知道，否则会误以为已校准、
+// 开着记录写一堆时间错误的轨迹，而且界面上一片安静，根本看不出问题。
+static void time_reply(httpd_req_t *req, uint64_t asked_ms) {
+    // 必须拿返回值判断：值被拒时设备会保留上一次校准，此时
+    // crid_time_epoch_ms() 仍然非 0，光看它会把「这次授时失败」报成成功。
+    bool accepted = crid_time_set_epoch_ms(asked_ms);
+
+    uint64_t now = crid_time_epoch_ms();
+    char out[80];
+    if (accepted && now != 0) {
+        snprintf(out, sizeof(out), "{\"ok\":true,\"now\":%llu}",
+                 (unsigned long long)(now / 1000));
+    } else {
+        snprintf(out, sizeof(out), "{\"ok\":false,\"now\":%llu}",
+                 (unsigned long long)(now / 1000));
+    }
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_set_hdr(req, "Cache-Control", "no-store");
+    httpd_resp_sendstr(req, out);
+}
+
 // 浏览器授时：设备无 RTC/不联网，用网页的 Unix 毫秒校准 GB46750 数据项 020
 static esp_err_t handler_time(httpd_req_t *req) {
     char buf[128];
@@ -2823,10 +2991,21 @@ static esp_err_t handler_time(httpd_req_t *req) {
         }
         cJSON_Delete(j);
     }
-    crid_time_set_epoch_ms(ms);   // 0 = 清除校准；GB42590 / GB46750 共用同一基准
+    time_reply(req, ms);   // 0 = 清除校准；GB42590 / GB46750 共用同一基准
+    return ESP_OK;
+}
 
-    httpd_resp_set_type(req, "application/json");
-    httpd_resp_sendstr(req, ms ? "{\"ok\":true}" : "{\"ok\":false}");
+// 蓝牙模式下网页只能发 GET（BLE 桥接只转发 GET，POST 会被页面拦下），
+// 但授时又必须走得通：手机关掉设备热点、只用蓝牙取数时，设备没有任何
+// 其他时间来源，轨迹会全部写成「未知」。
+static esp_err_t handler_time_get(httpd_req_t *req) {
+    char qs[48], v[28];
+    uint64_t ms = 0;
+    if (httpd_req_get_url_query_str(req, qs, sizeof(qs)) == ESP_OK &&
+        httpd_query_key_value(qs, "ms", v, sizeof(v)) == ESP_OK) {
+        ms = strtoull(v, NULL, 10);
+    }
+    time_reply(req, ms);
     return ESP_OK;
 }
 
@@ -2839,13 +3018,16 @@ static const httpd_uri_t uris[] = {
     { .uri = "/api/rx",    .method = HTTP_GET,  .handler = handler_rx,        .user_ctx = NULL },
     { .uri = "/api/reset", .method = HTTP_POST, .handler = handler_reset,     .user_ctx = NULL },
     { .uri = "/api/time",  .method = HTTP_POST, .handler = handler_time,      .user_ctx = NULL },
+    { .uri = "/api/time",  .method = HTTP_GET,  .handler = handler_time_get,  .user_ctx = NULL },
     { .uri = "/api/ota/info",  .method = HTTP_GET,  .handler = crid_ota_handler_info,   .user_ctx = NULL },
     { .uri = "/api/ota/upload",.method = HTTP_POST, .handler = crid_ota_handler_upload, .user_ctx = NULL },
     { .uri = "/api/log/info",  .method = HTTP_GET,  .handler = handler_log_info,   .user_ctx = NULL },
     { .uri = "/api/log/points",.method = HTTP_GET,  .handler = handler_log_points, .user_ctx = NULL },
     { .uri = "/api/log/export",.method = HTTP_GET,  .handler = handler_log_export, .user_ctx = NULL },
     { .uri = "/api/log/clear", .method = HTTP_POST, .handler = handler_log_clear,  .user_ctx = NULL },
+    { .uri = "/api/log/del",   .method = HTTP_POST, .handler = handler_log_del,    .user_ctx = NULL },
     { .uri = "/api/log/enable",.method = HTTP_POST, .handler = handler_log_enable, .user_ctx = NULL },
+    { .uri = "/api/log/enable",.method = HTTP_GET, .handler = handler_log_enable_get, .user_ctx = NULL },
     { .uri = "/favicon.ico",.method = HTTP_GET, .handler = handler_favicon,   .user_ctx = NULL },
 };
 
@@ -2865,6 +3047,29 @@ extern const uint8_t prvtkey_pem_end[]      asm("_binary_prvtkey_pem_end");
  * 证书是自签的（main/certs，ECDSA P-256，有效期到 2046），浏览器首次会提示
  * 不安全，点「继续访问」即可——这不影响功能，只是没有第三方背书。
  */
+/**
+ * @brief 新 TLS 连接建立前打点（只在内存偏紧时告警）
+ *
+ * 握手失败的唯一实测原因就是内存：allocate 拿不到就返回 -0x008D，随后 Wi-Fi
+ * 驱动自己也分配不到缓冲区，AP 掉线、网页彻底打不开。这个打点不改变任何行为，
+ * 只在快撑不住的时候留下一条日志，配合 /api/status 的 heap 曲线定位问题。
+ */
+static esp_err_t ssl_sess_open(httpd_handle_t hd, int sockfd) {
+    (void)hd;
+    size_t free_sz = esp_get_free_heap_size();
+    size_t blk = (size_t)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT);
+    // 阈值取「真的快撑不住」的水位：空闲基线本身只有约 70KB，一次握手就会把
+    // 可用堆压到 40~50KB，用 64KB 当阈值等于每次握手都报警，反而淹没有效信息。
+    // 实测 24KB 以下才会出现 mbedtls 分配失败的前兆。
+    if (free_sz < 24576 || blk < 16384) {
+        ESP_LOGW(TAG, "TLS 新连接 fd=%d，内存偏紧: heap=%u hblk=%u",
+                 sockfd, (unsigned)free_sz, (unsigned)blk);
+    } else {
+        ESP_LOGD(TAG, "TLS 新连接 fd=%d heap=%u", sockfd, (unsigned)free_sz);
+    }
+    return ESP_OK;
+}
+
 static void start_https_server(void) {
     httpd_ssl_config_t ssl_cfg = HTTPD_SSL_CONFIG_DEFAULT();
     ssl_cfg.servercert     = servercert_pem_start;
@@ -2873,9 +3078,22 @@ static void start_https_server(void) {
     ssl_cfg.prvtkey_len    = (size_t)(prvtkey_pem_end - prvtkey_pem_start);
 
     ssl_cfg.httpd.max_uri_handlers = sizeof(uris) / sizeof(uris[0]) + 2;
-    ssl_cfg.httpd.lru_purge_enable = true;
+    ssl_cfg.httpd.open_fn          = ssl_sess_open;
+    // 不能开 lru_purge：槽位不够时它会掐掉「最久未使用」的连接，而被掐的往往正是
+    // 正在发 /api/config 的那条，页面拿不到配置就会参数全空。宁可让新连接在
+    // backlog 里排队等槽位释放（keep_alive 默认关，响应完即关闭，等不了几毫秒）。
+    ssl_cfg.httpd.lru_purge_enable = false;
     ssl_cfg.httpd.stack_size       = 10240;   // TLS 握手比明文更吃栈
-    ssl_cfg.httpd.max_open_sockets = 4;       // 每个 TLS 连接都要一份缓冲，别开太多
+    // 槽位预算（CONFIG_LWIP_MAX_SOCKETS=20，每个 httpd 实例另有 3 个内部 socket）：
+    //   HTTP 6+3=9、HTTPS 2+3=5、蓝牙桥接客户端 1、DHCP 1 → 16，留 4 个余量。
+    // 真正的瓶颈不是 socket 而是内存，槽位数就是内存上界。C5 空闲堆约 70KB，
+    // 单条 TLS 会话峰值约 16KB。开启 MBEDTLS_DYNAMIC_BUFFER 后收发缓冲用完即还，
+    // 常驻开销比「静态 4KB 收 + 4KB 发」低得多，实测（6 路并发 x 6 轮 = 36 个请求）
+    // 开机以来最低可用堆仍有 37.7KB，比不开动态缓冲时的 9KB 宽裕得多。
+    // 浏览器对同一 origin 会开 6 条连接，只给 2 个槽会让其余请求长时间排队，
+    // 表现为「页面加载慢、个别接口偶发失败」。3 个槽预计把最低水位压到约 22KB，
+    // 仍高于 mbedtls 分配失败的门槛，是并发与安全的折中点。
+    ssl_cfg.httpd.max_open_sockets = 3;
     ssl_cfg.httpd.server_port      = 443;
     ssl_cfg.port_secure            = 443;
     ssl_cfg.tls_handshake_timeout_ms = 8000;
@@ -2891,7 +3109,9 @@ static void start_https_server(void) {
     for (size_t i = 0; i < sizeof(uris) / sizeof(uris[0]); i++) {
         httpd_register_uri_handler(srv, &uris[i]);
     }
-    ESP_LOGI(TAG, "HTTPS 已启动: https://192.168.4.1");
+    ESP_LOGI(TAG, "HTTPS 已启动: https://192.168.4.1 (heap=%u hblk=%u)",
+             (unsigned)esp_get_free_heap_size(),
+             (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
 }
 
 esp_err_t crid_web_start(cn_crid_config_t *config) {
@@ -2903,7 +3123,9 @@ esp_err_t crid_web_start(cn_crid_config_t *config) {
     // 槽位数必须覆盖 uris[] 全部条目（IDF 6.1 默认为 8，路由表已 9 条），
     // 否则超出部分会以 ESP_ERR_HTTPD_HANDLERS_FULL 静默失败、对应接口 404。
     http_cfg.max_uri_handlers = sizeof(uris) / sizeof(uris[0]) + 2;
-    http_cfg.lru_purge_enable = true;
+    http_cfg.lru_purge_enable = false;   // 理由见 start_https_server() 里的注释
+    // 槽位预算见 start_https_server()：HTTP 6 个客户端槽 + 3 个内部 socket
+    http_cfg.max_open_sockets = 6;
     // 默认 4KB 栈对 OTA 升级偏紧：esp_ota_begin/end 要做 SHA256 校验与分区操作，
     // 加上 cJSON 构包，留 8KB 更稳妥（只有一个 httpd 任务，代价可忽略）
     http_cfg.stack_size = 8192;

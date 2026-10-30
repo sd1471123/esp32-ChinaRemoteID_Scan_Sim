@@ -18,8 +18,9 @@ extern "C" {
  * 任何能解 System 报文的工具一眼就能看出是假数据。
  *
  * @param epoch_ms Unix 毫秒；0 = 清除校准，明显不合理的值会被拒绝
+ * @return true = 已接受（含 0 的清除操作）；false = 值不合理被拒绝，时间基准保持原样
  */
-void crid_time_set_epoch_ms(uint64_t epoch_ms);
+bool crid_time_set_epoch_ms(uint64_t epoch_ms);
 
 /**
  * @brief 当前 Unix 毫秒

@@ -168,6 +168,17 @@ void crid_log_foreach(crid_log_cb_t cb, void *ctx);
 /** @brief 清空全部记录（只改写 meta 的代次，毫秒级完成） */
 esp_err_t crid_log_clear(void);
 
+/**
+ * @brief 删除单个目标的全部历史记录
+ *
+ * 不擦 flash：给这个 MAC 记一个 seq 上界（墓碑），seq 不超过上界的记录在扫描、
+ * 分页、导出时一律视为不存在；墓碑落 NVS，重启后依然有效（否则上电从 flash
+ * 重建目标表时，被删掉的无人机又会冒出来）。删除后立刻重算总条数与各目标计数。
+ *
+ * @param mac  目标源 MAC（6 字节）
+ */
+esp_err_t crid_log_delete_target(const uint8_t mac[6]);
+
 #ifdef __cplusplus
 }
 #endif

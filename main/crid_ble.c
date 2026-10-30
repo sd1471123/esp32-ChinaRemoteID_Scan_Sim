@@ -317,6 +317,11 @@ static void ble_advertise(void) {
     memset(&advp, 0, sizeof(advp));
     advp.conn_mode = BLE_GAP_CONN_MODE_UND;
     advp.disc_mode = BLE_GAP_DISC_MODE_GEN;
+    // 广播间隔放宽到 400~500 ms（默认 30~60 ms 一秒要发二十来包）。
+    // Wi-Fi AP 与 BLE 共用天线，广播越密，AP 的 Beacon 与数据帧被抢占得越厉害，
+    // 手机连上热点却加载不出页面。这里降到每秒两包，扫得到的概率几乎不变。
+    advp.itvl_min = BLE_GAP_ADV_ITVL_MS(400);
+    advp.itvl_max = BLE_GAP_ADV_ITVL_MS(500);
 
     rc = ble_gap_adv_start(s_own_addr_type, NULL, BLE_HS_FOREVER, &advp, gap_event, NULL);
     if (rc != 0 && rc != BLE_HS_EALREADY) {
@@ -388,8 +393,8 @@ esp_err_t crid_ble_init(void) {
 
     ble_svc_gap_device_name_set(s_name);
 
-    // 桥接任务：栈要够 http 客户端 + 512 字节缓冲
-    if (xTaskCreate(ble_worker, "crid_ble", 5120, NULL, 4, &s_worker) != pdPASS) {
+    // 桥接任务：栈要够 http 客户端 + 512 字节缓冲，5120 在长 JSON 上偏紧
+    if (xTaskCreate(ble_worker, "crid_ble", 7168, NULL, 4, &s_worker) != pdPASS) {
         return ESP_ERR_NO_MEM;
     }
 

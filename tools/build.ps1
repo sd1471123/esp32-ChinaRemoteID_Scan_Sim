@@ -16,6 +16,8 @@ param(
   # 显式声明 -p/-Port：否则 PowerShell 会把未识别的 "-p COM3" 直接丢弃，
   # 导致 idf.py 收不到端口、esptool 自动挑串口（两块板同时插着时会挑错芯片）
   [Alias('p')][string]$Port,
+  # 见下方 ccache --zero-stats 处的说明：默认不做清零，需要时显式加 -ZeroStats
+  [switch]$ZeroStats,
   [Parameter(ValueFromRemainingArguments=$true)][string[]]$IDFArgs = @('build')
 )
 
@@ -66,8 +68,16 @@ if (-not $gzOk) {
 
 $cc = Get-ChildItem 'C:\Users\pc1\.espressif\tools\ccache' -Recurse -Filter ccache.exe |
       Select-Object -First 1 -ExpandProperty FullName
-if ($cc) { & $cc --zero-stats > $null }
-else { Write-Warning 'ccache not found; building without cache' }
+# ccache --zero-stats 会把整个缓存目录走一遍重算体积。本机缓存已积累 1.6 万个文件，
+# 叠上安全软件对每次文件访问的拦截，实测空目录只要 1.4s、这个目录 60s 都跑不完，
+# 直接把「重启编译」卡死在第一步。它只影响构建末尾打印的命中率（而且那份统计是
+# 累计值，本来就不精确），所以默认跳过；确需清零时用 `build.ps1 -ZeroStats build`。
+if (-not $cc) { Write-Warning 'ccache not found; building without cache' }
+elseif ($ZeroStats) {
+  $tZero = [System.Diagnostics.Stopwatch]::StartNew()
+  & $cc --zero-stats > $null
+  Write-Host ("ccache --zero-stats: {0:N1}s" -f $tZero.Elapsed.TotalSeconds) -ForegroundColor DarkGray
+}
 
 # export.ps1 会把激活信息写到 stderr；在 $ErrorActionPreference='Stop' 下，
 # 一旦调用方的输出被重定向（例如 build_trust.ps1 用 & 调用、或整体 *> 到日志），

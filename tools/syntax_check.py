@@ -34,8 +34,11 @@ def load_template():
 def check(base, src):
     cmd = re.sub(r"-o\s+\S+", "", base, count=1)
     cmd = re.sub(r"-c\s+\S+\.c\b", lambda m: "-fsyntax-only " + src, cmd, count=1)
-    p = subprocess.run(cmd, shell=True, capture_output=True, text=True,
-                       errors="replace")
+    # 不用 shell=True：启用蓝牙后头文件路径变多，命令行超过 cmd.exe 的 8191 字符
+    # 上限会直接报「命令行太长」。把整条命令行直接交给 CreateProcess（上限
+    # 32767）即可，同时保留 -DIDF_VER=\"...\" 这类反斜杠转义的原样写法。
+    p = subprocess.run(cmd, shell=False, capture_output=True,
+                       text=True, errors="replace")
     out = (p.stdout or "") + (p.stderr or "")
     return p.returncode, out
 

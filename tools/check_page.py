@@ -229,11 +229,34 @@ checks = {
     "轨迹:说明折叠": "<summary>说明：记录了什么、能存多久、时间为什么不对</summary>" in html,
     "轨迹:说明写出降采样与容量": ("最快 5 秒一条" in html and "6.5 万条" in html),
     # 记录开关：固件上电默认关闭，页面授时成功后才自动打开
-    "轨迹:记录开关按钮": ("id='lgsw'" in html and "onclick='logToggle()'" in html
+    "轨迹:记录开关按钮": ("id='lgsw'" in html
+                      and "onclick='logToggle();event.stopPropagation()'" in html
                       and "记录：关" in html),
-    "轨迹:授时后自动开记录": (".then(function(j){if(j&&j.ok)lgAutoOn();})" in html
-                        and "function lgAutoOn(){" in html),
-    "轨迹:手动关闭后不再自动开": "localStorage.getItem('lgoff')==='1'" in html,
+    # 开关挪到卡片标题右侧、紧挨「收起/展开」的左边；点开关要阻断冒泡，别把卡片折叠了
+    "轨迹:记录开关在收起左侧": (html.find("id='lgsw'") >= 0
+                          and html.find("id='lgtog'") > html.find("id='lgsw'")
+                          and "event.stopPropagation()" in html),
+    # 单目标删除：列表每行一个「删除」，走 /api/log/del，删完刷新列表
+    "轨迹:单目标删除按钮": ('data-del="' in html and "function logDel(mac){" in html),
+    "轨迹:删除接口": ("/api/log/del" in html and "body:JSON.stringify({mac:mac})" in html),
+    "轨迹:删除后刷新并收起": ("if(lgMac===mac)logClose();logRefresh();" in html),
+    "轨迹:授时不再自动开记录": ("lgAutoOn" not in html and "lgoff" not in html),
+    "轨迹:开关改动即保存": "已保存" in html,
+    "授时:状态条存在": "id='tstat'" in html,
+    # 状态条放在「运行模式」卡片内（该卡不带 txonly），发射/接收两种角色都常驻可见，
+    # 且必须早于 txonly 区块出现——否则说明又被塞回只有发射页才显示的地图卡里了
+    "授时:状态条在运行模式内": (html.find("id='tstat'") > html.find("<h3>运行模式</h3>")
+                         and html.find("id='tstat'") < html.find("class='lbl'>工作角色")),
+    "授时:状态条不属于发射专属": (html.find("id='tstat'") < html.find("class='col txonly'")
+                          or html.find("class='col txonly'") < 0),
+    "授时:状态由轮询驱动": "tStat(!!j.tsync,j.tnow);" in html,
+    "授时:显示未校准含义": "报文时间字段按「未知」发送" in html,
+    "授时:成功显示设备时钟": "时间已校准 · 设备时钟 " in html,
+    "授时:失败显示原因": "授时失败 · " in html,
+    "授时:失败退避重试": "setTimeout(syncTime,2000*tTries);" in html,
+    "授时:蓝牙模式走GET": "/api/time?ms=" in html,
+    "授时:设备重启后自动补授时": "function tAuto(){" in html and "if(tLast===0)syncTime();" in html,
+    "授时:蓝牙模式开记录走GET": "/api/log/enable?on=" in html,
     "轨迹:开关接口": "/api/log/enable" in html and "body:JSON.stringify({on:on?1:0})" in html,
     "轨迹:开关回填设备状态": "if(j.en!==undefined)lgSw(j.en);" in html,
     "轨迹:说明写出默认关闭": "记录默认关闭" in html,
@@ -251,6 +274,14 @@ checks = {
     "蓝牙:fetch 只拦 GET /api": ("s.indexOf('/api/')===0" in html
                           and "window.fetch=function(u,o)" in html),
     "蓝牙:说明写出关 Wi-Fi 看地图": "可以把 Wi-Fi 关掉" in html,
+    # http 页面必须给出一步到位的 https 入口，否则用户只会看到「不支持蓝牙」
+    "蓝牙:http 下给 https 入口": ("id='blelnk'" in html
+                            and "改用 https 打开" in html
+                            and "l.style.display=(!bleOn&&http)" in html),
+    "蓝牙:点按钮直接跳 https": "location.href='https://'+location.host+'/'" in html,
+    "蓝牙:断线自动重连": ("bleRetry<5" in html
+                     and "bleAttach(bleDev).catch" in html),
+    "蓝牙:已授权设备免二次弹窗": "navigator.bluetooth.getDevices" in html,
     # 热点密码（WPA2）：挡住陌生人连入热点改参数 / 上传固件
     "密码:输入框存在且限长63": "id='ap_password'" in html and "maxlength='63'" in html,
     "密码:紧跟在 SSID 之后": 0 < html.find("id='ssid'") < html.find("id='ap_password'")

@@ -501,31 +501,44 @@ bool crid_config_load_nvs(cn_crid_config_t *config) {
     // --- 旧存档里的「出厂默认身份」自动升级为合规格式 ---
     // 只有值仍然等于旧默认值时才替换（用户自己填的一律不动），否则老设备
     // 升级后依旧广播 "ESP32-CRID-xxxx / ESP32-OP-xxxx / ESP32S3"，改了个寂寞。
+    // 注意：日志必须写「替换前」的值，否则打印出来的是升级后的新值，
+    // 会被误读成「把用户填的身份改掉了」。
     {
         bool dirty = false;
         if (strncmp(config->uas_id, "ESP32-CRID-", 11) == 0) {
+            char old[CRID_UAS_ID_MAX_LEN + 1];
+            strncpy(old, config->uas_id, sizeof(old) - 1);
+            old[sizeof(old) - 1] = '\0';
             snprintf(config->uas_id, CRID_UAS_ID_MAX_LEN + 1,
                      "ESP3RID0%02X%02X%02X%02X",
                      config->mac_address[2], config->mac_address[3],
                      config->mac_address[4], config->mac_address[5]);
+            ESP_LOGW(TAG, "UAS ID 仍是旧默认值 %s，已改为合规格式 %s", old, config->uas_id);
             dirty = true;
         }
         if (strncmp(config->operator_id, "ESP32-OP-", 9) == 0) {
+            char old[CRID_UAS_ID_MAX_LEN + 1];
+            strncpy(old, config->operator_id, sizeof(old) - 1);
+            old[sizeof(old) - 1] = '\0';
             uint32_t h = ((uint32_t)config->mac_address[2] << 24) |
                          ((uint32_t)config->mac_address[3] << 16) |
                          ((uint32_t)config->mac_address[4] << 8)  |
                          ((uint32_t)config->mac_address[5]);
             snprintf(config->operator_id, CRID_UAS_ID_MAX_LEN + 1,
                      "UAS%08u", (unsigned)(h % 100000000u));
+            ESP_LOGW(TAG, "操作员 ID 仍是旧默认值 %s，已改为 %s", old, config->operator_id);
             dirty = true;
         }
         if (strcmp(config->drone_name, "ESP32S3") == 0) {
             strncpy(config->drone_name, "QUADCOPTER-X1", CRID_UAS_ID_MAX_LEN);
             config->drone_name[CRID_UAS_ID_MAX_LEN] = '\0';
+            ESP_LOGW(TAG, "机型名仍是旧默认值 ESP32S3，已改为 QUADCOPTER-X1");
             dirty = true;
         }
         if (dirty) {
-            ESP_LOGW(TAG, "旧默认身份已升级: UAS=%s OP=%s Model=%s",
+            // 这里只改内存副本，不写回 NVS：下次启动会再迁移一次，结果相同。
+            // 用户在网页上保存任意一次配置后，新值就会随整份配置落盘，迁移不再发生。
+            ESP_LOGI(TAG, "本次运行使用升级后的身份: UAS=%s OP=%s Model=%s",
                      config->uas_id, config->operator_id, config->drone_name);
         }
     }

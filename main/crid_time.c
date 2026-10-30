@@ -19,11 +19,11 @@ static inline int64_t mono_ms(void) {
     return esp_timer_get_time() / 1000;
 }
 
-void crid_time_set_epoch_ms(uint64_t epoch_ms) {
+bool crid_time_set_epoch_ms(uint64_t epoch_ms) {
     if (epoch_ms == 0) {
         s_epoch_offset_ms = 0;
         ESP_LOGW(TAG, "时间校准已清除，绝对时间字段将按「未知」发送");
-        return;
+        return true;
     }
 
     // 合理区间：2023-01-01 ~ 2100-01-01。浏览器刚开机/时区错乱时会给出
@@ -31,12 +31,13 @@ void crid_time_set_epoch_ms(uint64_t epoch_ms) {
     // 时间一起带偏），直接拒绝。
     if (epoch_ms < 1672531200000ULL || epoch_ms > 4102444800000ULL) {
         ESP_LOGW(TAG, "拒绝异常授时值 %llu ms", (unsigned long long)epoch_ms);
-        return;
+        return false;
     }
 
     s_epoch_offset_ms = (int64_t)epoch_ms - mono_ms();
     ESP_LOGI(TAG, "系统时间已校准: %llu ms（偏移 %lld ms）",
              (unsigned long long)epoch_ms, (long long)s_epoch_offset_ms);
+    return true;
 }
 
 uint64_t crid_time_epoch_ms(void) {

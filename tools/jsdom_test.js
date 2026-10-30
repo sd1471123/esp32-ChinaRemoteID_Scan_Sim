@@ -512,6 +512,11 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
   w.setRole(false); w.modeUI();
   await w.logRefresh();
   console.log('  接收模式显示:', lgbox.style.display === '');
+  // 授时状态条：挂在「运行模式」卡片里（该卡不分角色），接收模式下必须同样可见
+  const tst = ld.getElementById('tstat');
+  const tstCard = tst ? tst.closest('.card') : null;
+  console.log('  授时状态条在接收模式可见:', !!tst && !!tstCard
+    && tstCard.style.display !== 'none' && !tst.closest('.txonly'));
   console.log('  目标行数:', ld.querySelectorAll('#lgtargets .lgrow').length);
   console.log('  占用文案:', (ld.getElementById('lgused') || {}).textContent);
   console.log('  进度条宽度:', (ld.getElementById('lgfill') || {}).style
