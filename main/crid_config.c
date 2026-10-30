@@ -2,6 +2,7 @@
 #include <string.h>
 #include <stdio.h>
 #include "esp_system.h"
+#include "esp_random.h"
 #include "esp_mac.h"
 #include "esp_log.h"
 #include "nvs.h"
@@ -34,8 +35,14 @@ void crid_config_init_default(cn_crid_config_t *config) {
     snprintf(mac_suffix, sizeof(mac_suffix), "%02X%02X",
              config->mac_address[4], config->mac_address[5]);
 
-    // --- UAS ID / 无人机唯一标识: 前缀 "CRID-" + MAC 后 4 位 ---
-    snprintf(config->uas_id, CRID_UAS_ID_MAX_LEN + 1, "ESP32-CRID-%s", mac_suffix);
+    // --- UAS ID / 无人机唯一标识 ---
+    // CTA-2063-A 序列号格式：厂商代码 4 字符 + 型号代码 4 字符 + 序列号 8 字符
+    // = 16 位大写字母数字。旧默认值 "ESP32-CRID-xxxx" 不符合该格式，专业
+    // 解析器（按 id_type=1「序列号」校验）会直接标成非法 ID。
+    // 这里用 MAC 后 4 字节生成 8 位序列号，保证同一固件刷到不同板子也不同。
+    snprintf(config->uas_id, CRID_UAS_ID_MAX_LEN + 1, "ESP3RID0%02X%02X%02X%02X",
+             config->mac_address[2], config->mac_address[3],
+             config->mac_address[4], config->mac_address[5]);
 
     config->id_type = ID_TYPE_SERIAL_NUMBER;
     config->ua_type = UA_TYPE_HELICOPTER;
@@ -62,11 +69,22 @@ void crid_config_init_default(cn_crid_config_t *config) {
     config->operator_lon = 113.26f;
     config->operator_alt = 10.0f;
 
-    // 飞手名字: 前缀 "OP-CAAC-" + MAC 后 4 位
-    snprintf(config->operator_id, CRID_UAS_ID_MAX_LEN + 1, "ESP32-OP-%s", mac_suffix);
+    // 操作员 ID：声明类型为 0（CAA 登记号 / 实名登记号），内容应与之匹配。
+    // 中国民航局实名登记号的形态是「UAS」+ 8 位数字，旧默认值 "ESP32-OP-xxxx"
+    // 与声明的类型不符，规则校验会判非法。这里由 MAC 后 4 字节派生 8 位数字，
+    // 用户可在网页改成自己真实的登记号。
+    {
+        uint32_t h = ((uint32_t)config->mac_address[2] << 24) |
+                     ((uint32_t)config->mac_address[3] << 16) |
+                     ((uint32_t)config->mac_address[4] << 8)  |
+                     ((uint32_t)config->mac_address[5]);
+        snprintf(config->operator_id, CRID_UAS_ID_MAX_LEN + 1, "UAS%08u",
+                 (unsigned)(h % 100000000u));
+    }
 
-    // 无人机名字/型号 (Self-ID 描述): 填写为 ESP32S3
-    strncpy(config->drone_name, "ESP32S3", CRID_UAS_ID_MAX_LEN);
+    // 无人机型号（Self-ID 描述报文）。旧默认值 "ESP32S3" 把开发板型号当成
+    // 无人机型号广播出去，等于自报「我是模拟器」；换成中性的多旋翼型号名。
+    strncpy(config->drone_name, "QUADCOPTER-X1", CRID_UAS_ID_MAX_LEN);
     config->drone_name[CRID_UAS_ID_MAX_LEN] = '\0';
 
     config->operator_location_type = OP_LOC_TYPE_LIVE_GNSS; // Dynamic
@@ -81,7 +99,9 @@ void crid_config_init_default(cn_crid_config_t *config) {
     snprintf(config->ap_password, CRID_AP_PASS_MAX_LEN + 1, "%s", CRID_AP_PASS_DEFAULT);
 
     config->channel = DEFAULT_WIFI_CHANNEL;
-    config->message_counter = 0;
+    // 消息计数器随机起点：真实设备每次上电的计数器是连续历史的一部分，
+    // 永远从 0 开始本身就是可检测的「刚重启/是固定程序」特征。
+    config->message_counter = (uint8_t)(esp_random() & 0xFF);
     config->beacon_interval_ms = DEFAULT_BEACON_INTERVAL_MS;
 
     // 模式与标准
@@ -103,10 +123,15 @@ void crid_config_init_default(cn_crid_config_t *config) {
     config->base_latitude = config->latitude;
     config->base_longitude = config->longitude;
     config->base_altitude_msl = config->altitude_msl;
-    config->patrol_radius_lat = 0.00005f;  // 约 5.5 米
-    config->patrol_radius_lon = 0.00004f;  // 约 4.4 米
+    config->patrol_radius_lat = 0.00005f;  // 最小盘旋半径的纬度分量（约 5.5 米），兼容旧存档
+    config->patrol_radius_lon = 0.00004f;  // 最小盘旋半径的经度分量（约 4.4 米），兼容旧存档
     config->patrol_speed = 0.2f;
     config->time_counter = 0.0f;
+
+    // 运行时状态：相位从 0 起步（航向朝正东），半径/漂移由巡游步进维护
+    config->patrol_theta = 0.0f;
+    config->patrol_radius_m = 0.0f;
+    config->baro_drift = 0.0f;
 
     ESP_LOGI(TAG, "China C-RID configuration initialized");
     ESP_LOGI(TAG, "  MAC: %02X:%02X:%02X:%02X:%02X:%02X",
@@ -135,7 +160,9 @@ void crid_config_update_position(cn_crid_config_t *config,
     config->speed_vertical = speed_v;
     config->heading = heading;
 
-    ESP_LOGI(TAG, "Position updated: %.6f, %.6f, Alt: %.2fm, Hdg: %.1f",
+    // 1 Hz 刷新，必须用 DEBUG 级：用 LOGI 会每秒在串口刷一行，
+    // 既淹没真正有用的日志，也平白增加 UART 阻塞。
+    ESP_LOGD(TAG, "Position updated: %.6f, %.6f, Alt: %.2fm, Hdg: %.1f",
              config->latitude, config->longitude,
              config->altitude_msl, config->heading);
 }
@@ -461,6 +488,47 @@ bool crid_config_load_nvs(cn_crid_config_t *config) {
     // 相对高度一律由「海拔 - 地面海拔」推导，避免存档里的旧值自相矛盾
     config->altitude_msl = config->base_altitude_msl;
     config->altitude_agl = config->altitude_msl - config->ground_altitude;
+
+    // 运行时状态不持久化，每次加载后重建：
+    // 相位从 0 起（航向朝东），半径由第一步按速度反算，气压漂移归零。
+    // 消息计数器取随机起点，避免「上电必是 0」这一固定程序特征。
+    config->patrol_theta = 0.0f;
+    config->patrol_radius_m = 0.0f;
+    config->baro_drift = 0.0f;
+    config->time_counter = 0.0f;
+    config->message_counter = (uint8_t)(esp_random() & 0xFF);
+
+    // --- 旧存档里的「出厂默认身份」自动升级为合规格式 ---
+    // 只有值仍然等于旧默认值时才替换（用户自己填的一律不动），否则老设备
+    // 升级后依旧广播 "ESP32-CRID-xxxx / ESP32-OP-xxxx / ESP32S3"，改了个寂寞。
+    {
+        bool dirty = false;
+        if (strncmp(config->uas_id, "ESP32-CRID-", 11) == 0) {
+            snprintf(config->uas_id, CRID_UAS_ID_MAX_LEN + 1,
+                     "ESP3RID0%02X%02X%02X%02X",
+                     config->mac_address[2], config->mac_address[3],
+                     config->mac_address[4], config->mac_address[5]);
+            dirty = true;
+        }
+        if (strncmp(config->operator_id, "ESP32-OP-", 9) == 0) {
+            uint32_t h = ((uint32_t)config->mac_address[2] << 24) |
+                         ((uint32_t)config->mac_address[3] << 16) |
+                         ((uint32_t)config->mac_address[4] << 8)  |
+                         ((uint32_t)config->mac_address[5]);
+            snprintf(config->operator_id, CRID_UAS_ID_MAX_LEN + 1,
+                     "UAS%08u", (unsigned)(h % 100000000u));
+            dirty = true;
+        }
+        if (strcmp(config->drone_name, "ESP32S3") == 0) {
+            strncpy(config->drone_name, "QUADCOPTER-X1", CRID_UAS_ID_MAX_LEN);
+            config->drone_name[CRID_UAS_ID_MAX_LEN] = '\0';
+            dirty = true;
+        }
+        if (dirty) {
+            ESP_LOGW(TAG, "旧默认身份已升级: UAS=%s OP=%s Model=%s",
+                     config->uas_id, config->operator_id, config->drone_name);
+        }
+    }
 
     ESP_LOGI(TAG, "Config loaded from NVS: %s @ %s (band=%s tx=%u rx=%u std=%u)",
              config->uas_id, config->ssid,

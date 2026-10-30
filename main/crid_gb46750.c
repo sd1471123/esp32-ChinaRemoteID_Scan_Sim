@@ -29,37 +29,14 @@
  */
 
 #include "crid_gb46750.h"
+#include "crid_messages.h"      // 精度档位（与 GB42590 共用同一套轮换逻辑）
+#include "crid_time.h"          // 统一时间基准（浏览器授时）
 #include <stdbool.h>
 #include <string.h>
 #include <time.h>
-#include "sys/time.h"
 #include "esp_log.h"
 
 static const char *TAG = "CN_C-RID_GB46750";
-
-// --- 时间校准偏移（浏览器授时，单位毫秒；0 = 未校准） ---
-static int64_t s_epoch_offset_ms = 0;
-
-static inline uint64_t uptime_ms(void) {
-    return (uint64_t)esp_log_timestamp();   // 开机以来的毫秒数
-}
-
-void crid_gb46750_set_epoch_ms(uint64_t epoch_ms) {
-    if (epoch_ms == 0) {
-        s_epoch_offset_ms = 0;
-        return;
-    }
-    s_epoch_offset_ms = (int64_t)epoch_ms - (int64_t)uptime_ms();
-    ESP_LOGI(TAG, "系统时间已校准: %llu ms（偏移 %lld ms）",
-             (unsigned long long)epoch_ms, (long long)s_epoch_offset_ms);
-}
-
-/** 当前 Unix 毫秒；未校准时返回 0（标准中 020 的“未知”取值） */
-static inline uint64_t current_epoch_ms(void) {
-    if (s_epoch_offset_ms == 0) return 0;
-    int64_t v = (int64_t)uptime_ms() + s_epoch_offset_ms;
-    return (v > 0) ? (uint64_t)v : 0;
-}
 
 // --- 辅助：小端写 int32 ---
 static inline void w_le32(uint8_t *buf, int32_t val) {
@@ -189,10 +166,11 @@ uint16_t crid_build_gb46750_ie(cn_crid_config_t *config,
     clen += 2;
     // 014 气压高度 (2B，编码同 013)
     // 气压计以起飞点为基准，自身不随几何高度变化；这里按「用户声明的气压高度 +
-    // 巡游带来的高度偏移」输出，保证高度波动时两者的差值（气压/几何差）保持不变
+    // 巡游带来的高度偏移 + 气压计缓慢漂移」输出。漂移项让气压/几何高度差
+    // 随时间缓慢游走——恒定差值是不真实的人造特征。
     {
         float alt_off = config->altitude_msl - config->base_altitude_msl;
-        w_le16(&content[clen], enc_alt(config->baro_altitude + alt_off));
+        w_le16(&content[clen], enc_alt(config->baro_altitude + alt_off + config->baro_drift));
         clen += 2;
     }
 
@@ -201,15 +179,13 @@ uint16_t crid_build_gb46750_ie(cn_crid_config_t *config,
     content[clen++] = config->status & 0x0F;
     // 016 坐标系类型 (1B) — 0 = WGS-84
     content[clen++] = 0x00;
-    // 017 水平精度 (1B) — 11 = <3m
-    content[clen++] = 11;
-    // 018 垂直精度 (1B) — 4 = <10m
-    content[clen++] = 4;
-    // 019 速度精度 (1B) — 2 = <3m/s
-    content[clen++] = 2;
+    // 017 水平精度 / 018 垂直精度 / 019 速度精度 — 档位随时间缓慢轮换（同 GB42590）
+    content[clen++] = crid_acc_horiz();
+    content[clen++] = crid_acc_vert();
+    content[clen++] = crid_acc_speed();
     // 020 时间戳 (6B 小端 Unix 毫秒；未校时则写 0 = 未知)
     {
-        uint64_t ms = current_epoch_ms();
+        uint64_t ms = crid_time_epoch_ms();
         for (int i = 0; i < 6; i++) {
             content[clen + i] = (uint8_t)((ms >> (i * 8)) & 0xFF);
         }

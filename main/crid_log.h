@@ -88,6 +88,7 @@ typedef struct {
  */
 typedef struct {
     bool     ready;         // 分区找到且初始化成功
+    bool     enabled;       // 记录开关（上电默认关闭，网页授时后再打开）
     uint32_t total_bytes;   // 分区可用容量（不含 meta 扇区）
     uint32_t used_bytes;    // 已写满的扇区字节数（估算，用于进度条）
     uint32_t count;         // 已存条数（写满一圈后固定为容量上限）
@@ -108,6 +109,19 @@ esp_err_t crid_log_init(void);
 
 /** @brief 模块是否可用（分区存在且初始化成功） */
 bool crid_log_ready(void);
+
+/**
+ * @brief 记录开关（只存在 RAM 里，不落 NVS）
+ *
+ * 上电默认关闭：设备没有 RTC，也不联网，未授时前写下的记录 time 字段只能是
+ * 0（未对时），翻看时全是 1970。改成「打开网页 → 网页授时 → 再开始记录」，
+ * 这样每一条落地记录都带真实时间。开关不持久化，断电重启后仍是关闭状态，
+ * 由网页在每次加载时按用户上次的选择重新打开。
+ */
+void crid_log_set_enabled(bool on);
+
+/** @brief 当前是否在记录 */
+bool crid_log_enabled(void);
 
 /**
  * @brief 投递一条记录（非阻塞，队列满直接丢弃并计数）

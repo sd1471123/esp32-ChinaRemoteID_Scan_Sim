@@ -32,6 +32,7 @@
 #include "crid_log.h"
 #include "crid_patrol.h"
 #include "crid_rx.h"
+#include "crid_ble.h"
 
 static const char *TAG = "ESP32_CRID_STD";
 
@@ -47,8 +48,13 @@ static cn_crid_config_t g_config;
 // --- 发射端当前生效的标准快照（检测网页切换，触发 IE 重建） ---
 static uint8_t s_applied_standard = 0xFF;
 
-// --- 位置更新间隔 ---
-#define PATROL_INTERVAL_SEC 10
+// --- 主循环节拍与位置更新间隔 ---
+// 主循环用固定 50 ms 节拍：广播 IE 按网页设置的间隔重建，位置按 1 Hz 推进。
+// 两者解耦的原因：旧实现直接 vTaskDelay(beacon_interval)，位置也只能跟着
+// 同一个延时走（固定 10 秒才更新一次），于是「位置 10 秒不动、时间戳每秒
+// 在涨」——这正是合成轨迹最典型的特征。真机的位置是 1 Hz 刷新的。
+#define MAIN_TICK_MS        50
+#define PATROL_INTERVAL_MS  1000
 
 /**
  * @brief 按当前标准把 IE 挂到对应槽位
@@ -129,33 +135,40 @@ static void crid_main_task(void *pvParameter) {
              g_config.band == CRID_BAND_5G ? "5.8G" : "2.4G",
              crid_band_tx_enabled(&g_config), crid_band_rx_enabled(&g_config));
 
-    TickType_t xLastWake10s = xTaskGetTickCount();
-    const TickType_t xInterval10s = pdMS_TO_TICKS(PATROL_INTERVAL_SEC * 1000);
+    TickType_t lastIe  = 0;
+    TickType_t lastPos = xTaskGetTickCount();
 
     for (;;) {
-        vTaskDelay(pdMS_TO_TICKS(g_config.beacon_interval_ms));
+        vTaskDelay(pdMS_TO_TICKS(MAIN_TICK_MS));
+        TickType_t now = xTaskGetTickCount();
 
-        if (crid_band_tx_enabled(&g_config)) {
-            // 发射开启: 定时重建并更新厂商 IE（softAP 硬件负责广播）
-            if (!apply_tx_ie()) {
-                ESP_LOGE(TAG, "Failed to set RID vendor IE");
+        // --- RID IE 重建：按网页设置的广播间隔 ---
+        uint32_t ie_period = g_config.beacon_interval_ms;
+        if (ie_period < 100) ie_period = 1000;      // 兜底，避免误配成 0 导致空转
+        if ((uint32_t)pdTICKS_TO_MS(now - lastIe) >= ie_period) {
+            if (crid_band_tx_enabled(&g_config)) {
+                if (!apply_tx_ie()) {
+                    ESP_LOGE(TAG, "Failed to set RID vendor IE");
+                }
+            } else if (s_applied_standard != 0xFF) {
+                // 发射关闭: 确保 IE 已摘除，AP 继续发空 Beacon
+                crid_wifi_clear_rid_ie(0);
+                crid_wifi_clear_rid_ie(1);
+                s_applied_standard = 0xFF;
+                ESP_LOGI(TAG, "发射已关闭，RID IE 从 Beacon 摘除");
             }
-        } else if (s_applied_standard != 0xFF) {
-            // 发射关闭: 确保 IE 已摘除（首帧进入时清一次），AP 继续发空 Beacon
-            crid_wifi_clear_rid_ie(0);
-            crid_wifi_clear_rid_ie(1);
-            s_applied_standard = 0xFF;
-            ESP_LOGI(TAG, "发射已关闭，RID IE 从 Beacon 摘除");
+            lastIe = now;
         }
 
-        // --- 10 秒定时：更新巡游位置（仅发射开启时推进） ---
-        TickType_t xNow = xTaskGetTickCount();
-        if ((xNow - xLastWake10s) >= xInterval10s) {
+        // --- 位置 1 Hz 推进 ---
+        // dt 用实测节拍而不是常量：调度抖动时按真实间隔算角度增量，
+        // 保证「位移 = 速度 × 时间」严格成立，长时间运行也不累积误差。
+        uint32_t dt_ms = (uint32_t)pdTICKS_TO_MS(now - lastPos);
+        if (dt_ms >= PATROL_INTERVAL_MS) {
             if (crid_band_tx_enabled(&g_config)) {
-                ESP_LOGI(TAG, "=== Patrol position update ===");
-                crid_patrol_step(&g_config);
+                crid_patrol_step(&g_config, (float)dt_ms / 1000.0f);
             }
-            xLastWake10s = xNow;
+            lastPos = now;
         }
     }
 }
@@ -233,6 +246,13 @@ void app_main(void) {
     crid_log_init();
     if (crid_web_start(&g_config) != ESP_OK) {
         ESP_LOGE(TAG, "Web config server failed to start!");
+    }
+
+    // 8.1 蓝牙数据通道：网页可以改用 BLE 取数据，从而腾出 Wi-Fi 上网看地图
+    //     依赖本机 httpd（桥接任务要访问 192.168.4.1），必须排在 web 之后。
+    //     蓝牙起不来只是少一条通道，Wi-Fi 下的使用完全不受影响。
+    if (crid_ble_init() != ESP_OK) {
+        ESP_LOGW(TAG, "BLE 数据通道未启用");
     }
 
     // 9. 确认本次运行的固件可用：开启 OTA 回滚后，网页升级写入的新固件带

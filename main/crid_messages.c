@@ -4,11 +4,50 @@
 #include <time.h>
 #include "esp_log.h"
 #include "esp_random.h"
+#include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "sys/time.h"
+#include "crid_time.h"
 
 static const char *TAG = "CN_C-RID_MSG";
+
+// ================================================================
+// 精度档位（随时间缓慢轮换）
+// ================================================================
+// 真实飞控的定位精度随卫星几何（HDOP/VDOP）、多径环境变化，几分钟到几十分钟
+// 一个量级地漂，但绝不会每帧乱跳。旧实现把「水平 <3m / 垂直 <10m / 速度 <0.3m/s」
+// 写死成常数，等于对外声明「我的传感器永远不会变差」，是明显的程序特征。
+// 这里按 60 秒窗口掷一次骰子，窗口内保持稳定。
+static uint32_t acc_slot(void) {
+    uint64_t ms = crid_time_epoch_ms();
+    if (ms == 0) ms = (uint64_t)(esp_timer_get_time() / 1000);   // 未校时用单调时钟
+    return (uint32_t)(ms / 60000ULL);
+}
+
+static uint32_t hash32(uint32_t x) {
+    x ^= x >> 16; x *= 0x7feb352dU;
+    x ^= x >> 15; x *= 0x846ca68bU;
+    x ^= x >> 16;
+    return x;
+}
+
+// 水平精度：12 = <1m（多数情况），11 = <3m（偶发）
+uint8_t crid_acc_horiz(void) {
+    return (hash32(acc_slot() * 31u + 1u) % 100u < 85u) ? 12u : 11u;
+}
+// 垂直精度：6 = <1m，4 = <10m
+uint8_t crid_acc_vert(void) {
+    return (hash32(acc_slot() * 37u + 2u) % 100u < 85u) ? 6u : 4u;
+}
+// 速度精度：4 = <0.3m/s，3 = <1m/s
+uint8_t crid_acc_speed(void) {
+    return (hash32(acc_slot() * 41u + 3u) % 100u < 90u) ? 4u : 3u;
+}
+// 气压精度：4 = <10m，2 = <45m（0 = Unknown，旧实现一直报 Unknown 却给了有效值）
+uint8_t crid_acc_baro(void) {
+    return (hash32(acc_slot() * 43u + 4u) % 100u < 70u) ? 4u : 2u;
+}
 
 // --- 打包消息常量 ---
 // 计算打包消息长度: 头部3字节 + 5条报文 * 25字节 = 128
@@ -135,11 +174,12 @@ void crid_build_location_message(const cn_crid_config_t *config, uint8_t *messag
     write_le32(&message[9], (int32_t)(config->longitude * 1e7));
 
     // 字节13-14: 气压高度 (小端序, 0.5m 精度, 偏移 -1000m)
-    // 独立参数「气压高度」+ 巡游带来的高度偏移，使气压/几何高度差保持不变
-    // （旧实现直接把海拔写进这里，等于宣称气压高度永远等于几何高度）
+    // 独立参数「气压高度」+ 巡游带来的高度偏移 + 气压计自身的缓慢漂移。
+    // 漂移项让「气压高度 - 几何高度」随时间缓慢变化（真实气压计受气温/气流
+    // 影响就是这样游走的）；若两者差值恒为 0，等于宣称装了一块完美气压计。
     {
         float alt_off = config->altitude_msl - config->base_altitude_msl;
-        write_le16(&message[13], encode_altitude(config->baro_altitude + alt_off));
+        write_le16(&message[13], encode_altitude(config->baro_altitude + alt_off + config->baro_drift));
     }
 
     // 字节15-16: 几何高度 (小端序, 0.5m 精度, 偏移 -1000m)
@@ -149,24 +189,30 @@ void crid_build_location_message(const cn_crid_config_t *config, uint8_t *messag
     // HeightType bit: 0 = over takeoff, 1 = over ground
     write_le16(&message[17], encode_altitude(config->altitude_agl));
 
-    // 字节19: [VertAccuracy(4)][HorizAccuracy(4)]
-    // HorizAccuracy: 11 = < 3m, 12 = < 1m
-    // VertAccuracy: 4 = < 10m, 6 = < 1m
-    message[19] = (0x04 << 4) | 0x0B; // Vert <= 10m, Horiz <= 3m
+    // 字节19: [VertAccuracy(4)][HorizAccuracy(4)]，档位随时间缓慢轮换
+    message[19] = (uint8_t)((crid_acc_vert() << 4) | crid_acc_horiz());
 
     // 字节20: [BaroAccuracy(4)][SpeedAccuracy(4)]
-    // SpeedAccuracy: 2 = < 3m/s, 4 = < 0.3m/s
-    // BaroAccuracy: 0 = Unknown, 4 = < 10m
-    message[20] = (0x00 << 4) | 0x04; // Baro = Unknown, Speed <= 0.3m/s
+    message[20] = (uint8_t)((crid_acc_baro() << 4) | crid_acc_speed());
 
     // 字节21-22: 时间戳 (自当前小时起的 0.1 秒单位，小端序)
-    // 范围: 0 ~ 35999 (表示 0.0s ~ 3599.9s)
-    // 无效值: 0xFFFF
-    struct timeval tv_loc;
-    gettimeofday(&tv_loc, NULL);
-    struct tm *tm_utc = gmtime(&tv_loc.tv_sec);
-    uint16_t ts = (uint16_t)(tm_utc->tm_min * 600 + tm_utc->tm_sec * 10 + tv_loc.tv_usec / 100000);
-    write_le16(&message[21], ts);
+    // 范围: 0 ~ 35999 (表示 0.0s ~ 3599.9s)；无效值: 0xFFFF
+    //
+    // 关键：绝不能拿「1970-01-01 + 开机秒数」当年内时间用。设备没有 RTC，
+    // 未授时时 gettimeofday 给的是 1970 年，算出来的「小时内秒数」虽然落在
+    // 合法区间，却和真实时钟完全无关；System 报文那边更会直接溢出成 2057 年。
+    // 统一由 crid_time 提供时间：未校准就老老实实写「无效」。
+    {
+        uint64_t epoch = crid_time_epoch_ms();
+        if (epoch == 0) {
+            write_le16(&message[21], 0xFFFF);
+        } else {
+            uint32_t sec = (uint32_t)(epoch / 1000u);
+            uint32_t ts  = (sec % 3600u) * 10u + (uint32_t)((epoch % 1000u) / 100u);
+            if (ts > 35999u) ts = 35999u;
+            write_le16(&message[21], (uint16_t)ts);
+        }
+    }
 
     // 字节23: [Reserved2(4)][TSAccuracy(4)]
     message[23] = (0x00 << 4) | 0x02; // TSAccuracy = 0.2s
@@ -194,14 +240,26 @@ void crid_build_system_message(const cn_crid_config_t *config, uint8_t *message)
     // 字节10-11: 运行区域计数
     write_le16(&message[10], 1);
 
-    // 字节12: 运行区域半径（1 LSB = 10 m，与 opendroneid encodeAreaRadius 一致）
-    message[12] = 10; // 100 m
+    // 字节12: 运行区域半径（1 LSB = 10 m）
+    // 随盘旋半径自适应：高速时盘旋圈会变大，若还写死 100 m，无人机会绕到
+    // 自己声明的运行区域之外，是很容易被规则检查抓到的矛盾。
+    {
+        float area_r = config->patrol_radius_m * 2.0f + 50.0f;
+        if (area_r < 100.0f)  area_r = 100.0f;
+        if (area_r > 2550.0f) area_r = 2550.0f;
+        message[12] = (uint8_t)(area_r / 10.0f + 0.5f);
+    }
 
     // 字节13-14: 运行区域高度上限 (0.5m 精度, 偏移 -1000m)
-    write_le16(&message[13], encode_altitude(100.0f));
-
-    // 字节15-16: 运行区域高度下限 (0.5m 精度, 偏移 -1000m)
-    write_le16(&message[15], encode_altitude(50.0f));
+    // 字节15-16: 运行区域高度下限
+    // 以当前高度为中心各放宽 50 m，避免「区域写 50~100 m、实际飞到 150 m」的矛盾
+    {
+        float alt_hi = config->altitude_msl + 50.0f;
+        float alt_lo = config->altitude_msl - 50.0f;
+        if (alt_lo < 0.0f) alt_lo = 0.0f;
+        write_le16(&message[13], encode_altitude(alt_hi));
+        write_le16(&message[15], encode_altitude(alt_lo));
+    }
 
     // 字节17: [UA运行类别(7-4位)][UA等级(3-0位)] —— GB 42590 表 A.7
     message[17] = ((config->category_eu & 0x0F) << 4) | (config->class_eu & 0x0F);
@@ -210,10 +268,18 @@ void crid_build_system_message(const cn_crid_config_t *config, uint8_t *message)
     write_le16(&message[18], encode_altitude(config->operator_alt));
 
     // 字节20-23: 时间戳 (自 2019-01-01 00:00:00 UTC 的秒数，小端序)
-    struct timeval tv_sys;
-    gettimeofday(&tv_sys, NULL);
-    uint32_t ts_since_2019 = (uint32_t)(tv_sys.tv_sec - 1546300800);
-    write_le32_u32(&message[20], ts_since_2019);
+    // 0 = 未知。设备无 RTC，未授时时 system time 是 1970-01-01 + uptime，
+    // 直接相减会得到负数，强转 uint32 后变成 2057 年——这是最容易被一眼识破
+    // 的伪造特征，所以这里必须走统一时间基准并做下界保护。
+    {
+        uint64_t epoch = crid_time_epoch_ms();
+        uint32_t ts_since_2019 = 0;
+        if (epoch != 0) {
+            int64_t s = (int64_t)(epoch / 1000u) - 1546300800LL;
+            ts_since_2019 = (s > 0) ? (uint32_t)s : 0;
+        }
+        write_le32_u32(&message[20], ts_since_2019);
+    }
 
     // 字节24: 预留
 
@@ -256,11 +322,16 @@ void crid_build_auth_message(const cn_crid_config_t *config, uint8_t *message) {
     // 字节3: Length
     message[3] = 0;
 
-    // 字节4-7: Timestamp (relative to 2019-01-01)
-    struct timeval tv_auth;
-    gettimeofday(&tv_auth, NULL);
-    uint32_t ts_since_2019 = (uint32_t)(tv_auth.tv_sec - 1546300800);
-    write_le32_u32(&message[4], ts_since_2019);
+    // 字节4-7: Timestamp (relative to 2019-01-01)，未授时写 0（未知）
+    {
+        uint64_t epoch = crid_time_epoch_ms();
+        uint32_t ts_since_2019 = 0;
+        if (epoch != 0) {
+            int64_t s = (int64_t)(epoch / 1000u) - 1546300800LL;
+            ts_since_2019 = (s > 0) ? (uint32_t)s : 0;
+        }
+        write_le32_u32(&message[4], ts_since_2019);
+    }
 
     // 字节8-24: AuthData (17 bytes for page 0)
     // 全部置零表示无认证数据

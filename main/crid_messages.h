@@ -77,6 +77,18 @@ bool crid_build_beacon_frame(cn_crid_config_t *config,
 uint16_t crid_build_vendor_ie(cn_crid_config_t *config,
                               uint8_t *out, uint16_t max_len);
 
+/**
+ * @brief 定位精度档位（按 60 秒窗口轮换，GB42590 与 GB46750 共用同一套）
+ *
+ * 真实飞控的精度声明随卫星几何缓慢变化，写死常数是可检测的程序特征。
+ * 返回值即标准里的编码：水平 11=<3m / 12=<1m，垂直 4=<10m / 6=<1m，
+ * 速度 3=<1m/s / 4=<0.3m/s，气压 2=<45m / 4=<10m。
+ */
+uint8_t crid_acc_horiz(void);
+uint8_t crid_acc_vert(void);
+uint8_t crid_acc_speed(void);
+uint8_t crid_acc_baro(void);
+
 #ifdef __cplusplus
 }
 #endif

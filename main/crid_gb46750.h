@@ -88,15 +88,9 @@ extern "C" {
 uint16_t crid_build_gb46750_ie(cn_crid_config_t *config,
                                uint8_t *out, uint16_t max_len);
 
-/**
- * @brief 用浏览器时间校准设备时钟（GB46750 数据项 020 需要的 Unix 毫秒）
- *
- * 设备无 RTC、也不联网，靠网页上报当前时间建立偏移；未校准时数据项 020
- * 按标准写入 0（未知），不会发送无意义的时间值。
- *
- * @param epoch_ms 当前 Unix 毫秒时间戳（0 = 清除校准）
- */
-void crid_gb46750_set_epoch_ms(uint64_t epoch_ms);
+// 时间校准接口已统一到 crid_time.h（GB42590 / GB46750 共用同一基准）：
+//     void     crid_time_set_epoch_ms(uint64_t epoch_ms);
+//     uint64_t crid_time_epoch_ms(void);
 
 #ifdef __cplusplus
 }

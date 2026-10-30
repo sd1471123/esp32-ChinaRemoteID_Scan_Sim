@@ -9,3 +9,24 @@ CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partition_table/partitionTable.csv"
 # 完成全部初始化并调用 esp_ota_mark_app_valid_cancel_rollback() 后才算确认；
 # 若新固件在这之前崩溃/复位，引导器自动退回上一版可用的固件。
 CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE=y
+
+# ---- 蓝牙数据通道 + HTTPS（网页 Web Bluetooth 取数，腾出 Wi-Fi 上网看地图） ----
+# 只开 BLE 外设 + 广播角色：手机当中心设备连上来读数据，省 flash 与 RAM
+# （Bluedroid 双模用不上，NimBLE 体积只有它的一半左右）
+CONFIG_BT_ENABLED=y
+CONFIG_BT_BLUEDROID_ENABLED=n
+CONFIG_BT_NIMBLE_ENABLED=y
+CONFIG_BT_NIMBLE_ROLE_CENTRAL=n
+CONFIG_BT_NIMBLE_ROLE_OBSERVER=n
+CONFIG_BT_NIMBLE_ROLE_PERIPHERAL=y
+CONFIG_BT_NIMBLE_ROLE_BROADCASTER=y
+CONFIG_BT_NIMBLE_MAX_CONNECTIONS=1
+# Wi-Fi AP 与 BLE 共用一根天线，必须开软件共存
+CONFIG_ESP_COEX_SW_COEXIST_ENABLE=y
+
+# 浏览器只在安全上下文（https / localhost）里暴露 navigator.bluetooth，
+# 所以网页要能通过 https://192.168.4.1 打开。证书是自签的，见 main/certs/。
+CONFIG_ESP_HTTPS_SERVER_ENABLE=y
+# TLS 收发缓冲 16KB -> 4KB：设备同时跑 Wi-Fi AP + BLE + 日志，RAM 要省着用
+CONFIG_MBEDTLS_SSL_IN_CONTENT_LEN=4096
+CONFIG_MBEDTLS_SSL_OUT_CONTENT_LEN=4096

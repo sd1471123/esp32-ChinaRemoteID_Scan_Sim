@@ -228,6 +228,29 @@ checks = {
     "轨迹:说明写出合并300条": "合并成一条完整航线" in html and "最多 300 条" in html,
     "轨迹:说明折叠": "<summary>说明：记录了什么、能存多久、时间为什么不对</summary>" in html,
     "轨迹:说明写出降采样与容量": ("最快 5 秒一条" in html and "6.5 万条" in html),
+    # 记录开关：固件上电默认关闭，页面授时成功后才自动打开
+    "轨迹:记录开关按钮": ("id='lgsw'" in html and "onclick='logToggle()'" in html
+                      and "记录：关" in html),
+    "轨迹:授时后自动开记录": (".then(function(j){if(j&&j.ok)lgAutoOn();})" in html
+                        and "function lgAutoOn(){" in html),
+    "轨迹:手动关闭后不再自动开": "localStorage.getItem('lgoff')==='1'" in html,
+    "轨迹:开关接口": "/api/log/enable" in html and "body:JSON.stringify({on:on?1:0})" in html,
+    "轨迹:开关回填设备状态": "if(j.en!==undefined)lgSw(j.en);" in html,
+    "轨迹:说明写出默认关闭": "记录默认关闭" in html,
+    # 蓝牙取数：https + Web Bluetooth，连上后 /api 全走 BLE，Wi-Fi 可以腾出来
+    "蓝牙:连接按钮": ("id='blebtn'" in html and "onclick='bleGo()'" in html
+                  and "id='bleoff'" in html),
+    "蓝牙:UUID 与服务端一致": all(u in html for u in (
+        "6e400001-b5a3-f393-e0a9-e50e24dcca9e",
+        "6e400002-b5a3-f393-e0a9-e50e24dcca9e",
+        "6e400003-b5a3-f393-e0a9-e50e24dcca9e")),
+    "蓝牙:必须 https": "location.protocol!=='https:'" in html,
+    "蓝牙:按名称筛选设备": "filters:[{namePrefix:'ESP32-CRID'}]" in html,
+    "蓝牙:帧解析四类": all(("t===%d" % i) in html for i in (1, 2, 3, 4)),
+    "蓝牙:串行化请求": "const p=bleQ.then(function(){return bleDo(path);})" in html,
+    "蓝牙:fetch 只拦 GET /api": ("s.indexOf('/api/')===0" in html
+                          and "window.fetch=function(u,o)" in html),
+    "蓝牙:说明写出关 Wi-Fi 看地图": "可以把 Wi-Fi 关掉" in html,
     # 热点密码（WPA2）：挡住陌生人连入热点改参数 / 上传固件
     "密码:输入框存在且限长63": "id='ap_password'" in html and "maxlength='63'" in html,
     "密码:紧跟在 SSID 之后": 0 < html.find("id='ssid'") < html.find("id='ap_password'")

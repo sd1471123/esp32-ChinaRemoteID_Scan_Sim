@@ -681,6 +681,18 @@ catch(e){}
 if(Date.now()-sT>600000)syncTime();}
 var sT=0;
 let lgMac='',lgPage=0,lgPts=[],lgPlay=-1,lgTimer=null,lgRate=1;
+let lgOn=false;
+function lgSw(on){lgOn=!!on;var b=document.getElementById('lgsw');if(!b)return;
+b.textContent='记录：'+(lgOn?'开':'关');b.classList.toggle('on',lgOn);}
+function lgStore(v){try{localStorage.setItem('lgoff',v?'0':'1');}catch(e){}}
+async function lgEnable(on){try{const r=await fetch('/api/log/enable',{method:'POST',
+headers:{'Content-Type':'application/json'},body:JSON.stringify({on:on?1:0})});
+const j=await r.json();if(j&&j.ok){lgSw(j.on);return true;}}catch(e){}return false;}
+function logToggle(){const want=!lgOn;lgEnable(want).then(function(ok){if(!ok){lgSw(lgOn);
+msg('记录开关失败',false);return;}lgStore(want);msg(want?'轨迹记录已开启':'轨迹记录已关闭',true);
+if(want)logRefresh();});}
+function lgAutoOn(){if(lgOn)return;var off=false;try{off=localStorage.getItem('lgoff')==='1';}catch(e){}
+if(off)return;lgEnable(true);}
 let lgPath=[],lgPages=[],lgMatched=0,lgLoading=false;
 let lgOpen='';
 let lgHasMap=false;
@@ -978,9 +990,11 @@ if(q('lgused'))q('lgused').textContent=fmtKB(j.used)+' / '+fmtKB(j.total);
 if(q('lgrange'))q('lgrange').textContent=j.count?
 fmtT(j.oldest_unix,j.oldest_tick)+' → '+fmtT(j.newest_unix,j.newest_tick):'暂无记录';
 if(q('lgfill'))q('lgfill').style.width=(j.capacity?(j.count*100/j.capacity):0).toFixed(1)+'%';
+if(j.en!==undefined)lgSw(j.en);
 logTargets(j);
 }catch(e){}}
 function logExport(){
+if(bleOn){msg('导出 CSV 需要连回热点（蓝牙只传查询数据）',false);return;}
 const a=document.createElement('a');
 a.href='/api/log/export'+(lgMac?('?mac='+encodeURIComponent(lgMac)):'');
 a.download=lgMac?('crid_track_'+String(lgMac).replace(/:/g,'')+'.csv'):'crid_tracks.csv';
@@ -994,7 +1008,61 @@ else{msg('清空失败: '+(j.error||'未知错误'),false);}
 }catch(e){msg('清空失败: '+e,false);}}
 function syncTime(){sT=Date.now();try{fetch('/api/time',{method:'POST',
 headers:{'Content-Type':'application/json'},body:JSON.stringify({epoch_ms:sT})})
+.then(function(r){return r.json();}).then(function(j){if(j&&j.ok)lgAutoOn();})
 .catch(function(){});}catch(e){}}
+var BLE_SVC='6e400001-b5a3-f393-e0a9-e50e24dcca9e';
+var BLE_RXC='6e400002-b5a3-f393-e0a9-e50e24dcca9e';
+var BLE_TXC='6e400003-b5a3-f393-e0a9-e50e24dcca9e';
+var bleDev=null,bleRx=null,bleTx=null,bleOn=false,bleQ=Promise.resolve();
+var bleWait=null,bleBytes=[],bleTimer=null;
+function bleSecure(){return location.protocol==='https:'&&!!navigator.bluetooth;}
+function bleUI(){var bar=q('blebar'),t=q('bletxt'),b=q('blebtn'),o=q('bleoff');if(!bar)return;
+bar.classList.toggle('on',bleOn);
+if(t)t.textContent=bleOn?'蓝牙已连接，可以关掉 Wi-Fi 用流量看地图':
+(bleSecure()?'蓝牙取数未连接':'蓝牙需要 https://'+location.hostname+' 打开');
+if(b)b.style.display=bleOn?'none':'';if(o)o.style.display=bleOn?'':'none';}
+async function bleGo(){
+if(location.protocol!=='https:'){msg('蓝牙只能在 https://'+location.hostname+' 下启用',false);return;}
+if(!navigator.bluetooth){msg('这个浏览器不支持网页蓝牙（iPhone 自带 Safari 不支持）',false);return;}
+try{
+bleDev=await navigator.bluetooth.requestDevice({filters:[{namePrefix:'ESP32-CRID'}],
+optionalServices:[BLE_SVC]});
+bleDev.addEventListener('gattserverdisconnected',bleDown);
+const srv=await bleDev.gatt.connect();
+const svc=await srv.getPrimaryService(BLE_SVC);
+bleRx=await svc.getCharacteristic(BLE_RXC);
+bleTx=await svc.getCharacteristic(BLE_TXC);
+await bleTx.startNotifications();
+bleTx.addEventListener('characteristicvaluechanged',bleData);
+bleOn=true;bleUI();msg('蓝牙已连接，现在可以关闭 Wi-Fi',true);
+}catch(e){msg('蓝牙连接失败: '+((e&&e.message)||e),false);}}
+function bleDown(){bleOn=false;bleRx=null;bleTx=null;bleBytes=[];bleWait=null;bleUI();}
+function bleStop(){try{if(bleDev&&bleDev.gatt.connected)bleDev.gatt.disconnect();}catch(e){}
+bleDown();msg('蓝牙已断开',true);}
+function bleData(ev){const dv=ev.target.value,t=dv.getUint8(0);let i;
+if(t===1){bleBytes=[];}
+else if(t===2){for(i=1;i<dv.byteLength;i++)bleBytes.push(dv.getUint8(i));}
+else if(t===3){let txt='';try{txt=new TextDecoder('utf-8').decode(new Uint8Array(bleBytes));}
+catch(e){}bleBytes=[];if(bleWait){const f=bleWait;bleWait=null;f(txt);}}
+else if(t===4){bleBytes=[];if(bleWait){const g=bleWait;bleWait=null;g(null);}}}
+function bleDo(path){return new Promise(function(res,rej){
+if(!bleOn||!bleRx)return rej(new Error('蓝牙未连接'));
+bleWait=function(txt){if(txt===null)return rej(new Error('设备返回错误'));
+res({ok:true,json:async function(){return JSON.parse(txt);},text:async function(){return txt;}});};
+bleRx.writeValue(new TextEncoder().encode(path)).catch(function(e){bleWait=null;rej(e);});
+clearTimeout(bleTimer);
+bleTimer=setTimeout(function(){if(bleWait){bleWait=null;rej(new Error('蓝牙超时'));}},8000);});}
+function bleFetch(path){const p=bleQ.then(function(){return bleDo(path);});
+bleQ=p.catch(function(){});return p;}
+var _fetch=window.fetch?window.fetch.bind(window):null;
+window.fetch=function(u,o){
+const s=typeof u==='string'?u:((u&&u.url)||'');
+const m=(o&&o.method?String(o.method):'GET').toUpperCase();
+const isApi=s.indexOf('/api/')===0;
+if(bleOn&&isApi&&m!=='GET')return Promise.reject(new Error('蓝牙模式下不能改配置，请连回热点'));
+if(bleOn&&isApi)return bleFetch(s);
+return _fetch(u,o);};
+bleUI();
 setInterval(poll,2000);
 setInterval(logRefresh,8000);
 syncTime();

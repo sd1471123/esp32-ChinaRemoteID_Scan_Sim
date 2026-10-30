@@ -56,6 +56,7 @@ static uint16_t s_wslot;        // 扇区内槽位 0..PER_SEC-1
 static uint32_t s_count;
 static uint32_t s_dropped;
 static bool     s_ready;
+static volatile bool s_enabled;   // 记录开关：上电默认关闭，等网页授时后再开
 
 static QueueHandle_t     s_q;
 static SemaphoreHandle_t s_mux;
@@ -322,8 +323,18 @@ bool crid_log_ready(void) {
     return s_ready;
 }
 
+void crid_log_set_enabled(bool on) {
+    s_enabled = on;
+    ESP_LOGI(TAG, "记录%s", on ? "已开启" : "已关闭");
+}
+
+bool crid_log_enabled(void) {
+    return s_enabled;
+}
+
 void crid_log_append(const crid_log_rec_t *r) {
     if (!s_ready || r == NULL) return;
+    if (!s_enabled) return;               // 开关关闭时不入队，rx 侧照常解包
     if (xQueueSend(s_q, r, 0) != pdTRUE) s_dropped++;
 }
 
@@ -333,6 +344,7 @@ void crid_log_get_stats(crid_log_stats_t *out) {
     if (!s_ready) return;
 
     out->ready       = true;
+    out->enabled     = s_enabled;
     out->capacity    = capacity();
     out->total_bytes = (uint32_t)s_secs * SECTOR_SIZE;
     out->count       = s_count;

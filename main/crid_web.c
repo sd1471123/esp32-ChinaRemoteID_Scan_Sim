@@ -7,7 +7,9 @@
 #include "crid_web.h"
 #include "crid_wifi.h"
 #include "crid_rx.h"
+#include "esp_https_server.h"
 #include "crid_gb46750.h"
+#include "crid_time.h"
 #include "crid_ota.h"
 #include "crid_log.h"
 #include "page_gz.h"
@@ -297,6 +299,20 @@ static const char PAGE_HTML[] =
 "letter-spacing:0}"
 ".lghd .tog:after{content:'\\25BE';margin-left:4px;font-size:9px}"
 ".lghd.open .tog:after{content:'\\25B4'}"
+// 记录开关：固件上电默认关闭，网页授时成功后才自动打开（避免未对时的记录）
+".lgsw{margin-left:auto;flex:none;font-family:inherit;font-size:11.5px;font-weight:600;"
+"color:#9a6b00;background:#fff8e6;border:1px solid #f0d8a0;border-radius:12px;"
+"padding:2px 9px;cursor:pointer;letter-spacing:0}"
+".lgsw.on{color:#0f8a4d;background:#eef7f1;border-color:#cfe8db}"
+// 蓝牙取数条：连上后 /api 查询全走 BLE，Wi-Fi 可以腾出来
+".blebar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:8px 0 2px;"
+"padding:7px 10px;background:#f4f7fb;border:1px solid #dae4f0;border-radius:8px;"
+"font-size:12px;color:#41597a}"
+".blebar.on{background:#eef7f1;border-color:#cfe8db;color:#0f6a48}"
+".blebar .bfbtn{margin-left:auto;flex:none;font-family:inherit;font-size:11.5px;font-weight:600;"
+"color:#0b3d2e;background:#fff;border:1px solid #cfd8e3;border-radius:12px;"
+"padding:3px 10px;cursor:pointer}"
+".blebar .bfbtn:active{transform:scale(.97)}"
 ".lgbar{height:8px;border-radius:5px;background:#eef1f4;overflow:hidden;margin:10px 0}"
 ".lgbar i{display:block;width:0;height:100%;background:#1565c0;transition:width .3s}"
 ".lgrow{display:flex;align-items:center;gap:8px;padding:8px 10px;border:1px solid #e5e7eb;"
@@ -575,6 +591,9 @@ static const char PAGE_HTML[] =
 "红点=飞手，绿点=无人机，蓝点=实时广播位置，蓝线=飞行轨迹（最近约 8 分钟），绿圈=巡游范围。"
 "<br>地图以飞手位置为中心：选点对象为「飞手」时点击/拖动会同步按默认偏移生成无人机位置；"
 "选「无人机」时只改无人机位置。在线地图需手机保持移动数据，无网络时自动切换离线网格。"
+"<br>连着本机热点时手机没有外网，瓦片可能拉不下来：用 <b>https://192.168.4.1</b> 打开本页"
+"（首次会提示证书不安全，点「继续访问」），再点上面的「连接蓝牙」——之后所有数据走蓝牙，"
+"<b>可以把 Wi-Fi 关掉</b>用流量看地图。改配置和升级固件仍要连回热点。"
 "</div></details>"
 "</div>"
 "<div class='card span2' id='rxbox' style='display:none'><h3>接收监测</h3>"
@@ -588,6 +607,12 @@ static const char PAGE_HTML[] =
 "</div>"
 "<div class='rxbanner'><span class='dot live'></span>"
 "<span id='rxstate'>正在监听…</span></div>"
+// 蓝牙取数：连上后网页的所有 /api 查询改走 BLE，Wi-Fi 可以断开去用流量看地图
+"<div class='blebar' id='blebar'>"
+"<span id='bletxt'>蓝牙取数未连接</span>"
+"<button class='bfbtn' id='blebtn' type='button' onclick='bleGo()'>连接蓝牙</button>"
+"<button class='bfbtn' id='bleoff' type='button' onclick='bleStop()' style='display:none'>断开</button>"
+"</div>"
 // 接收端信号地图容器：默认隐藏，进入接收模式且 /rxmap.js 加载成功后才显示。
 // 容器 id 与发射端地图（map）完全不同，两张地图各自独立实例、互不干扰。
 "<div class='mapbox' id='rxmapbox' style='display:none'><div id='rxmap'></div>"
@@ -624,6 +649,7 @@ static const char PAGE_HTML[] =
 "<span>记录 <b id='lgcnt'>--</b> 条</span>"
 "<span>占用 <b id='lgused'>--</b></span>"
 "<span>时间范围 <b id='lgrange'>--</b></span>"
+"<button class='lgsw' id='lgsw' type='button' onclick='logToggle()'>记录：关</button>"
 "</div>"
 "<div class='lgbar'><i id='lgfill'></i></div>"
 "<div class='rxlist' id='lgtargets'></div>"
@@ -651,7 +677,11 @@ static const char PAGE_HTML[] =
 "</div>"
 "</div>"
 "<details class='tip'><summary>说明：记录了什么、能存多久、时间为什么不对</summary><div>"
-"只有<b>接收模式</b>才写入。每个目标<b>最快 5 秒一条</b>，位置变化超过 30 米时补记一条，"
+"<b>记录默认关闭</b>：设备没有 RTC，上电时时间是空的，先写下的条目只能记「上电计时」。"
+"所以固件上电不记录，打开本页时先<b>把手机时间同步给设备</b>，同步成功后才自动打开记录；"
+"首次打开卡片右侧的开关显示「记录：关」，授时完成后会变成绿色「记录：开」。"
+"手动点开关关掉后，这台手机下次打开页面不会再自动打开（想恢复就再点一次）。"
+"<br>只有<b>接收模式</b>才写入。每个目标<b>最快 5 秒一条</b>，位置变化超过 30 米时补记一条，"
 "所以高速飞行时点更密、悬停时最省。每条 64 字节，分区 4 MB 约 6.5 万条："
 "单目标约 90 小时，五个目标同时约 18 小时；写满后自动覆盖最旧的记录，不需要手动清理。"
 "<br>一条记录就是一次位置快照：时间、MAC、UAS ID 前 14 位、经纬度、大地高度、相对高度、"
@@ -1492,6 +1522,20 @@ static const char PAGE_HTML[] =
 // ---- 历史轨迹：统计、目标列表、分页轨迹点、航线回放、导出与清空 ----
 // 分页固定 30 条一页、最多 10 页（最近 300 条可在线翻），更早的走 CSV
 "let lgMac='',lgPage=0,lgPts=[],lgPlay=-1,lgTimer=null,lgRate=1;"
+// 记录开关状态：固件上电默认关闭，页面授时成功后自动打开（用户手动关过则本机记住）
+"let lgOn=false;"
+"function lgSw(on){lgOn=!!on;var b=document.getElementById('lgsw');if(!b)return;"
+"b.textContent='记录：'+(lgOn?'开':'关');b.classList.toggle('on',lgOn);}"
+"function lgStore(v){try{localStorage.setItem('lgoff',v?'0':'1');}catch(e){}}"
+"async function lgEnable(on){try{const r=await fetch('/api/log/enable',{method:'POST',"
+"headers:{'Content-Type':'application/json'},body:JSON.stringify({on:on?1:0})});"
+"const j=await r.json();if(j&&j.ok){lgSw(j.on);return true;}}catch(e){}return false;}"
+"function logToggle(){const want=!lgOn;lgEnable(want).then(function(ok){if(!ok){lgSw(lgOn);"
+"msg('记录开关失败',false);return;}lgStore(want);msg(want?'轨迹记录已开启':'轨迹记录已关闭',true);"
+"if(want)logRefresh();});}"
+// 授时完成后再打开记录：设备无 RTC，未对时写下的记录时间是 0（1970）
+"function lgAutoOn(){if(lgOn)return;var off=false;try{off=localStorage.getItem('lgoff')==='1';}catch(e){}"
+"if(off)return;lgEnable(true);}"
 // 回放要的是整个 300 条航线，不是当前页那 30 条：
 // lgPages[p] 缓存第 p 页（已翻成旧->新），lgPath 是各页按时间拼成的完整航线
 "let lgPath=[],lgPages=[],lgMatched=0,lgLoading=false;"
@@ -1805,9 +1849,11 @@ static const char PAGE_HTML[] =
 "if(q('lgrange'))q('lgrange').textContent=j.count?"
 "fmtT(j.oldest_unix,j.oldest_tick)+' → '+fmtT(j.newest_unix,j.newest_tick):'暂无记录';"
 "if(q('lgfill'))q('lgfill').style.width=(j.capacity?(j.count*100/j.capacity):0).toFixed(1)+'%';"
+"if(j.en!==undefined)lgSw(j.en);"
 "logTargets(j);"
 "}catch(e){}}"
 "function logExport(){"
+"if(bleOn){msg('导出 CSV 需要连回热点（蓝牙只传查询数据）',false);return;}"
 "const a=document.createElement('a');"
 "a.href='/api/log/export'+(lgMac?('?mac='+encodeURIComponent(lgMac)):'');"
 "a.download=lgMac?('crid_track_'+String(lgMac).replace(/:/g,'')+'.csv'):'crid_tracks.csv';"
@@ -1821,7 +1867,65 @@ static const char PAGE_HTML[] =
 "}catch(e){msg('清空失败: '+e,false);}}"
 "function syncTime(){sT=Date.now();try{fetch('/api/time',{method:'POST',"
 "headers:{'Content-Type':'application/json'},body:JSON.stringify({epoch_ms:sT})})"
+".then(function(r){return r.json();}).then(function(j){if(j&&j.ok)lgAutoOn();})"
 ".catch(function(){});}catch(e){}}"
+// ---- 蓝牙取数：手机离开热点后网页照样能读设备（Wi-Fi 腾出来给地图瓦片） ----
+// 只认 https + 支持 Web Bluetooth 的浏览器（浏览器不给 http://192.168.x.x 暴露蓝牙）
+"var BLE_SVC='6e400001-b5a3-f393-e0a9-e50e24dcca9e';"
+"var BLE_RXC='6e400002-b5a3-f393-e0a9-e50e24dcca9e';"
+"var BLE_TXC='6e400003-b5a3-f393-e0a9-e50e24dcca9e';"
+"var bleDev=null,bleRx=null,bleTx=null,bleOn=false,bleQ=Promise.resolve();"
+"var bleWait=null,bleBytes=[],bleTimer=null;"
+"function bleSecure(){return location.protocol==='https:'&&!!navigator.bluetooth;}"
+"function bleUI(){var bar=q('blebar'),t=q('bletxt'),b=q('blebtn'),o=q('bleoff');if(!bar)return;"
+"bar.classList.toggle('on',bleOn);"
+"if(t)t.textContent=bleOn?'蓝牙已连接，可以关掉 Wi-Fi 用流量看地图':"
+"(bleSecure()?'蓝牙取数未连接':'蓝牙需要 https://'+location.hostname+' 打开');"
+"if(b)b.style.display=bleOn?'none':'';if(o)o.style.display=bleOn?'':'none';}"
+"async function bleGo(){"
+"if(location.protocol!=='https:'){msg('蓝牙只能在 https://'+location.hostname+' 下启用',false);return;}"
+"if(!navigator.bluetooth){msg('这个浏览器不支持网页蓝牙（iPhone 自带 Safari 不支持）',false);return;}"
+"try{"
+"bleDev=await navigator.bluetooth.requestDevice({filters:[{namePrefix:'ESP32-CRID'}],"
+"optionalServices:[BLE_SVC]});"
+"bleDev.addEventListener('gattserverdisconnected',bleDown);"
+"const srv=await bleDev.gatt.connect();"
+"const svc=await srv.getPrimaryService(BLE_SVC);"
+"bleRx=await svc.getCharacteristic(BLE_RXC);"
+"bleTx=await svc.getCharacteristic(BLE_TXC);"
+"await bleTx.startNotifications();"
+"bleTx.addEventListener('characteristicvaluechanged',bleData);"
+"bleOn=true;bleUI();msg('蓝牙已连接，现在可以关闭 Wi-Fi',true);"
+"}catch(e){msg('蓝牙连接失败: '+((e&&e.message)||e),false);}}"
+"function bleDown(){bleOn=false;bleRx=null;bleTx=null;bleBytes=[];bleWait=null;bleUI();}"
+"function bleStop(){try{if(bleDev&&bleDev.gatt.connected)bleDev.gatt.disconnect();}catch(e){}"
+"bleDown();msg('蓝牙已断开',true);}"
+// 帧解析：01 起始(4 字节长度) / 02 数据 / 03 结束 / 04 错误
+"function bleData(ev){const dv=ev.target.value,t=dv.getUint8(0);let i;"
+"if(t===1){bleBytes=[];}"
+"else if(t===2){for(i=1;i<dv.byteLength;i++)bleBytes.push(dv.getUint8(i));}"
+"else if(t===3){let txt='';try{txt=new TextDecoder('utf-8').decode(new Uint8Array(bleBytes));}"
+"catch(e){}bleBytes=[];if(bleWait){const f=bleWait;bleWait=null;f(txt);}}"
+"else if(t===4){bleBytes=[];if(bleWait){const g=bleWait;bleWait=null;g(null);}}}"
+"function bleDo(path){return new Promise(function(res,rej){"
+"if(!bleOn||!bleRx)return rej(new Error('蓝牙未连接'));"
+"bleWait=function(txt){if(txt===null)return rej(new Error('设备返回错误'));"
+"res({ok:true,json:async function(){return JSON.parse(txt);},text:async function(){return txt;}});};"
+"bleRx.writeValue(new TextEncoder().encode(path)).catch(function(e){bleWait=null;rej(e);});"
+"clearTimeout(bleTimer);"
+"bleTimer=setTimeout(function(){if(bleWait){bleWait=null;rej(new Error('蓝牙超时'));}},8000);});}"
+// 串行化：同一个连接上同时发两个请求会把响应帧搅在一起
+"function bleFetch(path){const p=bleQ.then(function(){return bleDo(path);});"
+"bleQ=p.catch(function(){});return p;}"
+"var _fetch=window.fetch?window.fetch.bind(window):null;"
+"window.fetch=function(u,o){"
+"const s=typeof u==='string'?u:((u&&u.url)||'');"
+"const m=(o&&o.method?String(o.method):'GET').toUpperCase();"
+"const isApi=s.indexOf('/api/')===0;"
+"if(bleOn&&isApi&&m!=='GET')return Promise.reject(new Error('蓝牙模式下不能改配置，请连回热点'));"
+"if(bleOn&&isApi)return bleFetch(s);"
+"return _fetch(u,o);};"
+"bleUI();"
 "setInterval(poll,2000);"
 "setInterval(logRefresh,8000);"
 "syncTime();"
@@ -2378,6 +2482,7 @@ static esp_err_t handler_log_info(httpd_req_t *req) {
     }
 
     cJSON_AddBoolToObject(j, "ready", st.ready);
+    cJSON_AddBoolToObject(j, "en", st.enabled);
     cJSON_AddNumberToObject(j, "count", st.count);
     cJSON_AddNumberToObject(j, "capacity", st.capacity);
     cJSON_AddNumberToObject(j, "used", st.used_bytes);
@@ -2597,6 +2702,34 @@ static esp_err_t handler_log_clear(httpd_req_t *req) {
     return ESP_OK;
 }
 
+// 记录开关：{on:0|1}。开关只存在 RAM，上电默认关闭，网页授时成功后再打开
+static esp_err_t handler_log_enable(httpd_req_t *req) {
+    char buf[64];
+    int len = httpd_req_recv(req, buf, sizeof(buf) - 1);
+    if (len <= 0) {
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "no body");
+        return ESP_FAIL;
+    }
+    buf[len] = '\0';
+
+    bool on = false;
+    cJSON *j = cJSON_Parse(buf);
+    if (j != NULL) {
+        cJSON *it = cJSON_GetObjectItem(j, "on");
+        if (cJSON_IsNumber(it)) on = (it->valueint != 0);
+        else if (cJSON_IsBool(it)) on = cJSON_IsTrue(it);
+        cJSON_Delete(j);
+    }
+
+    crid_log_set_enabled(on);
+
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_set_hdr(req, "Cache-Control", "no-store");
+    httpd_resp_sendstr(req, on ? "{\"ok\":true,\"on\":true}"
+                               : "{\"ok\":true,\"on\":false}");
+    return ESP_OK;
+}
+
 // 实时广播位置（供网页地图显示蓝点，每 2 秒被前端轮询）
 static esp_err_t handler_status(httpd_req_t *req) {
     cn_crid_config_t *cfg = s_config;
@@ -2690,7 +2823,7 @@ static esp_err_t handler_time(httpd_req_t *req) {
         }
         cJSON_Delete(j);
     }
-    crid_gb46750_set_epoch_ms(ms);   // 0 = 清除校准
+    crid_time_set_epoch_ms(ms);   // 0 = 清除校准；GB42590 / GB46750 共用同一基准
 
     httpd_resp_set_type(req, "application/json");
     httpd_resp_sendstr(req, ms ? "{\"ok\":true}" : "{\"ok\":false}");
@@ -2712,8 +2845,54 @@ static const httpd_uri_t uris[] = {
     { .uri = "/api/log/points",.method = HTTP_GET,  .handler = handler_log_points, .user_ctx = NULL },
     { .uri = "/api/log/export",.method = HTTP_GET,  .handler = handler_log_export, .user_ctx = NULL },
     { .uri = "/api/log/clear", .method = HTTP_POST, .handler = handler_log_clear,  .user_ctx = NULL },
+    { .uri = "/api/log/enable",.method = HTTP_POST, .handler = handler_log_enable, .user_ctx = NULL },
     { .uri = "/favicon.ico",.method = HTTP_GET, .handler = handler_favicon,   .user_ctx = NULL },
 };
+
+// 证书由 CMakeLists 的 EMBED_TXTFILES 打进固件（main/certs/ 下的 PEM）
+extern const uint8_t servercert_pem_start[] asm("_binary_servercert_pem_start");
+extern const uint8_t servercert_pem_end[]   asm("_binary_servercert_pem_end");
+extern const uint8_t prvtkey_pem_start[]    asm("_binary_prvtkey_pem_start");
+extern const uint8_t prvtkey_pem_end[]      asm("_binary_prvtkey_pem_end");
+
+/**
+ * @brief 起一个 HTTPS 副本，供网页使用 Web Bluetooth
+ *
+ * 浏览器只在「安全上下文」里暴露 navigator.bluetooth，而 http://192.168.4.1
+ * 属于不安全来源，蓝牙会被直接隐藏。所以另开 443 端口跑同一套 handler：
+ * 用 https://192.168.4.1 打开时页面才拿得到蓝牙；用 http 打开则一切照旧。
+ *
+ * 证书是自签的（main/certs，ECDSA P-256，有效期到 2046），浏览器首次会提示
+ * 不安全，点「继续访问」即可——这不影响功能，只是没有第三方背书。
+ */
+static void start_https_server(void) {
+    httpd_ssl_config_t ssl_cfg = HTTPD_SSL_CONFIG_DEFAULT();
+    ssl_cfg.servercert     = servercert_pem_start;
+    ssl_cfg.servercert_len = (size_t)(servercert_pem_end - servercert_pem_start);
+    ssl_cfg.prvtkey_pem    = prvtkey_pem_start;
+    ssl_cfg.prvtkey_len    = (size_t)(prvtkey_pem_end - prvtkey_pem_start);
+
+    ssl_cfg.httpd.max_uri_handlers = sizeof(uris) / sizeof(uris[0]) + 2;
+    ssl_cfg.httpd.lru_purge_enable = true;
+    ssl_cfg.httpd.stack_size       = 10240;   // TLS 握手比明文更吃栈
+    ssl_cfg.httpd.max_open_sockets = 4;       // 每个 TLS 连接都要一份缓冲，别开太多
+    ssl_cfg.httpd.server_port      = 443;
+    ssl_cfg.port_secure            = 443;
+    ssl_cfg.tls_handshake_timeout_ms = 8000;
+
+    httpd_handle_t srv = NULL;
+    esp_err_t ret = httpd_ssl_start(&srv, &ssl_cfg);
+    if (ret != ESP_OK) {
+        // 内存不够时 TLS 起不来是常有的事，退化成只有 HTTP，功能不受影响
+        ESP_LOGW(TAG, "HTTPS 未启动（%s），蓝牙数据通道不可用，HTTP 正常",
+                 esp_err_to_name(ret));
+        return;
+    }
+    for (size_t i = 0; i < sizeof(uris) / sizeof(uris[0]); i++) {
+        httpd_register_uri_handler(srv, &uris[i]);
+    }
+    ESP_LOGI(TAG, "HTTPS 已启动: https://192.168.4.1");
+}
 
 esp_err_t crid_web_start(cn_crid_config_t *config) {
     if (config == NULL) return ESP_ERR_INVALID_ARG;
@@ -2742,5 +2921,6 @@ esp_err_t crid_web_start(cn_crid_config_t *config) {
     }
 
     ESP_LOGI(TAG, "Web config server started: http://192.168.4.1");
+    start_https_server();
     return ESP_OK;
 }
