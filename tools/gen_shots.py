@@ -409,13 +409,25 @@ def shoot(port, mode, out_name, height=None, width=1160, query=''):
             print('    !! 跳过 %s（无法确定高度）' % out_name)
             return
         print('    页面高度 = %d px' % height)
-    cmd = _edge_base(profile, width, height) + [
-        '--virtual-time-budget=25000',
-        '--screenshot=' + out,
-        'http://127.0.0.1:%d/%s' % (port, query),
-    ]
     print('>>> %s -> %s  (%dx%d)' % (mode, out, width, height))
-    subprocess.run(cmd, check=False, timeout=180)
+    # 三轮，与高度探测同一套退路：走代理 → 直连 → 直连且屏蔽外网。
+    # 航线回放要等 Leaflet 与瓦片，走代理时个别请求会挂住，--screenshot 迟迟不退出；
+    # 后两轮拉不到瓦片会退回内置离线网格，图照样能出。
+    for use_proxy, budget, tmo, extra in ((True, 25000, 180, []),
+                                          (False, 12000, 150, []),
+                                          (False, 12000, 150,
+                                           ['--host-resolver-rules=MAP * 127.0.0.1'])):
+        cmd = _edge_base(profile, width, height, use_proxy) + extra + [
+            '--virtual-time-budget=%d' % budget,
+            '--screenshot=' + out,
+            'http://127.0.0.1:%d/%s' % (port, query),
+        ]
+        try:
+            subprocess.run(cmd, check=False, timeout=tmo)
+            break
+        except subprocess.TimeoutExpired:
+            print('    ! 截图超时（%s，%ds）→ 重试' % (
+                ('走代理' if use_proxy else '直连') + ('+屏蔽外网' if extra else ''), tmo))
     if os.path.exists(out):
         print('    %d bytes' % os.path.getsize(out))
     else:
