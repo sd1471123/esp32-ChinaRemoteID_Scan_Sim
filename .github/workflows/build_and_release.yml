@@ -50,10 +50,61 @@ jobs:
         name: esp32-ChinaRemoteID_Scan_Sim-${{ matrix.target }}
         path: esp32-ChinaRemoteID_Scan_Sim-${{ matrix.target }}.zip
 
+  # 打包安卓 App：应用内「检查更新」直接从这个 Release 里取 apk
+  android:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Set up JDK 17
+      uses: actions/setup-java@v4
+      with:
+        distribution: temurin
+        java-version: '17'
+
+    - name: Set up Gradle
+      uses: gradle/actions/setup-gradle@v4
+
+    # tag 推 v2.0.2 时，APK 里的 versionName 也必须是 2.0.2，
+    # 否则应用内更新会一直以为还有新版
+    - name: Resolve app version
+      id: ver
+      run: |
+        if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+          V="${GITHUB_REF_NAME#v}"
+        else
+          V="0.0.0"
+        fi
+        MAJ=$(echo "$V" | cut -d. -f1)
+        MIN=$(echo "$V" | cut -d. -f2)
+        PAT=$(echo "$V" | cut -d. -f3 | tr -cd '0-9')
+        MAJ=${MAJ:-0}; MIN=${MIN:-0}; PAT=${PAT:-0}
+        CODE=$((10#$MAJ * 10000 + 10#$MIN * 100 + 10#$PAT))
+        echo "name=$V" >> "$GITHUB_OUTPUT"
+        echo "code=$CODE" >> "$GITHUB_OUTPUT"
+
+    - name: Build APK
+      run: |
+        cd android
+        chmod +x gradlew
+        ./gradlew assembleDebug --no-daemon \
+          -PappVersion=${{ steps.ver.outputs.name }} \
+          -PappVersionCode=${{ steps.ver.outputs.code }}
+        cp app/build/outputs/apk/debug/app-debug.apk \
+           ../CRID-Scanner-${{ steps.ver.outputs.name }}.apk
+
+    - name: Upload APK artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: crid-apk
+        path: CRID-Scanner-*.apk
+
   # 自动发布 Release（仅 tag 触发）：合并两芯片构建产物
   release:
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: build
+    needs: [build, android]
     runs-on: ubuntu-latest
 
     permissions:
@@ -72,6 +123,7 @@ jobs:
         files: |
           rel/esp32-ChinaRemoteID_Scan_Sim-esp32s3.zip
           rel/esp32-ChinaRemoteID_Scan_Sim-esp32c5.zip
+          rel/CRID-Scanner-*.apk
         tag_name: ${{ github.ref_name }}
         name: Release ${{ github.ref_name }}
         fail_on_unmatched_files: true
@@ -87,6 +139,10 @@ jobs:
           |------|--------|
           | ESP32-S3（N16R8 实测） | `esp32-ChinaRemoteID_Scan_Sim-esp32s3.zip` |
           | ESP32-C5（N16R8 实测） | `esp32-ChinaRemoteID_Scan_Sim-esp32c5.zip` |
+          | 安卓 App（可选） | `CRID-Scanner-<版本号>.apk` |
+
+          > App 顶部右侧的「检查更新」按钮会自动读本仓库 Release，发现版本号更高就提示下载安装。
+          > 首次安装需允许「安装未知应用」。
 
           每个 zip 内含：`remoteid_scanner/`（固件 + bootloader + 分区表）、
           `remoteid_scanner.bin`、`remoteid_scanner.elf`。

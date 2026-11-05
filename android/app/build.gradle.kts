@@ -5,20 +5,40 @@ plugins {
     id("org.jetbrains.kotlin.plugin.serialization")
 }
 
+// 版本号默认值，CI 可用 -PappVersion=2.0.2 -PappVersionCode=202 覆盖，
+// 保证 tag（v2.0.2）与 APK 内部 versionName 一致——否则应用内更新会一直提示有新版。
+val appVersion = (project.findProperty("appVersion") as String?) ?: "2.0.1"
+val appVersionCode = (project.findProperty("appVersionCode") as String?)?.toIntOrNull() ?: 201
+
 android {
     namespace = "com.crid.app"
     compileSdk = 35
+
+    signingConfigs {
+        // 固定签名：本地与 CI 共用同一把 key。
+        // 应用内更新要覆盖安装，签名一变系统就会拒绝（INSTALL_FAILED_UPDATE_INCOMPATIBLE）。
+        create("crid") {
+            storeFile = rootProject.file("keystore/debug.keystore")
+            storePassword = "android"
+            keyAlias = "androiddebugkey"
+            keyPassword = "android"
+        }
+    }
 
     defaultConfig {
         applicationId = "com.crid.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 7
-        versionName = "1.5"
+        versionCode = appVersionCode
+        versionName = appVersion
     }
 
     buildTypes {
+        debug {
+            signingConfig = signingConfigs.getByName("crid")
+        }
         release {
+            signingConfig = signingConfigs.getByName("crid")
             isMinifyEnabled = false
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }

@@ -1,23 +1,28 @@
 package com.crid.app.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -29,6 +34,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -151,6 +157,12 @@ fun SegRow(
     }
 }
 
+// 配置页所有输入框 / 下拉框的统一高度。
+// Material3 的 OutlinedTextField 自带 56dp 最小高度，而框里文字只有 14sp，
+// 一屏下来留白过多、「方框」显得又高又空，这里统一压到 44dp
+// （仍是 40dp 以上的点击区域，手指好点）。
+private val FieldHeight = 44.dp
+
 @Composable
 fun SelectRow(
     label: String,
@@ -164,14 +176,14 @@ fun SelectRow(
         Text(label, fontSize = 11.sp, color = CridGrey, fontWeight = FontWeight.SemiBold)
         OutlinedButton(
             onClick = { open = true },
-            // 高度/内边距跟 OutlinedTextField 对齐（都是 56dp + 上方 3~4dp 间距），
+            // 高度/内边距跟 OutlinedTextField 对齐（都是 FieldHeight + 上方 3dp 间距），
             // 这样下拉框与它左边的输入框并排时上下边框才在同一条线上。
             // 左右内边距收窄到 12dp，长选项名不至于一上来就被挤掉。
             contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp),
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(top = 3.dp)
-                .height(56.dp),
+                .height(FieldHeight),
         ) {
             Text(
                 text,
@@ -222,16 +234,36 @@ fun LabeledField(
     onValueChange: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val interaction = remember { MutableInteractionSource() }
+    val focused by interaction.collectIsFocusedAsState()
     Column(modifier.fillMaxWidth()) {
         Text(label, fontSize = 11.sp, color = CridGrey, fontWeight = FontWeight.SemiBold)
-        OutlinedTextField(
+        // 不用 OutlinedTextField：它自带 56dp 最小高度且不允许改，而框里文字只有 14sp，
+        // 一屏配置下来框又高又空。这里用 BasicTextField 自绘边框，高度与 SelectRow 统一。
+        BasicTextField(
             value = value,
             onValueChange = onValueChange,
             singleLine = true,
-            textStyle = MaterialTheme.typography.bodyMedium,
+            textStyle = MaterialTheme.typography.bodyMedium.copy(color = Color(0xFF111827)),
+            cursorBrush = SolidColor(CridGreen),
+            interactionSource = interaction,
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(top = 3.dp),
+                .padding(top = 3.dp)
+                .height(FieldHeight),
+            decorationBox = { inner ->
+                Box(
+                    Modifier
+                        .fillMaxSize()
+                        .border(
+                            width = if (focused) 2.dp else 1.dp,
+                            color = if (focused) CridGreen else Color(0xFF8E8E93),
+                            shape = RoundedCornerShape(6.dp),
+                        )
+                        .padding(horizontal = 12.dp),
+                    contentAlignment = Alignment.CenterStart,
+                ) { inner() }
+            },
         )
     }
 }

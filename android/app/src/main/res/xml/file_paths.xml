@@ -1,4 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <paths>
     <cache-path name="exports" path="exports/" />
+    <!-- 应用内更新：APK 先下到 cache/updates，再交给系统安装器 -->
+    <cache-path name="updates" path="updates/" />
 </paths>

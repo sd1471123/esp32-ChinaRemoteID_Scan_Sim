@@ -81,6 +81,7 @@ fun CridApp(vm: AppViewModel) {
                     containerColor = CridDark,
                     titleContentColor = Color.White,
                 ),
+                actions = { UpdateAction() },
             )
         },
         snackbarHost = { SnackbarHost(snackbar) },

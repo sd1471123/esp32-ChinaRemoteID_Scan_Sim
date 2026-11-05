@@ -272,6 +272,22 @@ gradlew.bat assembleDebug
 换通道（蓝牙 ↔ 热点）或重新连接会重置。校时成功会在底部提示
 「已自动校时 HH:mm:ss（蓝牙 / 热点）」，监控页与配置页的「设备时间」也会随之由橙变绿。
 
+**应用内更新**
+
+标题栏右上角的更新图标（↓）会读本仓库 GitHub Releases，取版本号最高且非草稿/非预发布的一条：
+
+1. 把 `tag_name` 当版本号（`v2.0.2` → `2.0.2`），与本机 `versionName` 按数字段逐位比较；
+2. 没有更高版本 → 弹「当前已是最新版本 v2.0.1」；
+3. 有更高版本 → 弹版本说明（Release body）+ 安装包大小，点「下载并安装」下到
+   `cache/updates/` 再交给系统安装器；该 Release 没传 APK 时按钮变成「打开发布页」。
+
+Android 8+ 装 APK 需要「安装未知应用」权限，第一次点下载会跳到授权页，允许后回来再点一次即可。
+
+APK 由 CI 在打 tag 时自动构建并附到 Release（`CRID-Scanner-<版本号>.apk`），
+构建时用 `-PappVersion=<tag去掉v>` 覆盖 `versionName`，保证「App 自报版本」与 tag 一致。
+签名固定用仓库里的 `android/keystore/debug.keystore`（本地与 CI 同一把 key）——
+签名一变系统就会拒绝覆盖安装，所以这把 key 不要换、也不要让 Android Studio 重新生成。
+
 **BLE 协议（改动固件时必须保持）**
 
 | 项 | 值 |
