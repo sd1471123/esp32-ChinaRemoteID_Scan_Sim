@@ -24,6 +24,16 @@ S3 固件不显示 5.8 GHz 选项）：
 
 ![航线回放](docs/webui_track.png)
 
+同时也提供**原生 Android 客户端**（`android/`，Kotlin + Compose），四个页面与网页版功能对齐。
+App 走 BLE 或热点取数，**不连热点也能看实时数据、改配置**（v2.0.1 起）：
+
+| 监控（蓝牙已连接 · 自动授时） | 轨迹（记录 / 导出 / 回放） | 配置（读写走蓝牙） |
+|---|---|---|
+| ![App 监控](docs/app_monitor.png) | ![App 轨迹](docs/app_log.png) | ![App 配置](docs/app_config.png) |
+
+> APK 在 [Releases](https://github.com/sd1471123/esp32-ChinaRemoteID_Scan_Sim/releases) 下载，
+> App 内右上角 ↓ 也能直接检查更新。
+
 ## 功能总览
 
 ### 发射模式（模拟器）
@@ -55,13 +65,15 @@ S3 固件不显示 5.8 GHz 选项）：
 - 接收端地图脚本作为**独立资源按需懒加载**（`/rxmap.js`），与发射端地图零符号共享，单点故障不影响页面其余功能
 - **网页内 OTA 升级**：点页面右上角「固件升级」选一个 `.bin` 即可换固件（裸流上传 + 进度条），双 app 分区轮换、镜像校验、断电保护、启动失败自动回滚，**不用数据线、不用装 ESP-IDF**
 - **接收端飞行轨迹持久化**：接收模式下把每个目标的位置快照写进 4 MB 环形日志分区（64 字节定长记录、扇区级擦除均摊磨损），断电不丢；网页可看目标列表、最近轨迹点、导出 CSV 一键下载。**记录默认关闭**，且授时**不会**自动打开它——开关完全由用户手动决定，每拨一次就存进设备 NVS，断电重启沿用上次选择，避免写下一堆 1970 年的记录
-- **蓝牙数据通道**：设备同时开一个 BLE 外设（NimBLE，Nordic UART 风格 UUID）。用 `https://192.168.4.1` 打开网页后点「连接蓝牙」，页面的所有查询（接收列表 / 轨迹分页 / 状态）改走蓝牙，**手机可以关掉 Wi-Fi、用移动数据看在线地图**；改配置和升级固件仍走热点
+- **蓝牙数据通道**：设备同时开一个 BLE 外设（NimBLE，Nordic UART 风格 UUID）。用 `https://192.168.4.1` 打开网页后点「连接蓝牙」，页面的所有查询（接收列表 / 轨迹分页 / 状态）改走蓝牙，**手机可以关掉 Wi-Fi、用移动数据看在线地图**；网页里的改配置与升级固件仍走热点
 
 ### 手机 App（Android）
 
 - 原生 Kotlin + Jetpack Compose 客户端（`android/`），与网页版功能对齐：**监控**（BLE 连接卡、统计、目标列表、轨迹详情、飞手位置、一键导航）、**地图**（osmdroid 实时打点、无人机与飞手不同图标、自动全览）、**轨迹**（记录开关、CSV 导出分享、按目标删除、30 条/页 × 10 页回放）、**配置**（全部参数读写、授时、恢复出厂、网页式 OTA 上传）
 - **连接即自动授时**：连上设备（蓝牙或热点）自动用手机系统时间校准设备时钟，之后每 10 分钟补一次；设备没有 RTC，不校时轨迹时间就是「未知」
-- **双通道**：BLE 已连接时所有读请求走蓝牙（手机可关热点、用移动数据看地图）；写操作（改配置 / 删记录 / OTA）只走热点 HTTPS。授时例外——走 `GET /api/time?ms=`，蓝牙通道也能校
+- **双通道**：BLE 已连接时所有读请求走蓝牙（手机可关热点、用移动数据看地图）；写操作也走蓝牙——
+  改配置用 `0x12/0x13` POST 帧、删记录 / 清空 / 导出用各自的 GET 变体；只有 OTA 上传要求连热点
+  （1.3 MB 级固件走 BLE 太慢）。授时走 `GET /api/time?ms=`
 - 前提是固件 **v2.0.1 起**：80 端口对 `GET /api/*` 放行明文，供设备内部的蓝牙桥接取 JSON（详见「Android 客户端」一节）
 
 ## 使用方法
@@ -137,8 +149,8 @@ idf.py -p COM3 flash monitor    # 烧录并打开串口监视器（Ctrl+] 退出
 
 | 芯片 | 文件 | 大小 | MD5 |
 |------|------|------|-----|
-| ESP32-S3 | `dist/remoteid_scanner_s3_v2.0.0.bin` | 1,385,168 B | `47973c0469a81acb07dde5a423421c07` |
-| ESP32-C5 | `dist/remoteid_scanner_c5_v2.0.0.bin` | 1,719,888 B | `35fd877253d5a5f5e6c8864f2323b726` |
+| ESP32-S3 | `dist/remoteid_scanner_s3_v2.0.1.bin` | 1,387,088 B | `6fabab408f06b66085fed236287c2f12` |
+| ESP32-C5 | `dist/remoteid_scanner_c5_v2.0.1.bin` | 1,722,112 B | `8c9d4c3b3e65943faff497be695f333f` |
 
 这两个文件**只含应用分区**，不能单独烧到空片——空片请用上面的 zip（或自己编）。
 它们只用于网页「固件升级」面板上传，见下一节。
@@ -184,8 +196,8 @@ esptool.py --chip esp32c5 --baud 460800 write_flash \
 >   「必须串口烧录」，都可以直接用网页上传，不需要数据线。
 
 - **升级文件**：本仓库 `dist/` 下的单芯片应用镜像，或自己编译出的 `build*/remoteid_scanner.bin`：
-  `dist/remoteid_scanner_s3_v2.0.0.bin`（约 1.38 MB，S3）、
-  `dist/remoteid_scanner_c5_v2.0.0.bin`（约 1.72 MB，C5）。
+  `dist/remoteid_scanner_s3_v2.0.1.bin`（约 1.39 MB，S3）、
+  `dist/remoteid_scanner_c5_v2.0.1.bin`（约 1.72 MB，C5）。
   Release 的 zip 也能用，解压出 `remoteid_scanner.bin` 即可；**不要**选整个 zip 或合并固件。
   两个 OTA 槽各 2 MB，C5 镜像装入后余量约 18%；芯片型号不符会在 `esp_ota_end` 校验阶段被拒，
   不会写坏当前正在运行的固件。
@@ -211,7 +223,8 @@ esptool.py --chip esp32c5 --baud 460800 write_flash \
 ## Android 客户端（手机 App）
 
 仓库里的 `android/` 是一个原生 Kotlin + Jetpack Compose 客户端，包名 `com.crid.app`，
-与网页版功能对齐。设计原则：**不改动任何既有接口**——读走 BLE 或热点 HTTPS，写只走热点 HTTPS。
+与网页版功能对齐。设计原则：**不改动任何既有接口**——读走 BLE 或热点 HTTPS，
+写也走 BLE（v2.0.1 起固件支持带请求体的 POST 帧），只有 OTA 上传要求连热点。
 
 | 项 | 版本 / 说明 |
 |---|---|
@@ -413,7 +426,7 @@ GB 42590-2023 附录 A.1.3.1.3 允许 **5725–5829 MHz**，对应 Wi-Fi 信道 
 
 ## 版本历史
 
-### v2.0.1 — Android 客户端 / 80 端口为蓝牙桥接放行明文 GET /api
+### v2.0.1 — Android 客户端 / 写操作也能走蓝牙 / 80 端口为桥接放行 GET
 
 新增原生 Android 客户端（`android/`，Kotlin + Compose），并修正一个从 v2.0.0 起就存在的
 功能缺口：**蓝牙数据通道在正式版上是坏的**。
@@ -425,13 +438,29 @@ GB 42590-2023 附录 A.1.3.1.3 允许 **5725–5829 MHz**，对应 Wi-Fi 信道 
   与这条本机 HTTP 桥接无关——所以这个坑一直没暴露。
 - **修法**：80 端口**先注册全部 `GET /api/*` 的 handler、最后才挂 `/*` 的 302 跳转**
   （httpd 按注册顺序匹配，具体路径优先）；`max_open_sockets` 2 → 3，handler 数同步放宽。
-  只放行 GET：`POST`（改配置、OTA、删记录）仍只在 HTTPS。启动日志变为
-  `Web 已就绪: https://192.168.4.1（80 端口放行 GET /api，其余 302 跳转）`。
-- **新增 `android/`**：监控 / 地图 / 轨迹 / 配置四页，BLE 读 + 热点 HTTPS 写的双通道；
-  APK 不入库，`cd android && gradlew.bat assembleDebug` 自编，详见「Android 客户端」一节。
-- **App 1.1 增补**：连接即自动授时（蓝牙或热点，之后每 10 分钟补一次），设备中途重启
-  也能在下一轮询里自动补校；网页与固件行为不变，只是 App 侧更省心。
-- 网页、REST 接口、BLE 帧格式**全部不变**，v2.0.0 的设备可直接网页 OTA 升到本版。
+  启动日志变为 `Web 已就绪: https://192.168.4.1（80 端口放行 GET /api，其余 302 跳转）`。
+- **新增 `android/`**：监控 / 地图 / 轨迹 / 配置四页，APK 不入库，
+  `cd android && gradlew.bat assembleDebug` 自编（Release 里也附了 `CRID-Scanner-<版本>.apk`），
+  详见「Android 客户端」一节。
+- **写操作也能走蓝牙**（App 1.2~1.4）：BLE 侧新增带请求体的 POST 帧（`0x12` 头帧 + `0x13` 续帧），
+  设备收到后自己用 HTTPS 打回本机 443，所以**不连热点也能改配置**；轨迹的删除 / 清空 / 导出
+  则给对应接口开了 GET 变体（`/api/log/del?mac=`、`/api/log/clear`、`/api/log/export`），
+  因为桥接只转发 GET。网页端的 POST 路径**一个字节没动**，行为完全不变。
+- **修「蓝牙写配置超时」**：设备自连 HTTPS 时只设了 `skip_cert_common_name_check`，
+  没给 cacert / crt_bundle，IDF 的 esp-tls 会直接判「No server verification option set」握手失败。
+  改为把内置自签证书（`CA:TRUE`，SAN 含 `192.168.4.1`）当信任锚传下去。
+- **MAC 过滤修复**：IDF 的 `httpd_query_key_value` 不解码百分号，浏览器 `encodeURIComponent`
+  把冒号变成 `%3A` 后解析失败、悄悄退化成「不过滤」（选某个目标却看到全部的点）。
+  新增 `query_mac()` 做 `%XX` 解码，网页与 App 的按目标查看 / 导出从此正确。
+- **CSV 净化**：UAS ID 是从报文整段拷来的 20 字节，可能带控制字符或逗号，原样写进 CSV
+  会串行、在 Excel 里表现为「换行没对齐」。导出时只保留可见 ASCII，逗号/引号替换为下划线。
+- **广播兜底**：断连后重新广播前先 `ble_gap_adv_stop()`，且设广播字段失败不再直接返回，
+  避免因 `EBUSY` 跳过 `adv_start` 导致板子彻底静默。
+- **App 界面**：连接即自动授时（之后每 10 分钟补一次）；配置页输入框统一 44dp（原 56dp 偏高）、
+  下拉框与输入框严格同高；顶栏 64→48dp、底栏 80→54dp（上下合计省 42dp）；修飞手位置
+  最后一行下拉把输入框压成 0 宽的错位；标题栏右上角新增「检查更新」读 GitHub Releases。
+- 网页、REST 接口、BLE 帧格式**向后兼容**：v2.0.0 的设备可直接网页 OTA 升到本版，
+  老版 App 用原有的纯 GET 帧也照旧能用。
 
 ### v2.0.0 — HTTPS 独占 / 断线重连修复 / 授时状态条与轨迹细节
 

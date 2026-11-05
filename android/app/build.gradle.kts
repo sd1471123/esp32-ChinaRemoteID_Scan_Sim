@@ -7,8 +7,15 @@ plugins {
 
 // 版本号默认值，CI 可用 -PappVersion=2.0.2 -PappVersionCode=202 覆盖，
 // 保证 tag（v2.0.2）与 APK 内部 versionName 一致——否则应用内更新会一直提示有新版。
+// versionCode 必须与 CI 用同一个公式（major*10000 + minor*100 + patch），
+// 否则本地编的包和 Release 里的包会互相「版本降级」，覆盖安装被系统拒绝。
 val appVersion = (project.findProperty("appVersion") as String?) ?: "2.0.1"
-val appVersionCode = (project.findProperty("appVersionCode") as String?)?.toIntOrNull() ?: 201
+val appVersionCode = (project.findProperty("appVersionCode") as String?)?.toIntOrNull()
+    ?: appVersion.split(".").let { p ->
+        (p.getOrNull(0)?.toIntOrNull() ?: 0) * 10000 +
+            (p.getOrNull(1)?.toIntOrNull() ?: 0) * 100 +
+            (p.getOrNull(2)?.toIntOrNull() ?: 0)
+    }
 
 android {
     namespace = "com.crid.app"

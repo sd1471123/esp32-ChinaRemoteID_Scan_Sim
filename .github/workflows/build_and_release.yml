@@ -131,18 +131,21 @@ jobs:
           ESP32-ChinaRemoteID_Scan_Sim 统一收发固件 ${{ github.ref_name }}
 
           单固件双模式：发射（GB 42590 / GB 46750 两档）+ 接收监测，
-          连接设备热点（默认 WPA2 口令 sd1471123，网页可改）访问 http://192.168.4.1 在线配置与切换。
+          连接设备热点（默认 WPA2 口令 sd1471123，网页可改）访问 https://192.168.4.1 在线配置与切换。
 
           ## 下载
 
-          | 芯片 | 完整包 |
+          | 芯片 / 客户端 | 完整包 |
           |------|--------|
           | ESP32-S3（N16R8 实测） | `esp32-ChinaRemoteID_Scan_Sim-esp32s3.zip` |
           | ESP32-C5（N16R8 实测） | `esp32-ChinaRemoteID_Scan_Sim-esp32c5.zip` |
-          | 安卓 App（可选） | `CRID-Scanner-<版本号>.apk` |
+          | 安卓 App（原生客户端） | `CRID-Scanner-<版本号>.apk` |
 
-          > App 顶部右侧的「检查更新」按钮会自动读本仓库 Release，发现版本号更高就提示下载安装。
-          > 首次安装需允许「安装未知应用」。
+          > **安卓 App**：监控 / 地图 / 轨迹 / 配置四页，与网页版功能对齐。
+          > 手机通过蓝牙直连设备，**不连热点也能看实时数据、改配置、删记录**（只有 OTA 升级要求连热点）；
+          > 连上即自动用手机时间给设备授时，之后每 10 分钟补一次。
+          > App 顶部右侧的「检查更新」按钮会自动读本仓库 Release，发现版本号更高就提示下载安装；
+          > 首次安装需允许「安装未知应用」。固件需 v2.0.1 起才支持 App 的写操作（老固件只能读）。
 
           每个 zip 内含：`remoteid_scanner/`（固件 + bootloader + 分区表）、
           `remoteid_scanner.bin`、`remoteid_scanner.elf`。
@@ -170,7 +173,7 @@ jobs:
 
           两个芯片均按 **16MB Flash** 构建，分区表为 factory + ota_0 + ota_1（各 2MB）
           加 4MB 的 ridlog 轨迹日志分区，应用镜像地址是 **0x20000**；烧录本版后即可在
-          网页 http://192.168.4.1 的「固件升级 (OTA)」卡片里直接上传 .bin 升级，不再需要数据线。
+          网页 https://192.168.4.1 的「固件升级 (OTA)」卡片里直接上传 .bin 升级，不再需要数据线。
           本 Release 由 CI 自动构建于 ${{ github.ref_name }}，功能说明见仓库 README。
         draft: false
         prerelease: false
