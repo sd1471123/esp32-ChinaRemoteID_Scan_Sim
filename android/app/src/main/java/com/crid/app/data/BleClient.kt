@@ -530,6 +530,108 @@ class BleClient(private val context: Context) {
     }
 
     /**
+     * 发一条带请求体的 POST（目前用于写配置 / 恢复出厂）。
+     *
+     * 固件原本只认「整包就是一条路径」的老格式，POST 需要分帧：
+     *   头帧  0x12 | 路径长度(1) | 请求体长度(2, 小端) | 路径 | 请求体开头
+     *   续帧  0x13 | 请求体后续
+     * 设备端收满 body_len 字节后才会转成一次 HTTP POST，所以帧必须按顺序、
+     * 不能重发（重发会让同一段 body 被写两遍）。这里每帧都走带响应的写，
+     * 失败就整条放弃，由上层提示重试。
+     * 响应仍是 0x01/0x02/0x03 那套通知，和 GET 共用同一个重组逻辑。
+     */
+    suspend fun post(path: String, body: String, timeoutMs: Long = 15_000): String =
+        requestMutex.withLock {
+            val g = gatt ?: throw IOException("蓝牙未连接")
+            if (_state.value !is BleState.Connected) throw IOException("蓝牙未连接")
+            val rx = rxChar ?: throw IOException("蓝牙通道未就绪")
+
+            val pb = path.toByteArray(Charsets.UTF_8)
+            val bb = body.toByteArray(Charsets.UTF_8)
+            if (pb.size > 95) throw IOException("请求路径过长（${pb.size} 字节）")
+            if (bb.size > 1536) throw IOException("请求体过长（${bb.size} 字节）")
+
+            if (mtu - 3 < 64) requestMtuInternal(g, TARGET_MTU)
+
+            if (resyncNeeded) {
+                ignoreFrames = true
+                delay(120)
+                synchronized(this) {
+                    buffer.reset()
+                    expected = -1
+                    armed = false
+                    ignoreFrames = false
+                }
+                resyncNeeded = false
+            }
+
+            val done = CompletableDeferred<String>()
+            synchronized(this) {
+                buffer.reset()
+                expected = -1
+                armed = false
+                pending = done
+            }
+
+            try {
+                val chunk = (mtu - 3).coerceIn(20, 244)
+
+                // 头帧：控制字节 + 长度 + 路径，剩下的空间优先灌请求体
+                val head = ByteArrayOutputStream()
+                head.write(0x12)
+                head.write(pb.size)
+                head.write(bb.size and 0xFF)
+                head.write((bb.size shr 8) and 0xFF)
+                head.write(pb)
+
+                var off = 0
+                val room = chunk - head.size()
+                if (room > 0 && bb.isNotEmpty()) {
+                    val n = minOf(room, bb.size)
+                    head.write(bb, 0, n)
+                    off = n
+                }
+                writeFrame(g, rx, head.toByteArray())
+
+                // 续帧
+                while (off < bb.size) {
+                    val n = minOf(chunk - 1, bb.size - off)
+                    val frame = ByteArray(n + 1)
+                    frame[0] = 0x13
+                    System.arraycopy(bb, off, frame, 1, n)
+                    writeFrame(g, rx, frame)
+                    off += n
+                }
+
+                withTimeout(timeoutMs) { done.await() }
+            } catch (e: TimeoutCancellationException) {
+                resyncNeeded = true
+                throw IOException("蓝牙写配置超时（MTU=$mtu）")
+            } catch (e: Exception) {
+                resyncNeeded = true
+                throw e
+            } finally {
+                synchronized(this) {
+                    if (pending === done) pending = null
+                    armed = false
+                }
+            }
+        }
+
+    /** 单次带响应写入，失败抛异常（POST 分帧不能像 GET 那样盲目重发） */
+    @SuppressLint("MissingPermission")
+    private suspend fun writeFrame(
+        g: BluetoothGatt,
+        c: BluetoothGattCharacteristic,
+        data: ByteArray,
+    ) {
+        val st = writeOnce(g, c, data, BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT)
+        if (st != BluetoothGatt.GATT_SUCCESS) {
+            throw IOException("蓝牙写入失败（status=$st，帧长 ${data.size}）")
+        }
+    }
+
+    /**
      * 固件把每次写入当作一条完整路径，必须一次写完（受 MTU-3 限制）。
      * 优先带响应写入；被 GATT 栈拒绝时再退回无响应写入。
      */

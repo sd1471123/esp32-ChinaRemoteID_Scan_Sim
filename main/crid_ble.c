@@ -15,6 +15,7 @@
 
 #include <string.h>
 #include <stdio.h>
+#include <stdlib.h>
 
 #include "esp_log.h"
 #include "esp_mac.h"
@@ -42,6 +43,20 @@ static const char *TAG = "CN_C-RID_BLE";
 #define BLE_F_ERR   0x04
 
 #define BLE_REQ_MAX 96      // 请求路径缓冲（够放 /api/log/points?limit=30&offset=270）
+#define BLE_REQ_BODY_MAX 1536   // POST 请求体上限（配置 JSON 约 700~900 字节）
+
+// ---- 手机 → 设备 方向的控制字节 ----
+// 老格式（网页在用）：整包就是一条 /api/... 路径，首字节必然是 '/'(0x2F)。
+// 新格式（App 写配置用）：首字节 0x12/0x13，与 '/' 天然区分，老客户端不受影响。
+#define BLE_RX_POST_HDR 0x12    // 0x12 | pathlen(1) | bodylen(2, 小端) | path | body 开头
+#define BLE_RX_POST_DAT 0x13    // 0x13 | body 续片
+
+typedef struct {
+    char     path[BLE_REQ_MAX];
+    uint16_t method;        // 0 = GET, 1 = POST
+    uint16_t body_len;
+    char    *body;          // POST 时堆分配，worker 用完 free
+} ble_req_t;
 
 // Nordic UART 风格 UUID：通用蓝牙调试工具（nRF Connect 等）可以直接连上看数据
 static const ble_uuid128_t s_svc_uuid = BLE_UUID128_INIT(
@@ -59,8 +74,18 @@ static uint16_t s_conn = BLE_HS_CONN_HANDLE_NONE;
 static uint8_t  s_own_addr_type;
 static char     s_name[24] = "ESP32-CRID";
 
-static QueueHandle_t s_req_q;      // 请求路径队列（元素 BLE_REQ_MAX）
+static QueueHandle_t s_req_q;      // 请求队列（元素 ble_req_t）
 static TaskHandle_t  s_worker;
+
+// 手机发来的 POST 请求体要分几帧才能写完（MTU 247 时每帧 244 字节），
+// 这里做一次简单重组。同时只有一个客户端、一次只有一条请求，用静态缓冲最省事。
+static struct {
+    bool     active;
+    char     path[BLE_REQ_MAX];
+    uint16_t body_len;
+    uint16_t got;
+    char     body[BLE_REQ_BODY_MAX];
+} s_rx;
 
 // ------------------------------------------------------------------
 // 工具
@@ -118,28 +143,37 @@ static void ble_send_start(int total) {
 /**
  * @brief 把本机 httpd 的响应读出来分片发给手机
  *
- * 只放行 /api/ 开头的 GET；响应体一律当二进制透传，网页侧再 JSON.parse。
+ * GET 走明文 80 端口（那里只放行 GET /api/ 前缀，延迟最低，轮询每秒一次靠它）；
+ * POST 走 HTTPS 443——80 端口按设计只放行 GET，写操作走加密口既不用破坏那条
+ * 策略，也不会把配置（含热点密码）明文过一遍。设备连自己，自签证书不校验。
+ *
+ * 响应体一律当二进制透传，App 侧再 JSON 解析。
  */
-static void ble_proxy(const char *path) {
-    if (path == NULL || path[0] != '/' || strncmp(path, "/api/", 5) != 0) {
+static void ble_proxy(const ble_req_t *r) {
+    const char *path = r->path;
+    if (path[0] != '/' || strncmp(path, "/api/", 5) != 0) {
         uint8_t e = 1;                       // 1 = 路径不合法
         ble_send(BLE_F_ERR, &e, 1);
         return;
     }
 
+    bool post = (r->method == 1);
     char ip[16];
     ap_ip_str(ip, sizeof(ip));
 
-    char url[160];
-    snprintf(url, sizeof(url), "http://%s%s", ip, path);
+    char url[176];
+    snprintf(url, sizeof(url), "%s://%s%s", post ? "https" : "http", ip, path);
 
     esp_http_client_config_t cfg = {
         .url = url,
-        .method = HTTP_METHOD_GET,
-        .timeout_ms = 5000,
-        .buffer_size = 512,
-        .buffer_size_tx = 256,
+        .method = post ? HTTP_METHOD_POST : HTTP_METHOD_GET,
+        // POST 要等 TLS 握手 + 写 flash，给宽一点
+        .timeout_ms = post ? 8000 : 5000,
+        .buffer_size = 1024,
+        .buffer_size_tx = 512,
         .disable_auto_redirect = true,
+        // 设备自己签的证书，链上不可能有可信 CA，这里跳过校验
+        .skip_cert_common_name_check = true,
     };
     esp_http_client_handle_t cli = esp_http_client_init(&cfg);
     if (cli == NULL) {
@@ -148,13 +182,22 @@ static void ble_proxy(const char *path) {
         return;
     }
 
-    esp_err_t err = esp_http_client_open(cli, 0);
+    if (post) esp_http_client_set_header(cli, "Content-Type", "application/json");
+
+    esp_err_t err = esp_http_client_open(cli, post ? r->body_len : 0);
     if (err != ESP_OK) {
         ESP_LOGW(TAG, "本机 HTTP 打开失败(%s): %s", path, esp_err_to_name(err));
         uint8_t e = 3;                       // 3 = 连接本机 httpd 失败
         ble_send(BLE_F_ERR, &e, 1);
         esp_http_client_cleanup(cli);
         return;
+    }
+
+    if (post && r->body_len > 0) {
+        int w = esp_http_client_write(cli, r->body, r->body_len);
+        if (w != (int)r->body_len) {
+            ESP_LOGW(TAG, "%s 请求体写入不完整 (%d/%u)", path, w, (unsigned)r->body_len);
+        }
     }
 
     int total = esp_http_client_fetch_headers(cli);
@@ -192,12 +235,38 @@ done:
     esp_http_client_cleanup(cli);
 }
 
+/** 把一条请求放进队列（队列满时丢最旧的一条，避免手机卡在一个旧请求上） */
+static void ble_enqueue(uint16_t method, const char *path, const char *body, uint16_t body_len) {
+    ble_req_t r;
+    memset(&r, 0, sizeof(r));
+    strncpy(r.path, path, sizeof(r.path) - 1);
+    r.method = method;
+    r.body_len = body_len;
+
+    if (method == 1 && body_len > 0) {
+        r.body = malloc(body_len);
+        if (r.body == NULL) {
+            uint8_t e = 5;                   // 5 = 设备内存不足
+            ble_send(BLE_F_ERR, &e, 1);
+            return;
+        }
+        memcpy(r.body, body, body_len);
+    }
+
+    if (xQueueSend(s_req_q, &r, 0) != pdTRUE) {
+        ble_req_t drop;
+        if (xQueueReceive(s_req_q, &drop, 0) == pdTRUE) free(drop.body);
+        xQueueSend(s_req_q, &r, 0);
+    }
+}
+
 /** 桥接任务：串行处理请求（一次只有一个手机，不需要并发） */
 static void ble_worker(void *arg) {
-    char path[BLE_REQ_MAX];
+    ble_req_t r;
     for (;;) {
-        if (xQueueReceive(s_req_q, path, portMAX_DELAY) == pdTRUE) {
-            if (s_conn != BLE_HS_CONN_HANDLE_NONE) ble_proxy(path);
+        if (xQueueReceive(s_req_q, &r, portMAX_DELAY) == pdTRUE) {
+            if (s_conn != BLE_HS_CONN_HANDLE_NONE) ble_proxy(&r);
+            free(r.body);
         }
     }
 }
@@ -212,19 +281,68 @@ static int chr_access(uint16_t conn, uint16_t attr, struct ble_gatt_access_ctxt 
     (void)arg;
 
     if (ctxt->op == BLE_GATT_ACCESS_OP_WRITE_CHR) {
-        char path[BLE_REQ_MAX];
+        // 一帧最多 MTU-3 字节（MTU 247 时 244），留点余量
+        uint8_t buf[260];
         uint16_t len = 0;
-        int rc = ble_hs_mbuf_to_flat(ctxt->om, path, sizeof(path) - 1, &len);
+        int rc = ble_hs_mbuf_to_flat(ctxt->om, buf, sizeof(buf) - 1, &len);
         if (rc != 0) return BLE_ATT_ERR_INVALID_ATTR_VALUE_LEN;
-        path[len] = '\0';
+        if (len == 0) return 0;
 
         s_conn = conn;
-        if (xQueueSend(s_req_q, path, 0) != pdTRUE) {
-            // 队列满：丢掉最旧的一条再放，避免网页卡死在一个旧请求上
-            char tmp[BLE_REQ_MAX];
-            xQueueReceive(s_req_q, tmp, 0);
-            xQueueSend(s_req_q, path, 0);
+
+        // ---- POST 头帧：0x12|pathlen|bodylen(2,小端)|path|body 开头 ----
+        if (buf[0] == BLE_RX_POST_HDR) {
+            if (len < 4) return BLE_ATT_ERR_INVALID_ATTR_VALUE_LEN;
+            uint8_t plen = buf[1];
+            uint16_t blen = (uint16_t)buf[2] | ((uint16_t)buf[3] << 8);
+            if (plen == 0 || plen >= sizeof(s_rx.path) || blen > BLE_REQ_BODY_MAX) {
+                return BLE_ATT_ERR_INVALID_ATTR_VALUE_LEN;
+            }
+            if (len < 4 + plen) return BLE_ATT_ERR_INVALID_ATTR_VALUE_LEN;
+
+            memcpy(s_rx.path, buf + 4, plen);
+            s_rx.path[plen] = '\0';
+            s_rx.body_len = blen;
+            s_rx.got = 0;
+            s_rx.active = true;
+
+            int off = 4 + plen;
+            int avail = len - off;
+            if (avail > (int)blen) avail = (int)blen;
+            if (avail > 0) {
+                memcpy(s_rx.body, buf + off, avail);
+                s_rx.got = (uint16_t)avail;
+            }
+            if (s_rx.got >= s_rx.body_len) {
+                s_rx.active = false;
+                ble_enqueue(1, s_rx.path, s_rx.body, s_rx.body_len);
+            }
+            return 0;
         }
+
+        // ---- POST 续片：0x13|data... ----
+        if (buf[0] == BLE_RX_POST_DAT) {
+            if (!s_rx.active) return BLE_ATT_ERR_UNLIKELY;
+            int avail = len - 1;
+            int room = (int)s_rx.body_len - (int)s_rx.got;
+            if (avail > room) avail = room;
+            if (avail > 0) {
+                memcpy(s_rx.body + s_rx.got, buf + 1, avail);
+                s_rx.got = (uint16_t)(s_rx.got + avail);
+            }
+            if (s_rx.got >= s_rx.body_len) {
+                s_rx.active = false;
+                ble_enqueue(1, s_rx.path, s_rx.body, s_rx.body_len);
+            }
+            return 0;
+        }
+
+        // ---- 老格式：整包就是一条 GET 路径（网页在用，必须原样支持）----
+        char path[BLE_REQ_MAX];
+        uint16_t n = len < sizeof(path) - 1 ? len : sizeof(path) - 1;
+        memcpy(path, buf, n);
+        path[n] = '\0';
+        ble_enqueue(0, path, NULL, 0);
         return 0;
     }
 
@@ -368,7 +486,7 @@ esp_err_t crid_ble_init(void) {
     esp_efuse_mac_get_default(mac);
     snprintf(s_name, sizeof(s_name), "ESP32-CRID-%02X%02X", mac[4], mac[5]);
 
-    s_req_q = xQueueCreate(4, BLE_REQ_MAX);
+    s_req_q = xQueueCreate(4, sizeof(ble_req_t));
     if (s_req_q == NULL) return ESP_ERR_NO_MEM;
 
     esp_err_t err = nimble_port_init();
@@ -393,8 +511,9 @@ esp_err_t crid_ble_init(void) {
 
     ble_svc_gap_device_name_set(s_name);
 
-    // 桥接任务：栈要够 http 客户端 + 512 字节缓冲，5120 在长 JSON 上偏紧
-    if (xTaskCreate(ble_worker, "crid_ble", 7168, NULL, 4, &s_worker) != pdPASS) {
+    // 桥接任务：GET 只需要 http 客户端 + 1KB 缓冲；POST 走 TLS，握手要几 KB 栈，
+    // 7168 会在首次握手时栈溢出，这里给到 12288。
+    if (xTaskCreate(ble_worker, "crid_ble", 12288, NULL, 4, &s_worker) != pdPASS) {
         return ESP_ERR_NO_MEM;
     }
 

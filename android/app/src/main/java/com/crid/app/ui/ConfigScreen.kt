@@ -99,7 +99,7 @@ fun ConfigScreen(vm: AppViewModel, state: UiState) {
         ) {
             Text("尚未读取到设备配置", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = CridGrey)
             Text(
-                "读取配置可走蓝牙；保存必须连接设备热点。",
+                "读取与保存都能走蓝牙，不必连设备热点。",
                 fontSize = 12.sp,
                 color = CridGrey,
                 modifier = Modifier.padding(top = 6.dp, bottom = 12.dp),
@@ -525,7 +525,7 @@ fun ConfigScreen(vm: AppViewModel, state: UiState) {
                 }
                 Text(
                     "连接成功后会自动用手机时间授时（每 10 分钟补一次）；开了记录后也可在这里手动重校。" +
-                        "授时可用蓝牙；恢复出厂需要连接设备热点。",
+                        "授时与恢复出厂都能走蓝牙；恢复出厂后设备会重启，连接会自动断开。",
                     fontSize = 11.sp,
                     color = CridGrey,
                     modifier = Modifier.padding(top = 4.dp),
@@ -609,7 +609,7 @@ fun ConfigScreen(vm: AppViewModel, state: UiState) {
                 Text(if (state.busy) "保存中…" else "保存配置", fontWeight = FontWeight.Bold)
             }
             Text(
-                "保存必须连接设备热点（https://192.168.4.1）。",
+                "有蓝牙时直接通过蓝牙写入，否则需要连接设备热点（https://192.168.4.1）。",
                 fontSize = 11.sp,
                 color = CridGrey,
                 modifier = Modifier

@@ -247,11 +247,19 @@ class DeviceRepository(context: Context) {
 
     suspend fun saveConfig(cfg: Config): Boolean = try {
         _state.update { it.copy(busy = true) }
-        val r = http.postConfig(cfg)
+        // 有蓝牙就走蓝牙：设备用自己签的证书从 443 打回本机 httpd（见 crid_ble.c），
+        // 手机不必连热点。写配置的请求体较大，走分帧 + 15 秒超时。
+        val r: ApiOk = if (ble.isConnected) {
+            json.decodeFromString<ApiOk>(
+                ble.post("/api/config", http.configPayload(cfg), 15_000)
+            )
+        } else {
+            http.postConfig(cfg)
+        }
         if (r.ok) {
             _state.update { it.copy(config = cfg) }
             message(
-                if (r.restarted == true) "已保存。热点/频段已变更，请重新连接设备热点"
+                if (r.restarted == true) "已保存。热点/频段已变更，请重新连接设备"
                 else "配置已保存并生效"
             )
             true
@@ -260,7 +268,7 @@ class DeviceRepository(context: Context) {
             false
         }
     } catch (e: Exception) {
-        message("保存需要连接设备热点（Wi-Fi 写操作）: ${e.message}")
+        message("保存失败（蓝牙与设备热点都不通）: ${e.message}")
         false
     } finally {
         _state.update { it.copy(busy = false) }
@@ -407,7 +415,11 @@ class DeviceRepository(context: Context) {
     }
 
     suspend fun resetConfig(): Boolean = try {
-        val r = http.reset()
+        val r: ApiOk = if (ble.isConnected) {
+            json.decodeFromString<ApiOk>(ble.post("/api/reset", "{}", 15_000))
+        } else {
+            http.reset()
+        }
         if (r.ok) {
             message(if (r.restarted == true) "已恢复出厂设置，热点已重建，请重新连接" else "已恢复出厂设置")
             loadConfig()
@@ -417,7 +429,7 @@ class DeviceRepository(context: Context) {
             false
         }
     } catch (e: Exception) {
-        message("恢复出厂需要连接设备热点: ${e.message}")
+        message("恢复出厂失败（蓝牙与设备热点都不通）: ${e.message}")
         false
     }
 

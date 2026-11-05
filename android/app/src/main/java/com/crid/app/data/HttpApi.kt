@@ -119,10 +119,16 @@ class HttpApi(private val base: String = "https://192.168.4.1") {
     suspend fun logEnableGet(on: Boolean): ApiOk =
         json.decodeFromString(getText("/api/log/enable?on=" + if (on) 1 else 0))
 
-    // ---------------- 写接口（仅 Wi-Fi 可用） ----------------
+    // ---------------- 写接口（热点 HTTPS，或经蓝牙桥接） ----------------
+
+    /**
+     * 配置请求体。抽出来是为了让「热点直发」和「蓝牙桥接」两条路发出的字节完全一致
+     * ——encodeDefaults 在这个类里开着，别处自己序列化会漏掉取默认值的字段。
+     */
+    fun configPayload(cfg: Config): String = json.encodeToString(Config.serializer(), cfg)
 
     suspend fun postConfig(cfg: Config): ApiOk =
-        json.decodeFromString(post("/api/config", jsonBody(json.encodeToString(Config.serializer(), cfg))))
+        json.decodeFromString(post("/api/config", jsonBody(configPayload(cfg))))
 
     suspend fun timePost(epochMs: Long): ApiOk =
         json.decodeFromString(post("/api/time", jsonBody("""{"epoch_ms":$epochMs}""")))
