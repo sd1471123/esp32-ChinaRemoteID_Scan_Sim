@@ -33,3 +33,14 @@ sdkconfig.esp32*
 # 后面的 !dist/*.bin 也就不会生效。
 dist/*
 !dist/*.bin
+
+# Android 工程：源码入库，构建产物与本地 SDK 路径不入库
+android/.gradle/
+android/.kotlin/
+android/.idea/
+android/build/
+android/app/build/
+android/local.properties
+*.iml
+*.apk
+*.aab

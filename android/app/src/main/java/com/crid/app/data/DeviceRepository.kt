@@ -1,0 +1,358 @@
+package com.crid.app.data
+
+import android.content.Context
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
+import kotlinx.serialization.decodeFromString
+import kotlinx.serialization.json.Json
+import java.io.File
+
+data class UiState(
+    val ble: BleState = BleState.Idle,
+    val devices: List<BleDeviceItem> = emptyList(),
+    /** "ble" / "wifi" / "none" */
+    val channel: String = "none",
+    val rx: RxResponse? = null,
+    val status: Status? = null,
+    val config: Config? = null,
+    val logInfo: LogInfo? = null,
+    val otaInfo: OtaInfo? = null,
+    val timeSynced: Boolean = false,
+    val busy: Boolean = false,
+    val message: String? = null,
+    val otaProgress: Float? = null,
+    val lastUpdate: Long = 0,
+)
+
+/**
+ * 双通道设备仓库：
+ *  - 读（GET /api/…）：蓝牙已连接时走 BLE，否则走设备热点 HTTPS
+ *  - 写（POST /api/…、OTA、CSV 导出）：必须走热点 HTTPS
+ */
+class DeviceRepository(context: Context) {
+
+    private val app = context.applicationContext
+    val ble = BleClient(app)
+    private val http = HttpApi()
+    private val json = Json {
+        ignoreUnknownKeys = true
+        isLenient = true
+        coerceInputValues = true
+    }
+
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val _state = MutableStateFlow(UiState())
+    val state: StateFlow<UiState> = _state.asStateFlow()
+
+    private var pollJob: Job? = null
+    private var tick = 0
+    private var lastProbe = 0L
+    private var lastErrAt = 0L
+    private var lastErrText = ""
+
+    init {
+        scope.launch {
+            ble.state.collect { s -> _state.update { it.copy(ble = s) } }
+        }
+        scope.launch {
+            ble.scanResults.collect { list -> _state.update { it.copy(devices = list) } }
+        }
+    }
+
+    // ---------------- 轮询 ----------------
+
+    fun startPolling() {
+        if (pollJob?.isActive == true) return
+        pollJob = scope.launch {
+            while (isActive) {
+                try {
+                    pollOnce()
+                } catch (_: Exception) {
+                }
+                delay(1000)
+            }
+        }
+    }
+
+    fun stopPolling() {
+        pollJob?.cancel()
+        pollJob = null
+    }
+
+    private suspend fun pollOnce() {
+        tick++
+        val viaBle = ble.isConnected
+        if (viaBle) {
+            try {
+                val rx = json.decodeFromString<RxResponse>(ble.request("/api/rx"))
+                _state.update {
+                    it.copy(rx = rx, channel = "ble", lastUpdate = System.currentTimeMillis())
+                }
+                if (tick % 2 == 0) loadStatus()
+                if (tick % 6 == 0) loadLogInfo()
+            } catch (e: Exception) {
+                pollError(e)
+            }
+            return
+        }
+
+        val now = System.currentTimeMillis()
+        if (_state.value.channel != "wifi" && now - lastProbe < 5000) return
+        lastProbe = now
+        try {
+            val rx = json.decodeFromString<RxResponse>(http.raw("/api/rx"))
+            _state.update {
+                it.copy(rx = rx, channel = "wifi", lastUpdate = now)
+            }
+            if (tick % 2 == 0) loadStatus()
+            if (tick % 6 == 0) loadLogInfo()
+        } catch (_: Exception) {
+            if (_state.value.channel == "wifi") {
+                _state.update { it.copy(channel = "none") }
+            }
+        }
+    }
+
+    private suspend fun loadStatus() {
+        try {
+            val st = json.decodeFromString<Status>(fetchText("/api/status"))
+            _state.update { it.copy(status = st, timeSynced = st.tsync != 0) }
+        } catch (_: Exception) {
+        }
+    }
+
+    // ---------------- 连接 ----------------
+
+    fun startScan() = ble.startScan()
+
+    fun stopScan() = ble.stopScan()
+
+    fun connect(address: String) {
+        scope.launch {
+            if (ble.connect(address)) {
+                message("蓝牙已连接，可以不连热点用流量查看数据")
+                loadConfig()
+            }
+        }
+    }
+
+    fun disconnect() {
+        ble.disconnect()
+        _state.update { it.copy(rx = null, channel = "none") }
+    }
+
+    // ---------------- 读取 ----------------
+
+    private suspend fun fetchText(path: String): String =
+        if (ble.isConnected) ble.request(path) else http.raw(path)
+
+    suspend fun loadConfig(): Config? = try {
+        val c = json.decodeFromString<Config>(fetchText("/api/config"))
+        _state.update { it.copy(config = c) }
+        c
+    } catch (e: Exception) {
+        message("读取配置失败: ${e.message}")
+        null
+    }
+
+    suspend fun loadLogInfo(): LogInfo? = try {
+        val info = json.decodeFromString<LogInfo>(fetchText("/api/log/info"))
+        _state.update { it.copy(logInfo = info) }
+        info
+    } catch (_: Exception) {
+        null
+    }
+
+    suspend fun loadLogPoints(mac: String, offset: Int, limit: Int = 30): LogPage? = try {
+        json.decodeFromString<LogPage>(fetchText("/api/log/points?limit=$limit&offset=$offset&mac=$mac"))
+    } catch (e: Exception) {
+        message("读取轨迹失败: ${e.message}")
+        null
+    }
+
+    suspend fun loadOtaInfo(): OtaInfo? = try {
+        val info = http.otaInfo()
+        _state.update { it.copy(otaInfo = info) }
+        info
+    } catch (e: Exception) {
+        message("读取固件信息失败（需连接设备热点）: ${e.message}")
+        null
+    }
+
+    // ---------------- 写入 ----------------
+
+    suspend fun saveConfig(cfg: Config): Boolean = try {
+        _state.update { it.copy(busy = true) }
+        val r = http.postConfig(cfg)
+        if (r.ok) {
+            _state.update { it.copy(config = cfg) }
+            message(
+                if (r.restarted == true) "已保存。热点/频段已变更，请重新连接设备热点"
+                else "配置已保存并生效"
+            )
+            true
+        } else {
+            message("保存失败: " + (r.err ?: r.error ?: "设备拒绝"))
+            false
+        }
+    } catch (e: Exception) {
+        message("保存需要连接设备热点（Wi-Fi 写操作）: ${e.message}")
+        false
+    } finally {
+        _state.update { it.copy(busy = false) }
+    }
+
+    suspend fun syncTime(ms: Long = System.currentTimeMillis()): Boolean = try {
+        if (ble.isConnected) {
+            val r = json.decodeFromString<ApiOk>(fetchText("/api/time?ms=$ms"))
+            if (r.ok) {
+                _state.update { it.copy(timeSynced = true) }
+                message("设备时间已校准")
+                true
+            } else {
+                message("设备拒绝了这个时间，请检查手机系统时间")
+                false
+            }
+        } else {
+            val r = http.timePost(ms)
+            if (r.ok) {
+                _state.update { it.copy(timeSynced = true) }
+                message("设备时间已校准")
+                true
+            } else {
+                message("设备拒绝了这个时间，请检查手机系统时间")
+                false
+            }
+        }
+    } catch (e: Exception) {
+        message("授时失败: ${e.message}")
+        false
+    }
+
+    suspend fun setLogEnabled(on: Boolean): Boolean = try {
+        val r = if (ble.isConnected) {
+            json.decodeFromString<ApiOk>(fetchText("/api/log/enable?on=" + if (on) 1 else 0))
+        } else {
+            http.logEnablePost(on)
+        }
+        if (r.ok) {
+            message(if (on) "已开启记录" else "已关闭记录")
+            loadLogInfo()
+            true
+        } else {
+            message("切换记录开关失败")
+            false
+        }
+    } catch (e: Exception) {
+        message("切换记录开关失败: ${e.message}")
+        false
+    }
+
+    suspend fun deleteLog(mac: String): Boolean = try {
+        val r = http.deleteLog(mac)
+        if (r.ok) {
+            message("已删除该目标的历史轨迹")
+            loadLogInfo()
+            true
+        } else {
+            message("删除失败: " + (r.err ?: r.error ?: "设备拒绝"))
+            false
+        }
+    } catch (e: Exception) {
+        message("删除需要连接设备热点: ${e.message}")
+        false
+    }
+
+    suspend fun clearLog(): Boolean = try {
+        val r = http.clearLog()
+        if (r.ok) {
+            message("历史记录已清空")
+            loadLogInfo()
+            true
+        } else {
+            message("清空失败: " + (r.err ?: r.error ?: "设备拒绝"))
+            false
+        }
+    } catch (e: Exception) {
+        message("清空需要连接设备热点: ${e.message}")
+        false
+    }
+
+    suspend fun resetConfig(): Boolean = try {
+        val r = http.reset()
+        if (r.ok) {
+            message(if (r.restarted == true) "已恢复出厂设置，热点已重建，请重新连接" else "已恢复出厂设置")
+            loadConfig()
+            true
+        } else {
+            message("恢复出厂失败")
+            false
+        }
+    } catch (e: Exception) {
+        message("恢复出厂需要连接设备热点: ${e.message}")
+        false
+    }
+
+    // ---------------- 导出 / OTA ----------------
+
+    suspend fun exportCsv(mac: String?): File? = try {
+        val csv = http.exportCsv(mac)
+        val dir = File(app.cacheDir, "exports").apply { mkdirs() }
+        val name = if (mac.isNullOrBlank()) {
+            "crid_tracks.csv"
+        } else {
+            "crid_track_" + mac.replace(":", "") + ".csv"
+        }
+        val f = File(dir, name)
+        f.writeText(csv)
+        message("CSV 已导出：${f.name}")
+        f
+    } catch (e: Exception) {
+        message("导出需要连接设备热点（蓝牙只传查询数据）: ${e.message}")
+        null
+    }
+
+    suspend fun otaUpload(file: File): Boolean = try {
+        val info = http.otaInfo()
+        _state.update { it.copy(otaProgress = 0f, busy = true) }
+        http.otaUpload(file, info.token) { sent, total ->
+            val p = if (total > 0) sent.toFloat() / total else 0f
+            _state.update { it.copy(otaProgress = p) }
+        }
+        _state.update { it.copy(otaProgress = 1f) }
+        message("升级包已写入，设备正在重启…")
+        true
+    } catch (e: Exception) {
+        message("升级失败（需连接设备热点）: ${e.message}")
+        false
+    } finally {
+        _state.update { it.copy(busy = false, otaProgress = null) }
+    }
+
+    fun clearMessage() = _state.update { it.copy(message = null) }
+
+    /** 轮询每秒一次，同样的错误只在内容变化或 5 秒后再次提示，避免刷屏。 */
+    private fun pollError(e: Exception) {
+        val text = "蓝牙读取失败: ${e.message}"
+        val now = System.currentTimeMillis()
+        if (text != lastErrText || now - lastErrAt > 5_000) {
+            lastErrText = text
+            lastErrAt = now
+            message(text)
+        }
+    }
+
+    private fun message(text: String) {
+        _state.update { it.copy(message = text) }
+    }
+}

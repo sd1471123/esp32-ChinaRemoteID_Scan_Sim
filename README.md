@@ -57,6 +57,12 @@ S3 固件不显示 5.8 GHz 选项）：
 - **接收端飞行轨迹持久化**：接收模式下把每个目标的位置快照写进 4 MB 环形日志分区（64 字节定长记录、扇区级擦除均摊磨损），断电不丢；网页可看目标列表、最近轨迹点、导出 CSV 一键下载。**记录默认关闭**，且授时**不会**自动打开它——开关完全由用户手动决定，每拨一次就存进设备 NVS，断电重启沿用上次选择，避免写下一堆 1970 年的记录
 - **蓝牙数据通道**：设备同时开一个 BLE 外设（NimBLE，Nordic UART 风格 UUID）。用 `https://192.168.4.1` 打开网页后点「连接蓝牙」，页面的所有查询（接收列表 / 轨迹分页 / 状态）改走蓝牙，**手机可以关掉 Wi-Fi、用移动数据看在线地图**；改配置和升级固件仍走热点
 
+### 手机 App（Android）
+
+- 原生 Kotlin + Jetpack Compose 客户端（`android/`），与网页版功能对齐：**监控**（BLE 连接卡、统计、目标列表、轨迹详情、飞手位置、一键导航）、**地图**（osmdroid 实时打点、无人机与飞手不同图标、自动全览）、**轨迹**（记录开关、CSV 导出分享、按目标删除、30 条/页 × 10 页回放）、**配置**（全部参数读写、授时、恢复出厂、网页式 OTA 上传）
+- **双通道**：BLE 已连接时所有读请求走蓝牙（手机可关热点、用移动数据看地图）；写操作（改配置 / 授时 / 删记录 / OTA）只走热点 HTTPS
+- 前提是固件 **v2.0.1 起**：80 端口对 `GET /api/*` 放行明文，供设备内部的蓝牙桥接取 JSON（详见「Android 客户端」一节）
+
 ## 使用方法
 
 1. 烧录固件后，手机连接热点 `ESP32-CRID-XXXX`，默认口令 **`sd1471123`**（SSID 与口令都能在网页改；忘记口令时插 USB 看串口启动日志）；
@@ -201,6 +207,83 @@ esptool.py --chip esp32c5 --baud 460800 write_flash \
   生成、只在 `/api/ota/info` 下发）只挡其它网页的跨站误提交，**不是权限控制**；
 - 只接受 `application/octet-stream`，体积上限 = 目标分区 2 MB，低于 32 KB 直接拒绝。
 
+## Android 客户端（手机 App）
+
+仓库里的 `android/` 是一个原生 Kotlin + Jetpack Compose 客户端，包名 `com.crid.app`，
+与网页版功能对齐。设计原则：**不改动任何既有接口**——读走 BLE 或热点 HTTPS，写只走热点 HTTPS。
+
+| 项 | 版本 / 说明 |
+|---|---|
+| Kotlin / AGP / Gradle | 2.1.20 / 8.7.3 / 8.14.6（wrapper 已带） |
+| compileSdk / targetSdk / minSdk | 35 / 35 / 26（Android 8.0 起） |
+| JDK | 17 |
+| UI | Jetpack Compose + Material3（BOM 2024.12.01） |
+| 网络 / 地图 | OkHttp 4.12.0（自签名证书 trust-all，仅连 192.168.4.1）/ osmdroid 6.1.20 |
+
+**构建**（产物在 `android/app/build/outputs/apk/debug/app-debug.apk`，仓库不收录 APK）：
+
+```bat
+cd android
+gradlew.bat assembleDebug
+```
+
+首次同步要联网拉 AGP / Compose 依赖；`gradle.properties` 已按 4 GB 内存机器调成
+`-Xmx1536m` + Kotlin 进程内编译，内存充足可自行调大。
+
+**四个页面**
+
+- **监控**：BLE 连接卡（扫描 / 连接 / 断开 / 打开 Wi-Fi 设置）、统计（在线目标 · RID 帧 · 总帧 ·
+  解析成功 · 队列溢出 · 设备时间）、目标列表（在线优先 + RSSI 排序）、轨迹详情、飞手位置、
+  实名登记号、高德 / 百度一键导航
+- **地图**：osmdroid 实时打点，无人机与飞手用不同图标，自动全览，右上角在线计数
+- **轨迹**：历史记录开关（`GET|POST /api/log/enable`）、条数 / 占用 / 目标数 / 时间范围、
+  CSV 导出与分享、清空、按目标删除、轨迹回放（30 条/页 × 最多 10 页，1x/2x/4x，进度滑杆）
+- **配置**：读取 / 修改 / 保存全部参数（角色、频段、RID 标准、信道、间隔、TX 身份与飞行参数、
+  巡游参数）、授时、恢复出厂、OTA（读固件信息 + 带 `X-OTA-Token` 上传 `.bin` 并显示进度）
+
+**双通道规则**
+
+- 读（GET）：BLE 已连接 → 全部走 BLE；否则走热点 HTTPS；两者都不通时每 5 秒探测一次热点
+- 写（POST / 上传 / 导出）：只走热点 HTTPS，包括 `/api/config`、`/api/time`、
+  `/api/log/enable`、`/api/log/del`、`/api/log/clear`、`/api/reset`、OTA 上传、CSV 导出
+- 轮询节奏：`/api/rx` 1 s、`/api/status` 2 s、`/api/log/info` 6 s
+
+**BLE 协议（改动固件时必须保持）**
+
+| 项 | 值 |
+|---|---|
+| 扫描名前缀 | `ESP32-CRID-` |
+| Service | `6e400001-b5a3-f393-e0a9-e50e24dcca9e` |
+| 写（RX） | `6e400002-b5a3-f393-e0a9-e50e24dcca9e`（UTF-8 路径） |
+| 通知（TX） | `6e400003-b5a3-f393-e0a9-e50e24dcca9e` |
+| 回包帧 | `0x01` + 4 字节大端总长 / `0x02` + 分片 / `0x03` 结束 / `0x04` + 错误码（1 路径非法、2 客户端失败、3 本机 HTTP 打不开、4 非 200） |
+
+- **一次 GATT 写入就是一条完整路径，不能分片**；路径 ≤ 94 字符；只允许 `GET /api/*`
+- 请求串行、8 秒超时；连接流程必须串行：发现服务 → 协商 MTU → 开通知并等 CCCD 写入成功 → 才置为已连接
+
+**固件侧前提（v2.0.1 起）**
+
+蓝牙桥接是设备自己用 HTTP 客户端访问 `http://192.168.4.1/api/...`（`crid_ble.c`，且
+`disable_auto_redirect = true`）。v2.0.0 时 80 端口只回 302，桥接把 302 当失败，
+手机端表现为「设备返回非 200」。所以 v2.0.1 改成：
+
+- 80 端口**先注册全部 `GET /api/*` 的具体 handler，最后才挂 `/*` 的 302 跳转**
+  （httpd 按注册顺序匹配，具体路径优先）；
+- 只放行 `GET /api/*`：`POST`（改配置、OTA、删记录）仍然只在 HTTPS 上；
+- `max_open_sockets` 由 2 调到 3（桥接一条 + 浏览器明文请求一条 + 余量），handler 数同步放宽；
+- 启动日志改为 `Web 已就绪: https://192.168.4.1（80 端口放行 GET /api，其余 302 跳转）`。
+
+> 安全边界：明文 GET 只在设备自己的热点内可达（WPA2 口令是这一层唯一的门禁）。
+> 放行后 `GET /api/ota/info` 的 `token` 也能从明文拿到，但那个 token 只用于挡
+> 别的网页跨站误提交，本来就不是权限控制；`POST /api/ota/upload` 仍然只在 HTTPS 上。
+
+**已知限制**
+
+- 连设备热点时手机通常没有外网，osmdroid 底图可能空白（标记与轨迹线不受影响），
+  离网用建议提前缓存区域底图
+- 仓库只放源码；APK 用上面的命令自己编，`debug` 签名，正式分发请自建 release 签名
+- 更细的交接说明（踩坑记录、验收清单）见 `android/HANDOFF.md`
+
 ## 项目结构
 
 ```
@@ -228,6 +311,10 @@ esptool.py --chip esp32c5 --baud 460800 write_flash \
 │   ├── rxmap_test.js             # 接收端地图模块 21 项隔离测试
 │   ├── extract_bin_page.py       # 固件 bin 内嵌页面核对
 │   └── json_monitor.py           # 旧版接收器串口 JSON 监视器
+├── android/                      # 手机 App（Kotlin + Compose）：BLE 读 + 热点 HTTPS 写
+│   ├── app/src/main/java/com/crid/app/data/   # HttpApi / BleClient / DeviceRepository / Models
+│   ├── app/src/main/java/com/crid/app/ui/     # 监控 / 地图 / 轨迹 / 配置 四个页面
+│   └── HANDOFF.md                # 交接说明：BLE 协议、双通道规则、踩坑与验收清单
 ├── .github/workflows/            # CI：push/tag 自动构建与发布 Release
 ├── CMakeLists.txt                # 根构建文件
 └── sdkconfig                     # 工程配置
@@ -286,14 +373,34 @@ GB 42590-2023 附录 A.1.3.1.3 允许 **5725–5829 MHz**，对应 Wi-Fi 信道 
 
 ## 版本历史
 
+### v2.0.1 — Android 客户端 / 80 端口为蓝牙桥接放行明文 GET /api
+
+新增原生 Android 客户端（`android/`，Kotlin + Compose），并修正一个从 v2.0.0 起就存在的
+功能缺口：**蓝牙数据通道在正式版上是坏的**。
+
+- **根因**：BLE 桥接（`crid_ble.c`）用 `http://192.168.4.1/api/...` 访问本机 httpd，
+  且 `disable_auto_redirect = true`；v2.0.0 把 80 端口改成只回 302 跳转 https 后，
+  桥接拿到 302 判定失败，回错误码 `0x04 04`，手机端提示「设备返回非 200」。
+  网页侧之所以还能用，是因为网页的蓝牙通道走浏览器的 `navigator.bluetooth` 直连 GATT，
+  与这条本机 HTTP 桥接无关——所以这个坑一直没暴露。
+- **修法**：80 端口**先注册全部 `GET /api/*` 的 handler、最后才挂 `/*` 的 302 跳转**
+  （httpd 按注册顺序匹配，具体路径优先）；`max_open_sockets` 2 → 3，handler 数同步放宽。
+  只放行 GET：`POST`（改配置、OTA、删记录）仍只在 HTTPS。启动日志变为
+  `Web 已就绪: https://192.168.4.1（80 端口放行 GET /api，其余 302 跳转）`。
+- **新增 `android/`**：监控 / 地图 / 轨迹 / 配置四页，BLE 读 + 热点 HTTPS 写的双通道；
+  APK 不入库，`cd android && gradlew.bat assembleDebug` 自编，详见「Android 客户端」一节。
+- 网页、REST 接口、BLE 帧格式**全部不变**，v2.0.0 的设备可直接网页 OTA 升到本版。
+
 ### v2.0.0 — HTTPS 独占 / 断线重连修复 / 授时状态条与轨迹细节
 
-**这一版起网页只走 HTTPS**：页面与全部接口只注册在 443，80 端口仅保留一次 302 跳转。
+**这一版起网页只走 HTTPS**：页面与全部接口只注册在 443，80 端口仅保留一次 302 跳转
+（v2.0.1 起额外对 `GET /api/*` 放行，见上一条）。
 低于 v2.0.0 的设备必须先**用 USB 完整烧录一次**（分区表在网页 OTA 引入时改过），
 之后才能完全依赖网页升级，详见「网页内 OTA 升级」。
 
 - **HTTP 只剩跳转**：`http://192.168.4.1/任意路径` 一律 302 到 `https://` 同名地址（带查询串），
-  书签不用改，也不必再维护两份 handler。HTTPS 因内存不足起不来时会自动退回
+  书签不用改，也不必再维护两份 handler（`GET /api/*` 例外，v2.0.1 起放行明文给蓝牙桥接）。
+  HTTPS 因内存不足起不来时会自动退回
   「HTTP 提供全部页面」的老模式，不会出现两种协议都打不开。
 - **修好「断开 Wi-Fi 再连就再也打不开」**（表现为 `ERR_CONNECTION_TIMED_OUT` 且永不自愈）：
   根因在 IDF 的 httpd 主循环——`select(..., NULL)` 无限等待，且只有还有空槽时才把
@@ -324,7 +431,8 @@ GB 42590-2023 附录 A.1.3.1.3 允许 **5725–5829 MHz**，对应 Wi-Fi 信道 
 - **HTTPS 入口**：加开 443 端口（ECDSA P-256 自签证书，`main/certs/`，有效期到 2046）——
   浏览器只在安全上下文里暴露 `navigator.bluetooth`，所以蓝牙能力必须有 HTTPS。
   当时与 80 端口并存、跑同一套 handler；**v2.0.0 正式版起 80 端口只做 302 跳转**，
-  页面与接口只走 HTTPS（见上一节）。
+  页面与接口只走 HTTPS（见上一节）。这条改动当时**把本机蓝牙桥接打断了**，
+  v2.0.1 已对 `GET /api/*` 单独放行修复。
 - **蓝牙数据通道**：BLE 外设用 NimBLE（只开外设 + 广播角色，省体积），
   广播名 `ESP32-CRID-xxxx`，服务 UUID `6e400001-…`（Nordic UART 风格，nRF Connect 也能连）。
   手机写入请求路径（如 `/api/rx`），设备内部用 HTTP 客户端访问自己的 httpd 取 JSON，

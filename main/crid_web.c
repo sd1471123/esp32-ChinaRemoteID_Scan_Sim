@@ -3359,10 +3359,12 @@ esp_err_t crid_web_start(cn_crid_config_t *config) {
     // 默认的 uri_match_fn 是「字符串全等」，认不出 "/*"；跳转 handler 要靠通配匹配所有路径
     http_cfg.uri_match_fn = httpd_uri_match_wildcard;
     if (https_ok) {
-        // 正常路径：80 端口只做 302 跳转，一个通配 handler 足够
-        http_cfg.max_uri_handlers = 2;
-        // 只需要「一条 TCP 在建跳转 + 3 个内部 socket」的余量；省下的池子留给 HTTPS 与蓝牙
-        http_cfg.max_open_sockets = 2;
+        // 正常路径：80 端口给蓝牙桥接放行明文 GET /api/*，其余路径 302 跳转 https。
+        // crid_ble.c 的桥接客户端访问 http://<AP_IP>/api/…，若这里全部跳转，
+        // 它会拿到 302 并当成失败（手机端表现为「设备返回非 200」）。
+        http_cfg.max_uri_handlers = sizeof(uris) / sizeof(uris[0]) + 2;
+        // 蓝牙桥接一次一条连接，再加一条给浏览器的明文请求就够；其余 socket 留给 HTTPS
+        http_cfg.max_open_sockets = 3;
         http_cfg.stack_size = 4096;
     } else {
         // 降级路径：跟以前一样，全部 handler 挂到 80 端口
@@ -3386,11 +3388,21 @@ esp_err_t crid_web_start(cn_crid_config_t *config) {
         return https_ok ? ESP_OK : ret;
     }
     if (https_ok) {
+        // 先注册具体的 GET /api/*，最后挂通配跳转：httpd 按注册顺序匹配，
+        // 这样蓝牙桥接拿到 200，页面/其它路径仍然 302 到 https。
+        for (size_t i = 0; i < sizeof(uris) / sizeof(uris[0]); i++) {
+            if (uris[i].method == HTTP_GET && strncmp(uris[i].uri, "/api/", 5) == 0) {
+                esp_err_t r = httpd_register_uri_handler(server, &uris[i]);
+                if (r != ESP_OK) {
+                    ESP_LOGW(TAG, "注册明文接口 %s 失败: %s", uris[i].uri, esp_err_to_name(r));
+                }
+            }
+        }
         esp_err_t r = httpd_register_uri_handler(server, &uri_redirect);
         if (r != ESP_OK) {
             ESP_LOGW(TAG, "注册 https 跳转失败（%s），直接输 http 会打不开", esp_err_to_name(r));
         }
-        ESP_LOGI(TAG, "Web 已就绪: https://192.168.4.1（80 端口仅 302 跳转）");
+        ESP_LOGI(TAG, "Web 已就绪: https://192.168.4.1（80 端口放行 GET /api，其余 302 跳转）");
     } else {
         register_all_uris(server);
         ESP_LOGW(TAG, "Web 已就绪: http://192.168.4.1（HTTPS 未启动，蓝牙通道不可用）");
