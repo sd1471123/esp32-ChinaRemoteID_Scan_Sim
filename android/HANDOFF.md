@@ -92,11 +92,12 @@ idf.py build
 ### 4.3 双通道规则
 
 - 读（GET）：BLE 已连接时全部走 BLE；否则走热点 HTTPS；两者都没有时每 5 秒探测热点。
-- 写（POST/上传/导出）：只走热点 HTTPS。包括 `/api/config`、`/api/log/enable`（POST 形态）、
-  `/api/log/del`、`/api/log/clear`、`/api/reset`、OTA 上传、CSV 导出。
-- 授时例外：走 `GET /api/time?ms=<毫秒>`（BLE 桥接只转发 GET，蓝牙通道也能校时），
-  没有蓝牙时才用 `POST /api/time`。自动授时的节流：真实请求间隔 ≥ 8 秒、
-  连续失败 3 次即静默（换通道或重连重置）、成功后 10 分钟内不重复发。
+- 写：`/api/config`、`/api/reset`、OTA 上传只走热点 HTTPS。
+- 轨迹操作走蓝牙也可以：固件为 `/api/log/del`、`/api/log/clear`、`/api/log/export` 开了 GET 变体
+  （`/api/log/del?mac=…`、`/api/log/clear`、`/api/log/export[?mac=…]`），因为桥接只转发 GET。
+  导出回包大时蓝牙很慢（满盘几 MB），App 侧把蓝牙超时放宽到 90 秒，界面仍建议大文件连热点。
+- 授时同理：走 `GET /api/time?ms=<毫秒>`，没有蓝牙时才用 `POST /api/time`。自动授时的节流：
+  真实请求间隔 ≥ 8 秒、连续失败 3 次即静默（换通道或重连重置）、成功后 10 分钟内不重复发。
 - 轮询节奏：`/api/rx` 1s、`/api/status` 2s、`/api/log/info` 6s。
 
 ### 4.4 BLE 协议（务必保持）

@@ -1900,17 +1900,24 @@ static const char PAGE_HTML[] =
 "document.body.appendChild(a);a.click();a.remove();}"
 "async function logClear(){"
 "if(!confirm('确定清空全部历史轨迹记录？清空后无法恢复。'))return;"
-"try{const r=await fetch('/api/log/clear',{method:'POST'});const j=await r.json();"
+"try{var r;"
+"if(bleOn){r=await fetch('/api/log/clear');}"
+"else{r=await fetch('/api/log/clear',{method:'POST'});}"
+"const j=await r.json();"
 "if(j.ok){logClose();"
 "logRefresh();msg('历史记录已清空',true);}"
 "else{msg('清空失败: '+(j.error||'未知错误'),false);}"
 "}catch(e){msg('清空失败: '+e,false);}}"
 // 删除单个目标：只作废这台无人机的记录，其他目标不受影响。设备端用 seq 墓碑实现，
 // 不擦 flash，所以毫秒级完成，而且重启后不会复活。
+// 蓝牙模式改走 GET（桥接只转发 GET），回包字段与 POST 版完全一致。
 "async function logDel(mac){"
 "if(!confirm('删除 '+String(mac).toUpperCase()+' 的全部历史轨迹？\\n删除后该目标会从列表消失，其他目标不受影响。'))return;"
-"try{const r=await fetch('/api/log/del',{method:'POST',"
-"headers:{'Content-Type':'application/json'},body:JSON.stringify({mac:mac})});const j=await r.json();"
+"try{var r;"
+"if(bleOn){r=await fetch('/api/log/del?mac='+encodeURIComponent(mac));}"
+"else{r=await fetch('/api/log/del',{method:'POST',"
+"headers:{'Content-Type':'application/json'},body:JSON.stringify({mac:mac})});}"
+"const j=await r.json();"
 "if(j.ok){if(lgMac===mac)logClose();logRefresh();msg('已删除该目标的历史记录',true);}"
 "else{msg('删除失败: '+(j.error||'未知错误'),false);}"
 "}catch(e){msg('删除失败: '+e,false);}}"
@@ -2549,6 +2556,44 @@ static bool log_parse_mac(const char *s, uint8_t mac[6]) {
     return n == 6;
 }
 
+/**
+ * @brief 从 query 里取 mac 并做百分号解码
+ *
+ * IDF 的 httpd_query_key_value 明确不解码（见 esp_http_server.h 注释），而浏览器侧的
+ * encodeURIComponent 会把冒号变成 %3A，直接交给 log_parse_mac 会在 '%' 处失败、
+ * 悄悄退化成「不过滤」，于是网页选某个目标却看到所有目标的点、导出也变成全量。
+ * 这里只处理 %XX（MAC 用不到 '+' 表示空格的那套语义）。
+ */
+static bool query_mac(httpd_req_t *req, uint8_t mac[6]) {
+    char qs[128], v[48], dec[48];
+    if (httpd_req_get_url_query_str(req, qs, sizeof(qs)) != ESP_OK) return false;
+    if (httpd_query_key_value(qs, "mac", v, sizeof(v)) != ESP_OK) return false;
+
+    size_t o = 0;
+    for (size_t i = 0; v[i] != '\0' && o < sizeof(dec) - 1; i++) {
+        char c = v[i];
+        if (c == '%') {
+            int hi = -1, lo = -1;
+            char a = v[i + 1], b = v[i + 2];
+            if (a >= '0' && a <= '9')      hi = a - '0';
+            else if (a >= 'a' && a <= 'f') hi = a - 'a' + 10;
+            else if (a >= 'A' && a <= 'F') hi = a - 'A' + 10;
+            if (b >= '0' && b <= '9')      lo = b - '0';
+            else if (b >= 'a' && b <= 'f') lo = b - 'a' + 10;
+            else if (b >= 'A' && b <= 'F') lo = b - 'A' + 10;
+            if (hi >= 0 && lo >= 0) {
+                dec[o++] = (char)((hi << 4) | lo);
+                i += 2;
+                continue;
+            }
+            return false;               // 残缺的转义序列，当非法处理
+        }
+        dec[o++] = c;
+    }
+    dec[o] = '\0';
+    return log_parse_mac(dec, mac);
+}
+
 #define LOG_POINTS_MAX 120   // 单次最多返回条数：再多 cJSON 树会把堆吃穿
 
 static esp_err_t handler_log_info(httpd_req_t *req) {
@@ -2615,11 +2660,15 @@ static esp_err_t handler_log_points(httpd_req_t *req) {
     // 分页偏移：网页每页 30 条，最多翻 10 页，所以实际最大 270；上限留点余量
     uint32_t offset = 0;
 
+    uint8_t mac[6] = { 0 };
+    bool filter = query_mac(req, mac);      // 自带百分号解码，见 query_mac 注释
+    if (filter) {
+        snprintf(mac_s, sizeof(mac_s), "%02X:%02X:%02X:%02X:%02X:%02X",
+                 mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+    }
+
     if (httpd_req_get_url_query_str(req, qs, sizeof(qs)) == ESP_OK) {
         char v[24];
-        if (httpd_query_key_value(qs, "mac", v, sizeof(v)) == ESP_OK) {
-            strncpy(mac_s, v, sizeof(mac_s) - 1);
-        }
         if (httpd_query_key_value(qs, "limit", v, sizeof(v)) == ESP_OK) {
             int t = atoi(v);
             if (t > 0 && (uint32_t)t < limit) limit = (uint32_t)t;
@@ -2629,9 +2678,6 @@ static esp_err_t handler_log_points(httpd_req_t *req) {
             if (t > 0 && t <= 3000) offset = (uint32_t)t;
         }
     }
-
-    uint8_t mac[6];
-    bool filter = log_parse_mac(mac_s, mac);
 
     crid_log_rec_t *pts = (crid_log_rec_t *)calloc(limit, sizeof(crid_log_rec_t));
     if (pts == NULL) {
@@ -2737,17 +2783,10 @@ static bool log_csv_row(const crid_log_rec_t *r, void *vctx) {
 }
 
 static esp_err_t handler_log_export(httpd_req_t *req) {
-    char qs[96];
     log_csv_ctx_t ctx;
     memset(&ctx, 0, sizeof(ctx));
     ctx.req = req;
-
-    if (httpd_req_get_url_query_str(req, qs, sizeof(qs)) == ESP_OK) {
-        char v[24];
-        if (httpd_query_key_value(qs, "mac", v, sizeof(v)) == ESP_OK) {
-            ctx.has_mac = log_parse_mac(v, ctx.mac);
-        }
-    }
+    ctx.has_mac = query_mac(req, ctx.mac);     // 解码后再比对，见 query_mac 注释
 
     httpd_resp_set_type(req, "text/csv; charset=utf-8");
     httpd_resp_set_hdr(req, "Content-Disposition", "attachment; filename=\"crid_tracks.csv\"");
@@ -2762,6 +2801,7 @@ static esp_err_t handler_log_export(httpd_req_t *req) {
     return ESP_OK;
 }
 
+/** 清空全部轨迹：不读请求体，POST 与 GET 两个入口挂的是同一个函数 */
 static esp_err_t handler_log_clear(httpd_req_t *req) {
     esp_err_t e = crid_log_clear();
 
@@ -2784,24 +2824,8 @@ static esp_err_t handler_log_clear(httpd_req_t *req) {
 
 // 删除单个目标的历史记录：{mac:"44:BD:8D:69:06:31"}
 // 「清空记录」是整片作废，而列表里往往是好几台无人机，只想删掉其中一台时用它。
-static esp_err_t handler_log_del(httpd_req_t *req) {
-    char buf[96];
-    int len = httpd_req_recv(req, buf, sizeof(buf) - 1);
-    if (len <= 0) {
-        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "no body");
-        return ESP_FAIL;
-    }
-    buf[len] = '\0';
-
-    uint8_t mac[6];
-    bool ok = false;
-    cJSON *j = cJSON_Parse(buf);
-    if (j != NULL) {
-        cJSON *it = cJSON_GetObjectItem(j, "mac");
-        if (cJSON_IsString(it) && it->valuestring != NULL) ok = log_parse_mac(it->valuestring, mac);
-        cJSON_Delete(j);
-    }
-
+/** 删除结果回包：POST 与 GET 两个入口共用 */
+static void log_del_reply(httpd_req_t *req, bool ok, const uint8_t mac[6]) {
     esp_err_t e = ok ? crid_log_delete_target(mac) : ESP_ERR_INVALID_ARG;
 
     cJSON *o = cJSON_CreateObject();
@@ -2818,6 +2842,39 @@ static esp_err_t handler_log_del(httpd_req_t *req) {
         httpd_resp_sendstr(req, e == ESP_OK ? "{\"ok\":true}" : "{\"ok\":false}");
     }
     cJSON_Delete(o);
+}
+
+static esp_err_t handler_log_del(httpd_req_t *req) {
+    char buf[96];
+    int len = httpd_req_recv(req, buf, sizeof(buf) - 1);
+    if (len <= 0) {
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "no body");
+        return ESP_FAIL;
+    }
+    buf[len] = '\0';
+
+    uint8_t mac[6] = { 0 };
+    bool ok = false;
+    cJSON *j = cJSON_Parse(buf);
+    if (j != NULL) {
+        cJSON *it = cJSON_GetObjectItem(j, "mac");
+        if (cJSON_IsString(it) && it->valuestring != NULL) ok = log_parse_mac(it->valuestring, mac);
+        cJSON_Delete(j);
+    }
+
+    log_del_reply(req, ok, mac);
+    return ESP_OK;
+}
+
+/**
+ * GET /api/log/del?mac=… —— 蓝牙桥接只转发 GET，没有这个变体时手机 App 只能连热点删。
+ * 与 /api/time?ms=、/api/log/enable?on= 同一套做法：有副作用的操作也开一个 GET 入口，
+ * 让 BLE 通道能覆盖全部写操作。回包字段与 POST 版完全一致，客户端不用分支解析。
+ */
+static esp_err_t handler_log_del_get(httpd_req_t *req) {
+    uint8_t mac[6] = { 0 };
+    bool ok = query_mac(req, mac);
+    log_del_reply(req, ok, mac);
     return ESP_OK;
 }
 
@@ -3059,6 +3116,10 @@ static const httpd_uri_t uris[] = {
     { .uri = "/api/log/export",.method = HTTP_GET,  .handler = handler_log_export, .user_ctx = NULL },
     { .uri = "/api/log/clear", .method = HTTP_POST, .handler = handler_log_clear,  .user_ctx = NULL },
     { .uri = "/api/log/del",   .method = HTTP_POST, .handler = handler_log_del,    .user_ctx = NULL },
+    // 蓝牙桥接只转发 GET，这两条让「删除 / 清空」也能走蓝牙（清空 handler 不读请求体，
+    // 同一个函数直接复用）。80 端口那段注册循环按 method==GET 自动放行，桥接无需改动。
+    { .uri = "/api/log/clear", .method = HTTP_GET,  .handler = handler_log_clear,  .user_ctx = NULL },
+    { .uri = "/api/log/del",   .method = HTTP_GET,  .handler = handler_log_del_get,.user_ctx = NULL },
     { .uri = "/api/log/enable",.method = HTTP_POST, .handler = handler_log_enable, .user_ctx = NULL },
     { .uri = "/api/log/enable",.method = HTTP_GET, .handler = handler_log_enable_get, .user_ctx = NULL },
     { .uri = "/favicon.ico",.method = HTTP_GET, .handler = handler_favicon,   .user_ctx = NULL },

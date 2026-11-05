@@ -434,8 +434,8 @@ class BleClient(private val context: Context) {
 
     // ---------------- 请求 ----------------
 
-    /** 串行发送一个完整 GET 路径，等待完整回包。8 秒超时。 */
-    suspend fun request(path: String): String = requestMutex.withLock {
+    /** 串行发送一个完整 GET 路径，等待完整回包。默认 8 秒超时（导出 CSV 这类大回包要调大）。 */
+    suspend fun request(path: String, timeoutMs: Long = 8_000): String = requestMutex.withLock {
         val g = gatt ?: throw IOException("蓝牙未连接")
         if (_state.value !is BleState.Connected) throw IOException("蓝牙未连接")
         val rx = rxChar ?: throw IOException("蓝牙通道未就绪")
@@ -458,7 +458,7 @@ class BleClient(private val context: Context) {
         }
         try {
             writePath(g, rx, data)
-            withTimeout(8_000) { done.await() }
+            withTimeout(timeoutMs) { done.await() }
         } catch (e: TimeoutCancellationException) {
             throw IOException("蓝牙响应超时（MTU=$mtu）")
         } finally {

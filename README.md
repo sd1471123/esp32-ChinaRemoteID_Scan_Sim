@@ -245,10 +245,11 @@ gradlew.bat assembleDebug
 **双通道规则**
 
 - 读（GET）：BLE 已连接 → 全部走 BLE；否则走热点 HTTPS；两者都不通时每 5 秒探测一次热点
-- 写（POST / 上传 / 导出）：只走热点 HTTPS，包括 `/api/config`、`/api/log/enable`、
-  `/api/log/del`、`/api/log/clear`、`/api/reset`、OTA 上传、CSV 导出
-- 授时是唯一的例外：走 `GET /api/time?ms=<手机毫秒>`（蓝牙桥接只转发 GET，蓝牙通道也能校），
-  没有蓝牙时才退回 `POST /api/time`
+- 写：`/api/config`、`/api/reset`、OTA 上传只走热点 HTTPS
+- 轨迹的删除 / 清空 / 导出：**蓝牙和热点都行**。设备为这几个操作开了 GET 变体
+  （`/api/log/del?mac=`、`/api/log/clear`、`/api/log/export`），因为蓝牙桥接只转发 GET；
+  导出量很大（满盘约几 MB）时建议连热点，蓝牙会明显慢
+- 授时同理：走 `GET /api/time?ms=<手机毫秒>`，没有蓝牙时才退回 `POST /api/time`
 - 轮询节奏：`/api/rx` 1 s、`/api/status` 2 s、`/api/log/info` 6 s
 
 **自动授时**

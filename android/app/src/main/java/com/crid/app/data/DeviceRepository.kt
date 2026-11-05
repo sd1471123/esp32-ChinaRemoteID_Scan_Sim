@@ -174,8 +174,8 @@ class DeviceRepository(context: Context) {
 
     // ---------------- 读取 ----------------
 
-    private suspend fun fetchText(path: String): String =
-        if (ble.isConnected) ble.request(path) else http.raw(path)
+    private suspend fun fetchText(path: String, timeoutMs: Long = 8_000): String =
+        if (ble.isConnected) ble.request(path, timeoutMs) else http.raw(path)
 
     suspend fun loadConfig(): Config? = try {
         val c = json.decodeFromString<Config>(fetchText("/api/config"))
@@ -334,7 +334,13 @@ class DeviceRepository(context: Context) {
     }
 
     suspend fun deleteLog(mac: String): Boolean = try {
-        val r = http.deleteLog(mac)
+        // 蓝牙桥接只转发 GET，固件为删除开了 GET 变体（/api/log/del?mac=…），
+        // 回包与 POST 版字段一致，所以这里只切通道、不用改解析。
+        val r = if (ble.isConnected) {
+            json.decodeFromString<ApiOk>(fetchText("/api/log/del?mac=$mac"))
+        } else {
+            http.deleteLog(mac)
+        }
         if (r.ok) {
             message("已删除该目标的历史轨迹")
             loadLogInfo()
@@ -344,12 +350,16 @@ class DeviceRepository(context: Context) {
             false
         }
     } catch (e: Exception) {
-        message("删除需要连接设备热点: ${e.message}")
+        message("删除失败（需连蓝牙或设备热点）: ${e.message}")
         false
     }
 
     suspend fun clearLog(): Boolean = try {
-        val r = http.clearLog()
+        val r = if (ble.isConnected) {
+            json.decodeFromString<ApiOk>(fetchText("/api/log/clear"))
+        } else {
+            http.clearLog()
+        }
         if (r.ok) {
             message("历史记录已清空")
             loadLogInfo()
@@ -359,7 +369,7 @@ class DeviceRepository(context: Context) {
             false
         }
     } catch (e: Exception) {
-        message("清空需要连接设备热点: ${e.message}")
+        message("清空失败（需连蓝牙或设备热点）: ${e.message}")
         false
     }
 
@@ -381,7 +391,14 @@ class DeviceRepository(context: Context) {
     // ---------------- 导出 / OTA ----------------
 
     suspend fun exportCsv(mac: String?): File? = try {
-        val csv = http.exportCsv(mac)
+        // 导出接口本身是 GET，蓝牙桥接放行；只有热点时走 HTTPS 更稳（不受 BLE 分片速率限制）。
+        // 量很小用蓝牙没问题，满盘几 MB 时蓝牙会明显慢，界面上仍提示优先连热点。
+        val csv = if (ble.isConnected) {
+            // 导出可能几 MB，蓝牙分片传输比普通查询慢得多，超时放宽到 90 秒
+            fetchText(if (mac.isNullOrBlank()) "/api/log/export" else "/api/log/export?mac=$mac", 90_000)
+        } else {
+            http.exportCsv(mac)
+        }
         val dir = File(app.cacheDir, "exports").apply { mkdirs() }
         val name = if (mac.isNullOrBlank()) {
             "crid_tracks.csv"
@@ -393,7 +410,7 @@ class DeviceRepository(context: Context) {
         message("CSV 已导出：${f.name}")
         f
     } catch (e: Exception) {
-        message("导出需要连接设备热点（蓝牙只传查询数据）: ${e.message}")
+        message("导出失败（需连蓝牙或设备热点）: ${e.message}")
         null
     }
 

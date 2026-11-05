@@ -1684,15 +1684,21 @@ a.download=lgMac?('crid_track_'+String(lgMac).replace(/:/g,'')+'.csv'):'crid_tra
 document.body.appendChild(a);a.click();a.remove();}
 async function logClear(){
 if(!confirm('确定清空全部历史轨迹记录？清空后无法恢复。'))return;
-try{const r=await fetch('/api/log/clear',{method:'POST'});const j=await r.json();
+try{var r;
+if(bleOn){r=await fetch('/api/log/clear');}
+else{r=await fetch('/api/log/clear',{method:'POST'});}
+const j=await r.json();
 if(j.ok){logClose();
 logRefresh();msg('历史记录已清空',true);}
 else{msg('清空失败: '+(j.error||'未知错误'),false);}
 }catch(e){msg('清空失败: '+e,false);}}
 async function logDel(mac){
 if(!confirm('删除 '+String(mac).toUpperCase()+' 的全部历史轨迹？\n删除后该目标会从列表消失，其他目标不受影响。'))return;
-try{const r=await fetch('/api/log/del',{method:'POST',
-headers:{'Content-Type':'application/json'},body:JSON.stringify({mac:mac})});const j=await r.json();
+try{var r;
+if(bleOn){r=await fetch('/api/log/del?mac='+encodeURIComponent(mac));}
+else{r=await fetch('/api/log/del',{method:'POST',
+headers:{'Content-Type':'application/json'},body:JSON.stringify({mac:mac})});}
+const j=await r.json();
 if(j.ok){if(lgMac===mac)logClose();logRefresh();msg('已删除该目标的历史记录',true);}
 else{msg('删除失败: '+(j.error||'未知错误'),false);}
 }catch(e){msg('删除失败: '+e,false);}}
