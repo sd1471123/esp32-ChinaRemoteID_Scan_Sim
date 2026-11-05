@@ -4,6 +4,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -512,11 +513,15 @@ fun ConfigScreen(vm: AppViewModel, state: UiState) {
                     OutlinedButton(
                         onClick = { vm.syncTime() },
                         modifier = Modifier.weight(1f),
-                    ) { Text("用手机时间授时", fontSize = 12.sp) }
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp),
+                    ) { Text("用手机时间授时", fontSize = 12.sp, maxLines = 1, softWrap = false) }
                     OutlinedButton(
                         onClick = { showReset = true },
                         modifier = Modifier.weight(1f),
-                    ) { Text("恢复出厂设置", fontSize = 12.sp, color = CridRed) }
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp),
+                    ) {
+                        Text("恢复出厂设置", fontSize = 12.sp, maxLines = 1, softWrap = false, color = CridRed)
+                    }
                 }
                 Text(
                     "连接成功后会自动用手机时间授时（每 10 分钟补一次）；开了记录后也可在这里手动重校。" +

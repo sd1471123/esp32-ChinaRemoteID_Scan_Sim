@@ -6,6 +6,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -161,20 +162,33 @@ private fun LogList(vm: AppViewModel, state: UiState, onOpen: (LogTarget) -> Uni
                             .padding(top = 8.dp),
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
+                        // 三个按钮平分一行，本机屏幕宽 360dp、卡片内边距后每个约 97dp。
+                        // OutlinedButton 默认左右各 24dp 内边距，留给文字只剩 49dp，
+                        // 「导出 CSV」需要约 51dp，差一点点就被折成「导出」/「CSV」两行。
+                        // 这里把水平内边距收到 6dp，并用 softWrap=false 兜底，任何字体缩放下都单行。
                         OutlinedButton(
                             onClick = {
                                 vm.exportCsv(null) { f -> f?.let { shareFile(context, it) } }
                             },
                             modifier = Modifier.weight(1f),
-                        ) { Text("导出 CSV", fontSize = 12.sp) }
+                            contentPadding = PaddingValues(horizontal = 6.dp, vertical = 6.dp),
+                        ) {
+                            Text("导出 CSV", fontSize = 12.sp, maxLines = 1, softWrap = false)
+                        }
                         OutlinedButton(
                             onClick = { confirmClear = true },
                             modifier = Modifier.weight(1f),
-                        ) { Text("清空记录", fontSize = 12.sp) }
+                            contentPadding = PaddingValues(horizontal = 6.dp, vertical = 6.dp),
+                        ) {
+                            Text("清空记录", fontSize = 12.sp, maxLines = 1, softWrap = false)
+                        }
                         OutlinedButton(
                             onClick = { vm.refreshLogInfo() },
                             modifier = Modifier.weight(1f),
-                        ) { Text("刷新", fontSize = 12.sp) }
+                            contentPadding = PaddingValues(horizontal = 6.dp, vertical = 6.dp),
+                        ) {
+                            Text("刷新", fontSize = 12.sp, maxLines = 1, softWrap = false)
+                        }
                     }
                 }
             }
@@ -213,20 +227,20 @@ private fun LogList(vm: AppViewModel, state: UiState, onOpen: (LogTarget) -> Uni
                     Button(
                         onClick = { onOpen(target) },
                         modifier = Modifier.weight(1f),
-                        contentPadding = androidx.compose.foundation.layout.PaddingValues(vertical = 6.dp),
-                    ) { Text("看轨迹", fontSize = 12.sp) }
+                        contentPadding = PaddingValues(vertical = 6.dp),
+                    ) { Text("看轨迹", fontSize = 12.sp, maxLines = 1, softWrap = false) }
                     OutlinedButton(
                         onClick = {
                             vm.exportCsv(target.mac) { f -> f?.let { shareFile(context, it) } }
                         },
                         modifier = Modifier.weight(1f),
-                        contentPadding = androidx.compose.foundation.layout.PaddingValues(vertical = 6.dp),
-                    ) { Text("导出", fontSize = 12.sp) }
+                        contentPadding = PaddingValues(vertical = 6.dp),
+                    ) { Text("导出", fontSize = 12.sp, maxLines = 1, softWrap = false) }
                     OutlinedButton(
                         onClick = { deleteMac = target.mac },
                         modifier = Modifier.weight(1f),
-                        contentPadding = androidx.compose.foundation.layout.PaddingValues(vertical = 6.dp),
-                    ) { Text("删除", fontSize = 12.sp, color = CridRed) }
+                        contentPadding = PaddingValues(vertical = 6.dp),
+                    ) { Text("删除", fontSize = 12.sp, maxLines = 1, softWrap = false, color = CridRed) }
                 }
             }
         }
