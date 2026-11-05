@@ -17,6 +17,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.json.Json
 import java.io.File
+import java.io.IOException
 
 data class UiState(
     val ble: BleState = BleState.Idle,
@@ -113,7 +114,8 @@ class DeviceRepository(context: Context) {
         val viaBle = ble.isConnected
         if (viaBle) {
             try {
-                val rx = json.decodeFromString<RxResponse>(ble.request("/api/rx"))
+                val raw = fetchJson("/api/rx", "\"tracks\"", 8_000) ?: throw IOException("回包异常")
+                val rx = json.decodeFromString<RxResponse>(raw)
                 _state.update {
                     it.copy(rx = rx, channel = "ble", lastUpdate = System.currentTimeMillis())
                 }
@@ -144,7 +146,8 @@ class DeviceRepository(context: Context) {
 
     private suspend fun loadStatus() {
         try {
-            val st = json.decodeFromString<Status>(fetchText("/api/status"))
+            val raw = fetchJson("/api/status", "\"tsync\"") ?: return
+            val st = json.decodeFromString<Status>(raw)
             _state.update { it.copy(status = st, timeSynced = st.tsync != 0) }
         } catch (_: Exception) {
         }
@@ -177,8 +180,34 @@ class DeviceRepository(context: Context) {
     private suspend fun fetchText(path: String, timeoutMs: Long = 8_000): String =
         if (ble.isConnected) ble.request(path, timeoutMs) else http.raw(path)
 
+    /**
+     * 读一个 GET 接口，并确认回包真的属于这个接口。
+     *
+     * 蓝牙是一座单通道桥：设备侧不携带请求 ID，上一个请求超时后迟到的分片有可能串进
+     * 本次回包。把 `{"ok":true}` 当成 `/api/log/info` 反序列化不会报错（配置了
+     * ignoreUnknownKeys），所有字段静默落成默认值 —— 界面就冒出「存储分区未就绪」
+     * 这种根本不存在的故障。这里用特征键识别，不像就重发一次，仍不像返回 null，
+     * 让调用方保持原有状态而不是被污染。
+     */
+    private suspend fun fetchJson(
+        path: String,
+        marker: String,
+        timeoutMs: Long = 8_000,
+    ): String? {
+        repeat(2) {
+            val txt = runCatching { fetchText(path, timeoutMs) }.getOrNull()
+            if (txt != null && txt.contains(marker)) return txt
+            android.util.Log.w("CRID", "回包与接口不符 $path -> ${txt?.take(160)}")
+            // 拿到的明显是别的接口的回包：说明通道错位了，让蓝牙侧重新对齐，
+            // 否则之后每次请求都会拿到上一份响应，永远好不了
+            ble.requestResync()
+        }
+        return null
+    }
+
     suspend fun loadConfig(): Config? = try {
-        val c = json.decodeFromString<Config>(fetchText("/api/config"))
+        val raw = fetchJson("/api/config", "\"ssid\"") ?: throw IOException("回包异常")
+        val c = json.decodeFromString<Config>(raw)
         _state.update { it.copy(config = c) }
         c
     } catch (e: Exception) {
@@ -187,7 +216,8 @@ class DeviceRepository(context: Context) {
     }
 
     suspend fun loadLogInfo(): LogInfo? = try {
-        val info = json.decodeFromString<LogInfo>(fetchText("/api/log/info"))
+        val raw = fetchJson("/api/log/info", "\"ready\"") ?: throw IOException("回包异常")
+        val info = json.decodeFromString<LogInfo>(raw)
         _state.update { it.copy(logInfo = info) }
         info
     } catch (_: Exception) {
@@ -195,7 +225,10 @@ class DeviceRepository(context: Context) {
     }
 
     suspend fun loadLogPoints(mac: String, offset: Int, limit: Int = 30): LogPage? = try {
-        json.decodeFromString<LogPage>(fetchText("/api/log/points?limit=$limit&offset=$offset&mac=$mac"))
+        val raw = fetchJson(
+            "/api/log/points?limit=$limit&offset=$offset&mac=$mac", "\"points\"", 12_000
+        ) ?: throw IOException("回包异常")
+        json.decodeFromString<LogPage>(raw)
     } catch (e: Exception) {
         message("读取轨迹失败: ${e.message}")
         null
@@ -406,7 +439,14 @@ class DeviceRepository(context: Context) {
             "crid_track_" + mac.replace(":", "") + ".csv"
         }
         val f = File(dir, name)
-        f.writeText(csv)
+        // 设备端是 chunked 分块发送的，蓝牙分片偶尔会把行尾的 \r 多发一次，文件里就出现
+        // \r\r\n。Excel / 记事本遇到这种行尾会多出空行、单元格看起来错位，所以落盘前
+        // 按行重组一遍：去掉全部 \r，按 \n 切行，再统一用 CRLF 写回。
+        val lines = csv.replace("\r", "").split('\n').filter { it.isNotEmpty() }
+        f.writeText(
+            if (lines.isEmpty()) "" else lines.joinToString("\r\n", postfix = "\r\n"),
+            Charsets.UTF_8,
+        )
         message("CSV 已导出：${f.name}")
         f
     } catch (e: Exception) {

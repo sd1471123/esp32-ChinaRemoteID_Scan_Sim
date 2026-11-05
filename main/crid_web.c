@@ -2755,11 +2755,25 @@ static void fmt_fixed(char *out, size_t n, long v, int digits) {
     }
 }
 
+// UAS ID 是从报文里整段拷出来的 20 字节，可能是空格填充，也可能带控制字符。
+// 原样写进 CSV 会让整行被拆断（0x0A/0x0D）或列错位（逗号、双引号），在 Excel /
+// WPS 里看起来就是「换行没对齐」。这里只保留可见 ASCII，逗号和引号换成下划线。
+static void csv_safe(char *out, size_t n, const char *in) {
+    size_t k = 0;
+    for (size_t i = 0; in[i] != '\0' && k + 1 < n; i++) {
+        unsigned char c = (unsigned char)in[i];
+        if (c < 0x20 || c > 0x7E) continue;     // 控制字符与非 ASCII 直接丢弃
+        out[k++] = (c == ',' || c == '"') ? '_' : (char)c;
+    }
+    out[k] = '\0';
+}
+
 static bool log_csv_row(const crid_log_rec_t *r, void *vctx) {
     log_csv_ctx_t *c = (log_csv_ctx_t *)vctx;
     if (c->has_mac && memcmp(r->mac, c->mac, 6) != 0) return true;
 
-    char lat[20], lon[20], sh[16], sv[16], trk[16];
+    char lat[20], lon[20], sh[16], sv[16], trk[16], uid[16];
+    csv_safe(uid, sizeof(uid), r->uid);
     fmt_fixed(lat, sizeof(lat), r->lat_e7, 7);
     fmt_fixed(lon, sizeof(lon), r->lon_e7, 7);
     fmt_fixed(sh, sizeof(sh), r->spd_h_dms, 1);
@@ -2771,7 +2785,7 @@ static bool log_csv_row(const crid_log_rec_t *r, void *vctx) {
                      "%lu,%lu,%02X:%02X:%02X:%02X:%02X:%02X,%s,%s,%s,%d,%d,%s,%s,%s,%u,%u,%u,%d\r\n",
                      (unsigned long)r->t_unix, (unsigned long)r->tick_ms,
                      r->mac[0], r->mac[1], r->mac[2], r->mac[3], r->mac[4], r->mac[5],
-                     r->uid, lat, lon,
+                     uid, lat, lon,
                      (int)r->alt_m,
                      (r->flags & CRID_LOG_F_AGL) ? (int)r->agl_m : 0,
                      sh, sv, trk,

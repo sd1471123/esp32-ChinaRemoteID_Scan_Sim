@@ -83,6 +83,35 @@ class BleClient(private val context: Context) {
     private var pending: CompletableDeferred<String>? = null
     private val buffer = ByteArrayOutputStream()
     private var expected = -1
+
+    /**
+     * 帧同步门闩：只有收到 0x01 START 之后才接受 DATA/END。
+     *
+     * 设备端每次响应固定以 START 开头。上一个请求超时/被丢弃时，它的剩余分片可能
+     * 在我们发出新请求之后才到，没有这道门闩就会被拼进新请求的缓冲里——表现为
+     * JSON 多字节解析失败，或更糟：拿 `{"ok":true}` 当 `/api/log/info` 解析成功
+     * （ignoreUnknownKeys 不报错，字段全落默认值，界面就显示「存储分区未就绪」）。
+     */
+    private var armed = false
+
+    /** 上一次请求异常结束（超时/写入重试）后置位：下一次请求前先让残留分片流干净 */
+    @Volatile
+    private var resyncNeeded = false
+
+    @Volatile
+    private var ignoreFrames = false
+
+    /**
+     * 请求把通道重新对齐。
+     *
+     * 设备侧没有请求 ID，写入重试会让它把同一条请求处理两次、发两份响应。多出来的那份
+     * 留在通道里，从此每个请求都收到「上一次」的响应——永久错一拍。表现就是
+     * `/api/log/info` 永远拿到 `/api/status` 的回包，界面一直显示「存储分区未就绪」。
+     * 上层发现回包与接口对不上时调这里，下一次请求前会闭眼 120ms 把积压放掉。
+     */
+    fun requestResync() {
+        resyncNeeded = true
+    }
     private var manualClose = false
     private val requestMutex = Mutex()
 
@@ -393,6 +422,7 @@ class BleClient(private val context: Context) {
 
     private fun handleFrame(bytes: ByteArray) {
         if (bytes.isEmpty()) return
+        if (ignoreFrames) return
         when (bytes[0].toInt()) {
             0x01 -> synchronized(this) {
                 if (bytes.size >= 5) {
@@ -401,33 +431,44 @@ class BleClient(private val context: Context) {
                         ((bytes[3].toInt() and 0xFF) shl 8) or
                         (bytes[4].toInt() and 0xFF)
                     buffer.reset()
+                    armed = true
                 }
             }
             0x02 -> synchronized(this) {
-                if (bytes.size > 1) buffer.write(bytes, 1, bytes.size - 1)
-                if (expected > 0 && buffer.size() >= expected) {
+                // 没有 START 打头的分片属于上一轮请求的尾巴，丢掉
+                if (armed) {
+                    if (bytes.size > 1) buffer.write(bytes, 1, bytes.size - 1)
+                    if (expected > 0 && buffer.size() >= expected) {
+                        armed = false
+                        val d = pending
+                        pending = null
+                        d?.complete(String(buffer.toByteArray(), Charsets.UTF_8))
+                    }
+                }
+            }
+            0x03 -> synchronized(this) {
+                if (armed) {
+                    armed = false
                     val d = pending
                     pending = null
                     d?.complete(String(buffer.toByteArray(), Charsets.UTF_8))
                 }
             }
-            0x03 -> synchronized(this) {
-                val d = pending
-                pending = null
-                d?.complete(String(buffer.toByteArray(), Charsets.UTF_8))
-            }
             0x04 -> synchronized(this) {
-                val code = if (bytes.size > 1) bytes[1].toInt() else 0
-                val msg = when (code) {
-                    1 -> "路径不被允许（蓝牙只支持 GET /api/*）"
-                    2 -> "设备网络客户端失败"
-                    3 -> "设备打开本地 HTTP 失败"
-                    4 -> "设备返回非 200"
-                    else -> "设备错误码 $code"
+                if (armed) {
+                    armed = false
+                    val code = if (bytes.size > 1) bytes[1].toInt() else 0
+                    val msg = when (code) {
+                        1 -> "路径不被允许（蓝牙只支持 GET /api/*）"
+                        2 -> "设备网络客户端失败"
+                        3 -> "设备打开本地 HTTP 失败"
+                        4 -> "设备返回非 200"
+                        else -> "设备错误码 $code"
+                    }
+                    val d = pending
+                    pending = null
+                    d?.completeExceptionally(IOException(msg))
                 }
-                val d = pending
-                pending = null
-                d?.completeExceptionally(IOException(msg))
             }
         }
     }
@@ -450,19 +491,41 @@ class BleClient(private val context: Context) {
             }
         }
 
+        // 上一轮如果超时或写入重试过，设备很可能已经多发了一份响应。先闭眼 120ms
+        // 把这些孤儿分片放掉——设备处理一个请求通常在 50ms 内，等一下就流干净了。
+        if (resyncNeeded) {
+            ignoreFrames = true
+            delay(120)
+            synchronized(this) {
+                buffer.reset()
+                expected = -1
+                armed = false
+                ignoreFrames = false
+            }
+            resyncNeeded = false
+        }
+
         val done = CompletableDeferred<String>()
         synchronized(this) {
             buffer.reset()
             expected = -1
+            armed = false          // 发请求之前先把门闩落下，旧的残留分片一律不收
             pending = done
         }
         try {
             writePath(g, rx, data)
             withTimeout(timeoutMs) { done.await() }
         } catch (e: TimeoutCancellationException) {
+            resyncNeeded = true
             throw IOException("蓝牙响应超时（MTU=$mtu）")
+        } catch (e: Exception) {
+            resyncNeeded = true
+            throw e
         } finally {
-            synchronized(this) { if (pending === done) pending = null }
+            synchronized(this) {
+                if (pending === done) pending = null
+                armed = false
+            }
         }
     }
 
