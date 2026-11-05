@@ -13,6 +13,7 @@ import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.json.Json
 import java.io.File
@@ -60,6 +61,22 @@ class DeviceRepository(context: Context) {
     private var lastErrAt = 0L
     private var lastErrText = ""
 
+    // 自动授时的节流状态，见 autoSyncTime()
+    private val syncLock = Mutex()
+    private var lastSyncTryAt = 0L
+    private var lastSyncOkAt = 0L
+    private var syncFails = 0
+    private var syncChannel = "none"
+
+    private companion object {
+        /** 成功后隔这么久补一次，压住设备晶振漂移 */
+        const val RESYNC_MS = 10 * 60 * 1000L
+        /** 两次尝试之间的最小间隔，避免轮询把失败请求刷爆 */
+        const val SYNC_RETRY_GAP_MS = 8_000L
+        /** 一轮里失败这么多次就闭嘴，等换通道或重新连接再重来 */
+        const val SYNC_MAX_TRIES = 3
+    }
+
     init {
         scope.launch {
             ble.state.collect { s -> _state.update { it.copy(ble = s) } }
@@ -77,6 +94,8 @@ class DeviceRepository(context: Context) {
             while (isActive) {
                 try {
                     pollOnce()
+                    // 连接后自动授时：平时只做几次比较就返回，真正发请求由内部节流决定
+                    autoSyncTime()
                 } catch (_: Exception) {
                 }
                 delay(1000)
@@ -141,6 +160,8 @@ class DeviceRepository(context: Context) {
         scope.launch {
             if (ble.connect(address)) {
                 message("蓝牙已连接，可以不连热点用流量查看数据")
+                // 先校时再读配置：设备刚上电时间还是 0，越早校准，轨迹里的时间越准
+                autoSyncTime(force = true)
                 loadConfig()
             }
         }
@@ -212,32 +233,86 @@ class DeviceRepository(context: Context) {
         _state.update { it.copy(busy = false) }
     }
 
-    suspend fun syncTime(ms: Long = System.currentTimeMillis()): Boolean = try {
-        if (ble.isConnected) {
-            val r = json.decodeFromString<ApiOk>(fetchText("/api/time?ms=$ms"))
-            if (r.ok) {
-                _state.update { it.copy(timeSynced = true) }
-                message("设备时间已校准")
-                true
-            } else {
-                message("设备拒绝了这个时间，请检查手机系统时间")
-                false
+    // ---------------- 授时 ----------------
+
+    /** 手动授时（配置页按钮）：失败原因直接弹提示 */
+    suspend fun syncTime(ms: Long = System.currentTimeMillis()): Boolean {
+        val (ok, err) = doSync(ms)
+        message(
+            when {
+                ok -> "设备时间已校准"
+                err != null -> "授时失败: $err"
+                else -> "设备拒绝了这个时间，请检查手机系统时间"
             }
-        } else {
-            val r = http.timePost(ms)
-            if (r.ok) {
-                _state.update { it.copy(timeSynced = true) }
-                message("设备时间已校准")
-                true
-            } else {
-                message("设备拒绝了这个时间，请检查手机系统时间")
-                false
-            }
-        }
-    } catch (e: Exception) {
-        message("授时失败: ${e.message}")
-        false
+        )
+        if (ok) markSynced()
+        return ok
     }
+
+    /**
+     * 连接后自动授时。设备没有 RTC、也不联网，断电后时间从 0 重新开始，
+     * 轨迹里的时间戳全靠这一次校准；不开自动的话，用户很容易在「未校准」
+     * 状态下开记录，写下一批时间为「未知」的轨迹。
+     *
+     * 轮询每秒调一次，但真正发请求受三重节流：通道必须就绪、
+     * 距上次成功不足 RESYNC_MS 就跳过、两次尝试至少隔 SYNC_RETRY_GAP_MS。
+     */
+    private suspend fun autoSyncTime(force: Boolean = false) {
+        val st = _state.value
+        val ch = if (ble.isConnected) "ble" else st.channel
+        if (ch != "ble" && ch != "wifi") return
+        if (ch != syncChannel) {
+            // 换了通道（蓝牙↔热点）就重新给一份重试预算，别被上一通道的失败拖住
+            syncChannel = ch
+            syncFails = 0
+        }
+        val now = System.currentTimeMillis()
+        if (!force && st.timeSynced && now - lastSyncOkAt < RESYNC_MS) return
+        if (syncFails >= SYNC_MAX_TRIES) return
+        if (now - lastSyncTryAt < SYNC_RETRY_GAP_MS) return
+        // tryLock 而不是 lock：pollOnce 与 connect() 可能同时进来，谁抢到谁发，另一个直接跳过
+        if (!syncLock.tryLock()) return
+        lastSyncTryAt = now
+        try {
+            val (ok, err) = doSync(now)
+            if (ok) {
+                markSynced()
+                message("已自动校时 ${clockOf(now)}（${if (ch == "ble") "蓝牙" else "热点"}）")
+            } else {
+                syncFails++
+                if (syncFails >= SYNC_MAX_TRIES) {
+                    message(
+                        if (err != null) "自动授时失败: $err（可到配置页手动授时）"
+                        else "自动授时被设备拒绝，请检查手机系统时间"
+                    )
+                }
+            }
+        } finally {
+            syncLock.unlock()
+        }
+    }
+
+    /** 真正发请求，自身不发提示；返回 (是否成功, 传输层错误描述) */
+    private suspend fun doSync(ms: Long): Pair<Boolean, String?> = try {
+        val r = if (ble.isConnected) {
+            json.decodeFromString<ApiOk>(fetchText("/api/time?ms=$ms"))
+        } else {
+            http.timePost(ms)
+        }
+        Pair(r.ok, null)
+    } catch (e: Exception) {
+        Pair(false, e.message ?: "请求失败")
+    }
+
+    private fun markSynced() {
+        lastSyncOkAt = System.currentTimeMillis()
+        syncFails = 0
+        _state.update { it.copy(timeSynced = true) }
+    }
+
+    private fun clockOf(ms: Long): String =
+        java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.getDefault())
+            .format(java.util.Date(ms))
 
     suspend fun setLogEnabled(on: Boolean): Boolean = try {
         val r = if (ble.isConnected) {

@@ -85,12 +85,18 @@ idf.py build
   清空、按目标删除、轨迹回放（30 条/页 × 最多 10 页，1x/2x/4x，进度滑杆）。
 - 配置：读取/修改/保存全部参数（角色、频段、RID 标准、信道、间隔、TX 身份与飞行参数、巡游参数）、
   授时、恢复出厂、OTA（读取固件信息 + 上传 .bin 带 X-OTA-Token 与进度）。
+- 自动授时：连上设备（BLE 或热点）即用手机系统时间校准设备时钟，之后每 10 分钟补一次；
+  设备未校准（`/api/status` 的 `tsync == 0`，例如中途重启）时下一次轮询自动补授时。
+  见 4.3 的节流说明与 `DeviceRepository.autoSyncTime()`。
 
 ### 4.3 双通道规则
 
 - 读（GET）：BLE 已连接时全部走 BLE；否则走热点 HTTPS；两者都没有时每 5 秒探测热点。
-- 写（POST/上传/导出）：只走热点 HTTPS。包括 `/api/config`、`/api/time`、`/api/log/enable`（POST 形态）、
+- 写（POST/上传/导出）：只走热点 HTTPS。包括 `/api/config`、`/api/log/enable`（POST 形态）、
   `/api/log/del`、`/api/log/clear`、`/api/reset`、OTA 上传、CSV 导出。
+- 授时例外：走 `GET /api/time?ms=<毫秒>`（BLE 桥接只转发 GET，蓝牙通道也能校时），
+  没有蓝牙时才用 `POST /api/time`。自动授时的节流：真实请求间隔 ≥ 8 秒、
+  连续失败 3 次即静默（换通道或重连重置）、成功后 10 分钟内不重复发。
 - 轮询节奏：`/api/rx` 1s、`/api/status` 2s、`/api/log/info` 6s。
 
 ### 4.4 BLE 协议（务必保持）

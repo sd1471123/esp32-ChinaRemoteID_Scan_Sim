@@ -519,7 +519,8 @@ fun ConfigScreen(vm: AppViewModel, state: UiState) {
                     ) { Text("恢复出厂设置", fontSize = 12.sp, color = CridRed) }
                 }
                 Text(
-                    "授时可用蓝牙；恢复出厂需要连接设备热点。",
+                    "连接成功后会自动用手机时间授时（每 10 分钟补一次）；开了记录后也可在这里手动重校。" +
+                        "授时可用蓝牙；恢复出厂需要连接设备热点。",
                     fontSize = 11.sp,
                     color = CridGrey,
                     modifier = Modifier.padding(top = 4.dp),
