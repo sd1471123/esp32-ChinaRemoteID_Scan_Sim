@@ -92,10 +92,16 @@ fun UpdateAction() {
         }
     }
 
-    IconButton(onClick = { check() }, enabled = state !is UpdateState.Checking) {
+    IconButton(
+        onClick = { check() },
+        enabled = state !is UpdateState.Checking,
+        // 顶栏只有 48dp 高，默认 48dp 的 IconButton 会把整行顶满，收窄到 40dp
+        modifier = Modifier.width(40.dp).height(40.dp),
+    ) {
         Icon(
             Icons.Filled.SystemUpdate,
             contentDescription = "检查更新",
+            modifier = Modifier.width(20.dp).height(20.dp),
             tint = Color.White,
         )
     }
