@@ -421,11 +421,16 @@ fun ConfigScreen(vm: AppViewModel, state: UiState) {
                             { set("operator_altitude", it) },
                             Modifier.weight(1f),
                         )
-                        SelectRow(
-                            "遥控站位置类型",
-                            OPERATOR_LOC_TYPE,
-                            i("operator_location_type"),
-                        ) { set("operator_location_type", it.toString()) }
+                        // 这里的 SelectRow 必须包一层带 weight 的 Column：
+                        // 它内部是 Column(fillMaxWidth())，在 Row 里直接摆会吃掉整行宽度，
+                        // 把旁边 weight(1f) 的「飞手海拔高度」压成 0 宽（只剩一个窄条）。
+                        Column(Modifier.weight(1f)) {
+                            SelectRow(
+                                "遥控站位置类型",
+                                OPERATOR_LOC_TYPE,
+                                i("operator_location_type"),
+                            ) { set("operator_location_type", it.toString()) }
+                        }
                     }
                     Text(
                         "改飞手坐标后，无人机位置会按默认相对偏移自动生成。",

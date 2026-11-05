@@ -4,8 +4,10 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -162,11 +164,22 @@ fun SelectRow(
         Text(label, fontSize = 11.sp, color = CridGrey, fontWeight = FontWeight.SemiBold)
         OutlinedButton(
             onClick = { open = true },
+            // 高度/内边距跟 OutlinedTextField 对齐（都是 56dp + 上方 3~4dp 间距），
+            // 这样下拉框与它左边的输入框并排时上下边框才在同一条线上。
+            // 左右内边距收窄到 12dp，长选项名不至于一上来就被挤掉。
+            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp),
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(top = 4.dp),
+                .padding(top = 3.dp)
+                .height(56.dp),
         ) {
-            Text(text, Modifier.weight(1f), fontSize = 14.sp)
+            Text(
+                text,
+                Modifier.weight(1f),
+                fontSize = 14.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
             Text("▾", fontSize = 12.sp)
         }
     }

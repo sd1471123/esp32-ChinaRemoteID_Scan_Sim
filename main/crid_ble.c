@@ -425,6 +425,12 @@ static int gap_event(struct ble_gap_event *event, void *arg) {
 }
 
 static void ble_advertise(void) {
+    // 断连后上一次广播可能还没被协议栈收拾干净。不先停掉就设字段，
+    // ble_gap_adv_set_fields() 会返回 EBUSY/EALREADY，而以前这里直接 return，
+    // 于是「根本没走到 adv_start」——板子从此静默不广播。手机是实扫，当场就扫
+    // 不到了（Windows 因为缓存还会显示，容易误判成板子正常）。
+    ble_gap_adv_stop();
+
     struct ble_hs_adv_fields fields;
     memset(&fields, 0, sizeof(fields));
     fields.flags = BLE_HS_ADV_F_DISC_GEN | BLE_HS_ADV_F_BREDR_UNSUP;
@@ -433,8 +439,8 @@ static void ble_advertise(void) {
     fields.name_is_complete = 1;
     int rc = ble_gap_adv_set_fields(&fields);
     if (rc != 0) {
-        ESP_LOGW(TAG, "广播字段设置失败: %d", rc);
-        return;
+        // 只告警不返回：广播字段沿用上一次的也总比彻底不广播强
+        ESP_LOGW(TAG, "广播字段设置失败: %d（继续启动广播）", rc);
     }
 
     // 服务 UUID 放进扫描响应，网页 requestDevice 的 filters 才能按服务过滤
