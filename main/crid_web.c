@@ -3155,6 +3155,10 @@ extern const uint8_t servercert_pem_end[]   asm("_binary_servercert_pem_end");
 extern const uint8_t prvtkey_pem_start[]    asm("_binary_prvtkey_pem_start");
 extern const uint8_t prvtkey_pem_end[]      asm("_binary_prvtkey_pem_end");
 
+const char *crid_web_cert_pem(void) {
+    return (const char *)servercert_pem_start;
+}
+
 /**
  * @brief 起 HTTPS 主服务：页面与接口的唯一入口
  *

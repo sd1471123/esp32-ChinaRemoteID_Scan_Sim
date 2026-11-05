@@ -12,6 +12,7 @@
  */
 
 #include "crid_ble.h"
+#include "crid_web.h"
 
 #include <string.h>
 #include <stdio.h>
@@ -164,6 +165,8 @@ static void ble_proxy(const ble_req_t *r) {
     char url[176];
     snprintf(url, sizeof(url), "%s://%s%s", post ? "https" : "http", ip, path);
 
+    ESP_LOGI(TAG, "%s %s body=%u", post ? "POST" : "GET", path, (unsigned)r->body_len);
+
     esp_http_client_config_t cfg = {
         .url = url,
         .method = post ? HTTP_METHOD_POST : HTTP_METHOD_GET,
@@ -172,7 +175,12 @@ static void ble_proxy(const ble_req_t *r) {
         .buffer_size = 1024,
         .buffer_size_tx = 512,
         .disable_auto_redirect = true,
-        // 设备自己签的证书，链上不可能有可信 CA，这里跳过校验
+        // 自签证书链上不可能有可信 CA，直接把本机这把证书当信任锚传下去。
+        // 注意：只设 skip_cert_common_name_check 是没用的——IDF 的 esp-tls 在
+        // 「既没有 cacert 也没有 crt_bundle」时会直接返回
+        // ESP_ERR_MBEDTLS_SSL_SETUP_FAILED（No server verification option set），
+        // 根本走不到 CN 校验那一步。
+        .cert_pem = post ? crid_web_cert_pem() : NULL,
         .skip_cert_common_name_check = true,
     };
     esp_http_client_handle_t cli = esp_http_client_init(&cfg);
@@ -315,6 +323,8 @@ static int chr_access(uint16_t conn, uint16_t attr, struct ble_gatt_access_ctxt 
             }
             if (s_rx.got >= s_rx.body_len) {
                 s_rx.active = false;
+                ESP_LOGI(TAG, "收到 POST %s（首帧即收齐，%u 字节）",
+                         s_rx.path, (unsigned)s_rx.body_len);
                 ble_enqueue(1, s_rx.path, s_rx.body, s_rx.body_len);
             }
             return 0;
@@ -322,7 +332,10 @@ static int chr_access(uint16_t conn, uint16_t attr, struct ble_gatt_access_ctxt 
 
         // ---- POST 续片：0x13|data... ----
         if (buf[0] == BLE_RX_POST_DAT) {
-            if (!s_rx.active) return BLE_ATT_ERR_UNLIKELY;
+            if (!s_rx.active) {
+                ESP_LOGW(TAG, "收到续帧但没有进行中的 POST（%u 字节）", (unsigned)len);
+                return BLE_ATT_ERR_UNLIKELY;
+            }
             int avail = len - 1;
             int room = (int)s_rx.body_len - (int)s_rx.got;
             if (avail > room) avail = room;
@@ -332,6 +345,7 @@ static int chr_access(uint16_t conn, uint16_t attr, struct ble_gatt_access_ctxt 
             }
             if (s_rx.got >= s_rx.body_len) {
                 s_rx.active = false;
+                ESP_LOGI(TAG, "收到 POST %s（%u 字节）", s_rx.path, (unsigned)s_rx.body_len);
                 ble_enqueue(1, s_rx.path, s_rx.body, s_rx.body_len);
             }
             return 0;

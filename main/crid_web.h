@@ -30,6 +30,15 @@ esp_err_t crid_web_start(cn_crid_config_t *config);
  */
 void crid_web_purge_sessions(void);
 
+/**
+ * @brief 取内置自签证书（PEM 文本，NUL 结尾）
+ *
+ * 设备自己用 https 回打本机 httpd 时，把它当作信任锚传给 esp_http_client。
+ * 证书是自签且 CA:TRUE、SAN 里带 192.168.4.1，正好能通过链校验；
+ * 不传的话 IDF 会直接报「No server verification option set」握手失败。
+ */
+const char *crid_web_cert_pem(void);
+
 #ifdef __cplusplus
 }
 #endif
