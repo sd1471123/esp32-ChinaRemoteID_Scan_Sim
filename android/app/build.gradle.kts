@@ -10,12 +10,17 @@ plugins {
 // versionCode 必须与 CI 用同一个公式（major*10000 + minor*100 + patch），
 // 否则本地编的包和 Release 里的包会互相「版本降级」，覆盖安装被系统拒绝。
 val appVersion = (project.findProperty("appVersion") as String?) ?: "2.0.1"
-val appVersionCode = (project.findProperty("appVersionCode") as String?)?.toIntOrNull()
-    ?: appVersion.split(".").let { p ->
-        (p.getOrNull(0)?.toIntOrNull() ?: 0) * 10000 +
-            (p.getOrNull(1)?.toIntOrNull() ?: 0) * 100 +
-            (p.getOrNull(2)?.toIntOrNull() ?: 0)
-    }
+// versionCode 必须是正整数：非 tag 的 main 分支构建 CI 会传 0.0.0 → code 0，
+// gradle 直接拒绝配置（android.defaultConfig.versionCode ... positive integer），
+// 这里兜底抬到 1，只为让普通提交的流水线能编出 APK 做快速验证。
+val appVersionCode = (
+    (project.findProperty("appVersionCode") as String?)?.toIntOrNull()
+        ?: appVersion.split(".").let { p ->
+            (p.getOrNull(0)?.toIntOrNull() ?: 0) * 10000 +
+                (p.getOrNull(1)?.toIntOrNull() ?: 0) * 100 +
+                (p.getOrNull(2)?.toIntOrNull() ?: 0)
+        }
+    ).coerceAtLeast(1)
 
 android {
     namespace = "com.crid.app"
