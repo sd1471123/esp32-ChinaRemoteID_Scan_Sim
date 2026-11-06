@@ -16,13 +16,20 @@ ESP32 无人机 Remote ID **广播（模拟）/ 接收（扫描）一体固件**
 连接设备热点后用 `https://192.168.4.1` 打开，网页顶部可切换发射 / 接收模式（下图为 ESP32-C5 固件，
 S3 固件不显示 5.8 GHz 选项）：
 
-| 发射模式（C5 · 5.8 GHz 频段 · GB 46750 新国标） | 接收模式（监测扫描） |
-|---|---|
-| ![发射模式](docs/webui_tx.png) | ![接收模式](docs/webui_rx.png) |
+<table>
+  <tr>
+    <th>发射模式（C5 · 5.8 GHz 频段 · GB 46750 新国标）</th>
+    <th>接收模式（监测扫描）</th>
+    <th>历史轨迹回放</th>
+  </tr>
+  <tr valign="top">
+    <td><img src="docs/webui_tx.png" alt="发射模式"></td>
+    <td><img src="docs/webui_rx.png" alt="接收模式"></td>
+    <td><img src="docs/webui_track.png" alt="航线回放"></td>
+  </tr>
+</table>
 
-历史轨迹的航线回放（接收模式 → 「历史轨迹」→ 点某个目标的「看轨迹」）：
-
-![航线回放](docs/webui_track.png)
+> 航线回放入口：接收模式 → 「历史轨迹」 → 点某个目标的「看轨迹」。
 
 同时也提供**原生 Android 客户端**（`android/`，Kotlin + Compose），四个页面与网页版功能对齐。
 App 走 BLE 或热点取数，**不连热点也能看实时数据、改配置**（v2.0.1 起）：
