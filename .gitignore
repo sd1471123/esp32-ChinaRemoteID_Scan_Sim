@@ -44,3 +44,6 @@ android/local.properties
 *.iml
 *.apk
 *.aab
+
+# 本地临时预览图
+.tmp/
