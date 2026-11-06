@@ -423,7 +423,7 @@ class BleClient(private val context: Context) {
     private fun handleFrame(bytes: ByteArray) {
         if (bytes.isEmpty()) return
         if (ignoreFrames) return
-        when (bytes[0].toInt()) {
+        when (bytes[0].toInt() and 0xFF) {
             0x01 -> synchronized(this) {
                 if (bytes.size >= 5) {
                     expected = ((bytes[1].toInt() and 0xFF) shl 24) or
@@ -449,9 +449,15 @@ class BleClient(private val context: Context) {
             0x03 -> synchronized(this) {
                 if (armed) {
                     armed = false
+                    val body = buffer.toByteArray()
                     val d = pending
                     pending = null
-                    d?.complete(String(buffer.toByteArray(), Charsets.UTF_8))
+                    // 长度对不上说明中途丢过帧（历史上是固件把通知塞超 ATT MTU 造成的），
+                    // 打出来比让上层报「JSON 解析失败」好定位得多
+                    if (expected > 0 && body.size != expected) {
+                        android.util.Log.w("CRID", "回包长度不符: ${body.size} != $expected")
+                    }
+                    d?.complete(String(body, Charsets.UTF_8))
                 }
             }
             0x04 -> synchronized(this) {
@@ -470,6 +476,12 @@ class BleClient(private val context: Context) {
                     d?.completeExceptionally(IOException(msg))
                 }
             }
+            // 帧头不认识：正常情况不会出现（固件保证每条通知都以类型字节开头）。
+            // 打日志而不是静默丢弃——静默丢会让 JSON 少字符，报错完全指不到这里。
+            else -> android.util.Log.w(
+                "CRID",
+                "未知帧类型 0x%02X（%d 字节），已丢弃".format(bytes[0].toInt() and 0xFF, bytes.size),
+            )
         }
     }
 

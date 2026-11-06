@@ -105,32 +105,48 @@ static void ap_ip_str(char *out, size_t n) {
     }
 }
 
-/** 发一帧（type + 数据）。分片大小按当前 MTU 走，MTU 不够时退回 20 字节 */
+/**
+ * 发一帧（type + 数据）。
+ *
+ * 一条通知的 ATT 载荷上限是 **MTU-3**（1 字节 opcode + 2 字节 handle），
+ * 而我们这 1 字节帧类型也占载荷，所以数据最多只能给 MTU-4。
+ *
+ * 这里原来按 MTU-3 取数据长度，帧总长就比上限多 1 字节：ble_gatts_notify_custom
+ * 见到超长 mbuf 既不报错也不拆包，直接整条塞给 L2CAP，对端按 MTU 截断 → **每帧
+ * 稳定丢最后一个字节**。小回包（/api/status）只有一帧、丢的是尾部 `}` 之外的字节
+ * 不明显；/api/config 这类 700 多字节的 JSON 每帧丢 1 字节，拼出来就是
+ * `"heading"45` 这种缺冒号的畸形 JSON，App 报
+ * “Unexpected JSON token ... Expected colon ':'”。
+ *
+ * 另外失败重试必须真的重发**同一帧**：旧的 3ms 单次重试在 ACL 缓冲紧张时几乎必败，
+ * 一失败调用方就 goto done，响应直接截断。
+ */
 static int ble_send(uint8_t type, const uint8_t *data, int len) {
     if (s_conn == BLE_HS_CONN_HANDLE_NONE) return -1;
     if (len < 0) len = 0;
 
     uint8_t buf[260];
     int mtu = ble_att_mtu(s_conn);
-    int max_payload = (mtu > 3) ? (mtu - 3) : 20;
+    int max_payload = (mtu > 4) ? (mtu - 4) : 20;   // 1 字节类型 + (MTU-3) 的 ATT 载荷
     if (max_payload > (int)sizeof(buf) - 1) max_payload = (int)sizeof(buf) - 1;
     if (len > max_payload) len = max_payload;
 
     buf[0] = type;
     if (len > 0) memcpy(buf + 1, data, len);
 
-    struct os_mbuf *om = ble_hs_mbuf_from_flat(buf, (uint16_t)(len + 1));
-    if (om == NULL) return -1;
-
-    int rc = ble_gatts_notify_custom(s_conn, s_tx_handle, om);
-    if (rc != 0) {
-        // 缓冲区不够时通知会失败：让出一点时间再试一次，仍失败就放弃这一帧
-        vTaskDelay(pdMS_TO_TICKS(3));
-        om = ble_hs_mbuf_from_flat(buf, (uint16_t)(len + 1));
-        if (om == NULL) return -1;
-        rc = ble_gatts_notify_custom(s_conn, s_tx_handle, om);
+    int rc = -1;
+    for (int attempt = 0; attempt < 4; attempt++) {
+        struct os_mbuf *om = ble_hs_mbuf_from_flat(buf, (uint16_t)(len + 1));
+        if (om == NULL) {
+            rc = -1;
+        } else {
+            rc = ble_gatts_notify_custom(s_conn, s_tx_handle, om);
+            if (rc == 0) return len;
+        }
+        // 控制器 ACL 缓冲被打满时通知会失败，让出时间再试，别急着丢帧
+        vTaskDelay(pdMS_TO_TICKS(4 + attempt * 4));
     }
-    return rc == 0 ? len : -1;
+    return -1;
 }
 
 static void ble_send_start(int total) {
@@ -237,7 +253,11 @@ static void ble_proxy(const ble_req_t *r) {
 
 done:
     ble_send(BLE_F_END, NULL, 0);
-    ESP_LOGI(TAG, "%s -> %d 字节", path, sent);
+    if (total > 0 && sent != total) {
+        ESP_LOGW(TAG, "%s -> 只发出 %d/%d 字节，回包会被截断", path, sent, total);
+    } else {
+        ESP_LOGI(TAG, "%s -> %d 字节", path, sent);
+    }
 
     esp_http_client_close(cli);
     esp_http_client_cleanup(cli);

@@ -149,8 +149,8 @@ idf.py -p COM3 flash monitor    # 烧录并打开串口监视器（Ctrl+] 退出
 
 | 芯片 | 文件 | 大小 | MD5 |
 |------|------|------|-----|
-| ESP32-S3 | `dist/remoteid_scanner_s3_v2.0.1.bin` | 1,387,088 B | `6fabab408f06b66085fed236287c2f12` |
-| ESP32-C5 | `dist/remoteid_scanner_c5_v2.0.1.bin` | 1,722,112 B | `8c9d4c3b3e65943faff497be695f333f` |
+| ESP32-S3 | `dist/remoteid_scanner_s3_v2.0.1.bin` | 1,387,184 B | `97335b096b3c69db8ef52e99cfcee32d` |
+| ESP32-C5 | `dist/remoteid_scanner_c5_v2.0.1.bin` | 1,722,224 B | `54ded54cec6acf95e02a4fe16f4fdf11` |
 
 这两个文件**只含应用分区**，不能单独烧到空片——空片请用上面的 zip（或自己编）。
 它们只用于网页「固件升级」面板上传，见下一节。
@@ -430,6 +430,15 @@ GB 42590-2023 附录 A.1.3.1.3 允许 **5725–5829 MHz**，对应 Wi-Fi 信道 
 
 新增原生 Android 客户端（`android/`，Kotlin + Compose），并修正一个从 v2.0.0 起就存在的
 功能缺口：**蓝牙数据通道在正式版上是坏的**。
+
+- **同版本覆盖修正（2026-11-06）**：App 走蓝牙读配置报
+  `Unexpected JSON token ... Expected colon ':'`。根因是 BLE 分片把数据按 **MTU-3** 取长度，
+  而 1 字节帧类型也占 ATT 载荷，整帧就比 `MTU-3` 上限多 1 字节；`ble_gatts_notify_custom`
+  见超长 mbuf 不报错也不拆包，对端按 MTU 截断 → **每帧稳定丢 1 字节**。
+  `/api/status` 只有一帧且丢的是尾部不影响解析，`/api/config` 860 字节要 4 帧，丢 4 字节
+  就拼出 `"heading"45` 这种缺冒号的畸形 JSON。现改为按 **MTU-4** 取数据长度，并把通知
+  失败重试从「3ms 一次」改成 4 次退避重试；实测 860 字节回包 7 帧（253/253/9/253/97…）
+  长度收敛、JSON 合法。版本号不变，Release 资产原地覆盖。
 
 - **根因**：BLE 桥接（`crid_ble.c`）用 `http://192.168.4.1/api/...` 访问本机 httpd，
   且 `disable_auto_redirect = true`；v2.0.0 把 80 端口改成只回 302 跳转 https 后，
