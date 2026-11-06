@@ -25,7 +25,7 @@ S3 固件不显示 5.8 GHz 选项）：
   <tr valign="top">
     <td><img src="docs/webui_tx.png" alt="发射模式"></td>
     <td><img src="docs/webui_rx.png" alt="接收模式"></td>
-    <td><img src="docs/webui_track.png" alt="航线回放"></td>
+    <td><img src="docs/webui_replay.png" alt="航线回放"></td>
   </tr>
 </table>
 
