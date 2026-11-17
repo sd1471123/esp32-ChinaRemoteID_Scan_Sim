@@ -43,6 +43,15 @@ static const char *TAG = "CN_C-RID_OTA";
 static char s_chunk[OTA_CHUNK];
 static char s_token[9];   // 8 位十六进制 + '\0'
 
+// 上传进行中标志：会话回收任务据此避开正在写入的这个连接。
+// 实测 1.39MB 镜像在 117KB/s 下需要 11.6 秒，已超过「会话超龄」的 10 秒阈值，
+// 不豁免的话，安装/重连事件一到就会把上传连接当死连接关掉，表现为「传到一半失败」。
+static volatile bool s_ota_busy = false;
+
+bool crid_ota_busy(void) {
+    return s_ota_busy;
+}
+
 void crid_ota_init(void) {
     snprintf(s_token, sizeof(s_token), "%08x", (unsigned)esp_random());
 }
@@ -79,7 +88,7 @@ esp_err_t crid_ota_handler_info(httpd_req_t *req) {
     return ESP_OK;
 }
 
-esp_err_t crid_ota_handler_upload(httpd_req_t *req) {
+static esp_err_t ota_upload_body(httpd_req_t *req) {
     // ---- 1. 令牌 ----
     char tok[16] = {0};
     if (httpd_req_get_hdr_value_str(req, "X-OTA-Token", tok, sizeof(tok)) != ESP_OK ||
@@ -177,8 +186,21 @@ esp_err_t crid_ota_handler_upload(httpd_req_t *req) {
     httpd_resp_set_type(req, "application/json");
     httpd_resp_sendstr(req, buf);
 
-    ESP_LOGW(TAG, "OTA success: %u bytes -> %s, rebooting", (unsigned)writ, part->label);
-    vTaskDelay(pdMS_TO_TICKS(900));
-    esp_restart();
+    ESP_LOGW(TAG, "OTA success: %u bytes -> %s", (unsigned)writ, part->label);
     return ESP_OK;
+}
+
+esp_err_t crid_ota_handler_upload(httpd_req_t *req) {
+    // 整个上传期间挂上「忙」标志，会话回收任务据此跳过本连接：
+    // 一次完整上传要 11~12 秒，长于超龄阈值，不豁免会被误当死连接关掉。
+    s_ota_busy = true;
+    esp_err_t ret = ota_upload_body(req);
+    s_ota_busy = false;
+
+    if (ret == ESP_OK) {
+        // 回包已经发出，留一点时间让客户端收完再重启
+        vTaskDelay(pdMS_TO_TICKS(900));
+        esp_restart();
+    }
+    return ret;
 }

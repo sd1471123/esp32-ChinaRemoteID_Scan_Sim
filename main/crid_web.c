@@ -3354,13 +3354,14 @@ static void web_wifi_event(void *arg, esp_event_base_t base, int32_t id, void *d
  * 而且不会自愈（这正是「断开 Wi-Fi 再连就再也打不开」的机制）。
  *
  * 所以必须有外力主动回收，两条判据互为补充：
- *   1) 新客户端接入 → 关掉「建立超过 WEB_STALE_MS」的老会话
+ *   1) 新客户端接入 → 关掉「建立超过 WEB_STALE_MS」的老会话（OTA 上传期间跳过）
  *   2) AP 上一个客户端都没有 → 全关（事件可能读不到已归零的 sta 列表，靠轮询兜底）
  *
  * 判据 1 曾经是「关掉接入之前建立的全部会话」，那会在同时用两台设备时误杀另一台
  * 正在进行的 OTA（一次上传十几秒，接入事件正好落在中间）。现在槽位扩到 6，
- * 不再需要用一刀切来换空位，改成只按年龄判定：正常请求都在 3 秒内结束，
- * 活过 10 秒的会话基本只剩死连接和长传输，前者该关，后者极少与接入撞车。
+ * 不再需要用一刀切来换空位，改成只按年龄判定：正常请求都在 3 秒内结束。
+ * 但 OTA 上传本身就超过 10 秒（实测 1.39MB / 117KB/s = 11.6 秒），单靠年龄仍会
+ * 误杀，所以额外用 crid_ota_busy() 做豁免——这是「传输类长连接」的唯一豁免口。
  */
 #define WEB_STALE_MS 10000
 
@@ -3371,15 +3372,24 @@ static void web_guard_task(void *arg) {
         int64_t now = web_now_ms();
 
         // 判据 1：新客户端接入后，清掉已经挂了很久的老会话
+        //
+        // 但 OTA 上传正在进行时必须整体跳过：一次 1.39MB 的镜像在 117KB/s 下要
+        // 11~12 秒，比 WEB_STALE_MS 还长，正好落进「超龄」区间；此时只要有设备
+        // 重连（安装事件），上传连接就会被当成死连接关掉，用户看到的就是
+        // 「传了一半突然失败 / 进度条不动」。
         int64_t pb = s_purge_before_ms;
         if (pb > 0 && now - pb >= 800) {
             s_purge_before_ms = 0;
-            int64_t cutoff = now - WEB_STALE_MS;
-            int oa = web_purge_before(s_srv_http,  cutoff);
-            int ob = web_purge_before(s_srv_https, cutoff);
-            if (oa + ob > 0) {
-                ESP_LOGW(TAG, "新客户端接入，清掉超龄会话 http=%d https=%d（heap=%u）",
-                         oa, ob, (unsigned)esp_get_free_heap_size());
+            if (crid_ota_busy()) {
+                ESP_LOGI(TAG, "OTA 上传进行中，跳过超龄会话清理");
+            } else {
+                int64_t cutoff = now - WEB_STALE_MS;
+                int oa = web_purge_before(s_srv_http,  cutoff);
+                int ob = web_purge_before(s_srv_https, cutoff);
+                if (oa + ob > 0) {
+                    ESP_LOGW(TAG, "新客户端接入，清掉超龄会话 http=%d https=%d（heap=%u）",
+                             oa, ob, (unsigned)esp_get_free_heap_size());
+                }
             }
         }
 
