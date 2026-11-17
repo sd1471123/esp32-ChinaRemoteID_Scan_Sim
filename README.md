@@ -156,8 +156,8 @@ idf.py -p COM3 flash monitor    # 烧录并打开串口监视器（Ctrl+] 退出
 
 | 芯片 | 文件 | 大小 | MD5 |
 |------|------|------|-----|
-| ESP32-S3 | `dist/remoteid_scanner_s3_v2.0.1.bin` | 1,387,184 B | `97335b096b3c69db8ef52e99cfcee32d` |
-| ESP32-C5 | `dist/remoteid_scanner_c5_v2.0.1.bin` | 1,722,224 B | `54ded54cec6acf95e02a4fe16f4fdf11` |
+| ESP32-S3 | `dist/remoteid_scanner_s3_v2.0.2.bin` | 1,389,616 B | `e9477fc9d709be80249e74f1fe62d571` |
+| ESP32-C5 | `dist/remoteid_scanner_c5_v2.0.2.bin` | 1,724,672 B | `9ae13637182625d1f7948e4ef6741350` |
 
 这两个文件**只含应用分区**，不能单独烧到空片——空片请用上面的 zip（或自己编）。
 它们只用于网页「固件升级」面板上传，见下一节。
@@ -203,8 +203,8 @@ esptool.py --chip esp32c5 --baud 460800 write_flash \
 >   「必须串口烧录」，都可以直接用网页上传，不需要数据线。
 
 - **升级文件**：本仓库 `dist/` 下的单芯片应用镜像，或自己编译出的 `build*/remoteid_scanner.bin`：
-  `dist/remoteid_scanner_s3_v2.0.1.bin`（约 1.39 MB，S3）、
-  `dist/remoteid_scanner_c5_v2.0.1.bin`（约 1.72 MB，C5）。
+  `dist/remoteid_scanner_s3_v2.0.2.bin`（约 1.39 MB，S3）、
+  `dist/remoteid_scanner_c5_v2.0.2.bin`（约 1.72 MB，C5）。
   Release 的 zip 也能用，解压出 `remoteid_scanner.bin` 即可；**不要**选整个 zip 或合并固件。
   两个 OTA 槽各 2 MB，C5 镜像装入后余量约 18%；芯片型号不符会在 `esp_ota_end` 校验阶段被拒，
   不会写坏当前正在运行的固件。
@@ -297,7 +297,7 @@ gradlew.bat assembleDebug
 标题栏右上角的更新图标（↓）会读本仓库 GitHub Releases，取版本号最高且非草稿/非预发布的一条：
 
 1. 把 `tag_name` 当版本号（`v2.0.2` → `2.0.2`），与本机 `versionName` 按数字段逐位比较；
-2. 没有更高版本 → 弹「当前已是最新版本 v2.0.1」；
+2. 没有更高版本 → 弹「当前已是最新版本 v2.0.2」；
 3. 有更高版本 → 弹版本说明（Release body）+ 安装包大小，点「下载并安装」下到
    `cache/updates/` 再交给系统安装器；该 Release 没传 APK 时按钮变成「打开发布页」。
 
@@ -432,6 +432,27 @@ GB 42590-2023 附录 A.1.3.1.3 允许 **5725–5829 MHz**，对应 Wi-Fi 信道 
 > C5 同时只提供一条射频，5.8G 频段下 AP 与混杂监听仍然可以并存（已实测信道 149 收发正常）。
 
 ## 版本历史
+
+### v2.0.2 — 两台设备可以同时打开网页
+
+修一个「第二台设备打不开配置页」的问题，此前一直被误认为需要「重新登录」或「只能一台设备用」。
+
+- **现象**：电脑已经打开 `https://192.168.4.1` 并把页面挂着，手机连上同一个热点后访问会一直转圈
+  直到超时；反过来也一样，谁后连谁打不开，而且不会自己恢复。
+- **真因**：HTTPS 服务端（`esp_http_server`）的客户端槽位只配了 **3** 个，且
+  `lru_purge_enable = false`。看 IDF 主循环就很直接——
+  `if (lru_purge_enable || httpd_is_sess_available(hd)) FD_SET(listen_fd, ...)`：
+  槽位一满，httpd 连 listen 都不再挂进 select，新连接的 SYN 只能在 backlog 里干等。
+  浏览器对同一 origin 会开 6 条连接，**一台电脑就能把 3 个槽占尽**，手机一进来就没位置。
+  串口实测拿到证据：`httpd_accept_conn: error in accept (23)`（ENFILE，socket 池耗尽）、
+  `httpd_server: error accepting new connection`，随后是 `esp-tls-mbedtls: write error :-0x0050`。
+- **修法**：HTTPS 槽位 3 → **6**（S3，空闲堆约 200KB）/ **4**（C5，小内存策略），
+  明文 80 端口槽位 3 → 2，`backlog_conn` 8 → 12，`CONFIG_LWIP_MAX_SOCKETS` 20 → **24**。
+  实测：先占住 3 条到 443 的裸连接再发新请求，旧固件完全无响应，新固件返回 200。
+- **顺带修一个会误伤 OTA 的地方**：会话回收原来是「新客户端一接入就清掉它之前建立的全部会话」，
+  两台设备同时用时，手机一接入就会杀掉电脑正在跑的那次升级（一次上传十几秒）。
+  改成按年龄清理（建立超过 10 秒），正常请求都在 3 秒内结束，不受影响。
+- 网页、接口、BLE 帧格式**均无变化**，v2.0.1 可直接网页 OTA 升到本版。
 
 ### v2.0.1 — Android 客户端 / 写操作也能走蓝牙 / 80 端口为桥接放行 GET
 
