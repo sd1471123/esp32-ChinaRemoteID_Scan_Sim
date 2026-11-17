@@ -44,9 +44,14 @@ jobs:
         # 导致每个包白带约 3MB。这里改成干净的空目录，只放本 target 的产物。
         PKG="$RUNNER_TEMP/pkg"
         rm -rf "$PKG"
-        mkdir -p "$PKG/remoteid_scanner_${{ matrix.target }}"
-        cp build/*.bin build/*.elf "$PKG/remoteid_scanner_${{ matrix.target }}/" 2>/dev/null || true
-        cp -r build/bootloader build/partition_table "$PKG/remoteid_scanner_${{ matrix.target }}/"
+        D="$PKG/remoteid_scanner_${{ matrix.target }}"
+        mkdir -p "$D/bootloader" "$D/partition_table"
+        cp build/*.bin build/*.elf "$D/" 2>/dev/null || true
+        # 只取产物文件，不要 cp -r 整个目录：build/bootloader 里有 16MB 的
+        # CMakeCache / CMakeFiles / .ninja_log / 目标文件，属于构建中间件，
+        # 打进发布包既白白变胖，也会泄漏构建机的绝对路径。
+        cp build/bootloader/*.bin build/bootloader/*.elf "$D/bootloader/" 2>/dev/null || true
+        cp build/partition_table/*.bin "$D/partition_table/" 2>/dev/null || true
         ls -lR "$PKG"
         ( cd "$PKG" && zip -r "$GITHUB_WORKSPACE/esp32-ChinaRemoteID_Scan_Sim-${{ matrix.target }}.zip" . )
 
@@ -75,7 +80,11 @@ jobs:
         if [ "${{ matrix.target }}" = "esp32c5" ] && grep -qi 'esp32s3' "$LIST"; then
           echo "::error::C5 包内出现 esp32s3 产物"; exit 1
         fi
-        echo "包内容校验通过：仅含 $TOP"
+        # 构建中间件不得进包（CMakeCache 里有构建机绝对路径，且体积可观）
+        if grep -qE 'CMakeCache|CMakeFiles|\.ninja|\.o$|\.obj$' "$LIST"; then
+          echo "::error::包内混入了构建中间件"; exit 1
+        fi
+        echo "包内容校验通过：仅含 $TOP（$(wc -l < "$LIST") 个条目）"
 
     - name: Upload Build Artifacts
       uses: actions/upload-artifact@v4
