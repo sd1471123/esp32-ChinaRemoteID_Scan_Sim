@@ -563,12 +563,12 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
   console.log('  卡片展开:', ld.getElementById('lgbody').style.display === '',
     '| 标签', ld.getElementById('lgtog').textContent);
 
-  // 机型预设：只收录 FAA 已登记条目；选型后应生成 20 位序列号并回填名称/类别
+  // 机型预设：只收录 FAA 已登记序列号的条目；选型后应生成 20 位序列号并回填名称/类别
   console.log('  --- 机型预设 ---');
   const mdlGroups = [...ld.querySelectorAll('#ddlist .dd-group')].map((e) => e.textContent);
-  console.log('  下拉分组:', mdlGroups.join('/'), '(expect 6)');
+  console.log('  下拉分组:', mdlGroups.join('/'), '(expect 6)', mdlGroups.length === 6);
   const mdlItems = [...ld.querySelectorAll('#ddlist .dd-item')];
-  console.log('  型号条目:', mdlItems.length);
+  console.log('  型号条目:', mdlItems.length, mdlItems.length >= 80);
   const mk3 = mdlItems.find((e) => e.textContent === 'Mavic 3');
   mk3.click();
   await new Promise((r) => setTimeout(r, 30));
@@ -576,6 +576,16 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
   console.log('  序列号 20 位且前缀官方:', genId.length === 20 && genId.slice(0, 8) === '1581F45T', genId.slice(0, 8));
   console.log('  回填机型名与类别:', ld.getElementById('drone_name').value === 'Mavic 3'
     && ld.getElementById('ua_type').value === '2');
+  // 短前缀（Skydio 2 只有 7 位）也必须补足 20 位，不能生成 17 位的半截号
+  const sk2 = mdlItems.find((e) => e.textContent === 'Skydio 2');
+  if (sk2) {
+    sk2.click();
+    await new Promise((r) => setTimeout(r, 30));
+    const id2 = ld.getElementById('uas_id').value;
+    console.log('  短前缀补足 20 位:', id2.length === 20 && id2.startsWith('1668F00'), id2);
+  } else {
+    console.log('  短前缀补足 20 位: 未找到 Skydio 2 条目', false);
+  }
 
   console.log('=== 运行后错误 ===');
   console.log(w._pageErrors.length ? w._pageErrors : '(none)');

@@ -1,0 +1,637 @@
+FAA DoC 记录中的序列号编码说明（仅摘录 serialNumberDescription 非空的条目）
+数据源 https://uasdoc.faa.gov | 拉取 2026-11-11
+用途：说明官方号段逐位含义，机型表里拆分 eBee X/GEO/TAC、Anafi AI/USA 即依据此处。
+
+========================================================================
+[OOP000000046] AgEagle (senseFly) / eBee X series
+号段: 1587A0510003000 ~ 1587A0540005ZZZ
+1587 : MFR code
+A : Lenght code
+051000 : product number (051000 = eBee X, 052000 = eBee GEO and 054000 = eBee TAC)
+3 : intern value from 3 to 5
+000 : unique 3 digits from 000 to ZZZ
+
+========================================================================
+[RID000000001] DJI / Mini 3 Pro
+号段: 1581F4XF000000000000 ~ 1581F4XFFFFFFFFFFFFF
+UAS on the market that do not have Remote ID features require firmware upgrade
+
+========================================================================
+[RID000000003] Microdrones / md4-1000
+号段: 1644FMD4100000007004 ~ 1644FMD4100000007504
+It is intended to manufacture up to 500 units of this UAV model.
+
+========================================================================
+[RID000000004] Microdrones / md4-3000
+号段: 1644FMD4300000001234 ~ 1644FMD4300000001334
+It is intended to produce up to 100 units of this UAV model.
+
+========================================================================
+[RID000000006] Wingtra / WingtraOne Gen II
+号段: 174442423 ~ 174449999
+Serial numbers formatter for UAS manufactured with Remote ID capabilities as required by 14 CFR part 89 as stated in referenced MOC.
+
+Range 1: 174442423-174442999 
+Range 2: 174443204-174449999
+
+*FCC Identifier RYK-WPET236ACNBT, NS9P2400
+
+========================================================================
+[RID000000007] DJI / Air 2S
+号段: 1581F3YT000000000000 ~ 1581F3YTFFFFFFFFFFFF
+UAS on the market that do not have Remote ID features require firmware upgrade
+
+========================================================================
+[RID000000008] DJI / AVATA
+号段: 1581F4QW000000000000 ~ 1581F4QWFFFFFFFFFFFF
+UAS on the market that do not have Remote ID features require firmware upgrade
+
+========================================================================
+[RID000000009] DJI / Mavic 3
+号段: 1581F45T000000000000 ~ 1581F45TFFFFFFFFFFFF
+UAS on the market that do not have Remote ID features require firmware upgrade
+
+========================================================================
+[RID000000010] DJI / Mavic 3 Cine
+号段: 1581F4QZ000000000000 ~ 1581F4QZFFFFFFFFFFFF
+UAS on the market that do not have Remote ID features require firmware upgrade
+
+========================================================================
+[RID000000011] DJI / M30
+号段: 1581F4BN000000000000 ~ 1581F4BNFFFFFFFFFFFF
+UAS on the market that do not have Remote ID features require firmware upgrade
+
+========================================================================
+[RID000000012] DJI / M30T
+号段: 1581F5BK000000000000 ~ 1581F5BKFFFFFFFFFFFF
+UAS on the market that do not have Remote ID features require firmware upgrade
+
+========================================================================
+[RID000000016] BlueMark / db100
+号段: 1787F01BM22010000000 ~ 1787F01BM50130000000
+It consists of:
+1. the MRF code: 1787  
+2. length of SN: 15 char (F)
+3. the db100 model (01)
+4. BM (company name)
+5. 2201: the production year and month YYMM
+6. 7 digits: SN broadcast module
+
+========================================================================
+[RID000000017] Sony / ARS-S1
+号段: 172872001839 ~ 172872009999
+The above serial number range is for sales. We have a different range of serial numbers for promotional and customer service purposes, which we are unable to describe in this DOC application form.
+
+========================================================================
+[RID000000019] DJI / M3E
+号段: 1581F5FH000000000000 ~ 1581F5FHFFFFFFFFFFFF
+UAS without Remote ID features produced before the DOC approved require firmware upgrade
+
+========================================================================
+[RID000000020] DJI / M3T
+号段: 1581F5FJ000000000000 ~ 1581F5FJFFFFFFFFFFFF
+UAS without Remote ID features produced before the DOC approved require firmware upgrade
+
+========================================================================
+[RID000000021] DJI / M300 RTK
+号段: 1581F1ZN000000000000 ~ 1581F1ZNFFFFFFFFFFFF
+UAS on the market that do not have Remote ID features require firmware upgrade
+
+========================================================================
+[RID000000025] Dronetag / Mini
+号段: 1596F350000000000000 ~ 1596F35FFFFFFFFFFFFF
+The serial number range is specifically designed for this particular model with 1596 as ICAO prefix and F35 as the model prefix
+
+========================================================================
+[RID000000026] EVO Lite / MDXM
+号段: 1748CLTC822390001 ~ 1748CLTC825529999
+A serial number for EVO Lite consists of 17 digits.  The number always begins with 1748C. A serial number is typically 1748CPYYWWNNNN. P: Code of the production plant; YYWW: Year and Week; NNNN: the particular product produced in that given week.
+
+========================================================================
+[RID000000027] EVO Lite+ / MDXM2
+号段: 1748CLTC822390001 ~ 1748CLTC825529999
+The serial number for EVO Lite+ shares the range with EVO Lite.  A serial number is typically 1748CPYYWWNNNN. P: Code of the production plant; YYWW: Year and Week; NNNN: the particular product produced in that given week.
+
+========================================================================
+[RID000000030] Autel Robotics / EVO II
+号段: 1748CHL7822390001 ~ 1748CHN2925529999
+The number always begins with 1748C. A serial number is typically 1748CHLPYYWWNNNN. P: Code of the production plant; YYWW: Year and Week; NNNN: the particular product produced in that given week.
+
+========================================================================
+[RID000000031] Zephyr Systems / Module 100
+号段: 1795F01ZS22010000000 ~ 1795F01ZS50120000000
+Consists of: 
+1. the MFR code: 1795 
+2. length of SN: 15 characters (F) 
+3. Model: Module 100 (01) 
+4. ZS (company name) 
+5. 2201: the production year and month YYMM 
+6. 7 digits: SN broadcast module
+
+========================================================================
+[RID000000032] Autel Robotics / EVO Lite
+号段: 1748CLTC822390001 ~ 1748CLTC925529999
+The number always begins with 1748C. A serial number is typically 1748CLTCPYYWWNNNN. P: Code of the production plant; YYWW: Year and Week; NNNN: the particular product produced in that given week.
+
+========================================================================
+[RID000000035] Autel Robotics / EVO Lite+
+号段: 1748CLTC822390001 ~ 1748CLTC925529999
+The number always begins with 1748C. A serial number is typically 1748CLTCPYYWWNNNN. P: Code of the production plant; YYWW: Year and Week; NNNN: the particular product produced in that given week.
+
+========================================================================
+[RID000000038] DJI / Agras T30
+号段: 1581F446000000000000 ~ 1581F446FFFFFFFFFFFF
+UAS on the market that do not have Remote ID features require firmware upgrade
+
+========================================================================
+[RID000000039] DJI / Agras T40
+号段: 1581F574000000000000 ~ 1581F574FFFFFFFFFFFF
+UAS on the market that do not have Remote ID features require firmware upgrade
+
+========================================================================
+[RID000000041] DJI / Mavic 3 Classic
+号段: 1581F67P000000000000 ~ 1581F67PFFFFFFFFFFFF
+Full range of serial numbers for this model
+
+========================================================================
+[RID000000045] Dronetag / Beacon
+号段: 1596A3400000000 ~ 1596A34FFFFFFFF
+Dronetag Beacon has unique serial number range (different than Dronetag Mini). Beacon is pre-fixed by 1596A34 and Mini by 1596F35.
+
+========================================================================
+[RID000000046] Autel Robotics / Dragonfish Lite
+号段: 1748CJD2822390001 ~ 1748CJD2925529999
+The number always begins with 1748C. JD2 means Dragonfish Lite. A serial number is typically 1748CJD2PYYWWNNNN. P: Code of the production plant; YYWW: Year and Week; NNNN: the particular product produced in that given week.
+
+========================================================================
+[RID000000047] Autel Robotics / Dragonfish Pro
+号段: 1748CJD3822390001 ~ 1748CJD3925529999
+The number always begins with 1748C. JD3 means Dragonfish Pro. A serial number is typically 1748CJD2PYYWWNNNN. P: Code of the production plant; YYWW: Year and Week; NNNN: the particular product produced in that week.
+
+========================================================================
+[RID000000048] Autel Robotics / Dragonfish Standard
+号段: 1748CJD1822390001 ~ 1748CJD1925529999
+The number always begins with 1748C. JD1 means Dragonfish Standard. A serial number is typically 1748CJD1PYYWWNNNN. P: Code of the production plant; YYWW: Year and Week; NNNN: the particular product produced in that week.
+
+========================================================================
+[RID000000049] Zephyr Systems / OKO-250
+号段: 1795F250ZS2201000000 ~ 1975F250ZS5012000000
+1795= MFR code
+F= length code (15)
+250= model of aircraft
+ZS= Zephyr Systems
+2201=  YY/MM date of manufacture
+0000123= internal SN for tracking
+
+========================================================================
+[RID000000054] Inspired Flight / IF1200A
+号段: 1791554001 ~ 1791560000
+Last 5 digits is our current serial number format on existing aircraft and an expected range that we would need. The new serial number format follows ANSI/CTA-2063-A.
+
+========================================================================
+[RID000000055] Zephyr Systems / ARK-350
+号段: 1795F350ZS2201000000 ~ 1795F350ZS5001000000
+1795 = MFR Code
+F= character number (15)
+350= Mfr Model 
+ZS = Manufacturer (Zephyr Systems)
+2201 = Date of manufacturer YY/MM
+123456 = Serial Number
+
+========================================================================
+[RID000000056] AgEagle (senseFly) / eBee X series
+号段: 1587A0510003000 ~ 1587A0540005ZZZ
+1587 : MFR code
+A : Lenght code
+051000 : product number (051000 = eBee X, 052000 = eBee GEO, 053000 = eBee AG and 054000 = eBee TAC) 
+3 : intern value from 3 to 5
+000 : unique 3 digits from 000 to ZZZ
+
+========================================================================
+[RID000000057] DJI / M3M
+号段: 1581F5FK000000000000 ~ 1581F5FKFFFFFFFFFFFF
+Full range of serial numbers for this model
+
+========================================================================
+[RID000000058] BlueMark / db120
+号段: 1787F04BM22010000000 ~ 1787F04BM50130000000
+It consists of: 1. the MRF code: 1787 2. length of SN: 15 char (F) 3. the db120 model (04) 4. BM (company name) 5. 2201: the production year and month YYMM 6. 7 digits: SN broadcast module
+
+========================================================================
+[RID000000062] DJI / Mini 3
+号段: 1581F5YH000000000000 ~ 1581F5YHFFFFFFFFFFFF
+Full range of serial numbers for this model
+
+========================================================================
+[RID000000063] Drone Defence / AeroPing
+号段: 1796F001000000000000 ~ 1796F001FFFFFFFFFFFF
+Compliant to ANSI/CTA-2063-A:
+
+1796 - ICAO Manufacturer Code (Characters 1 to 4)
+F - Length Code: Depicting 15 Characters (Character 5)
+001 - Product Type: AeroPing is defined as 001 (Characters 6 to 8)
+XXXXXXXXXXXXXX - Product Number, generated from the 12-character MAC address of the Wi-Fi interface (Characters 9 to 20)
+
+========================================================================
+[RID000000067] PARROT / ANAFI Ai
+号段: 1588E040452AA000001 ~ 1588E040452ZZ999999
+1588 is the Parrot manufacturer's identifier
+E is an alphanumerical character corresponding to the lenght of the serial number
+040452 is the Parrot internal code to designate the Anafi Ai model
+AA to ZZ relate to the version of the drone
+000001 to 999999 is the chronological increment
+
+========================================================================
+[RID000000068] PARROT / ANAFI USA
+号段: 1588E040505AA000001 ~ 1588E040505ZZ999999
+1588 is the Parrot manufacturer's identifier 
+E is an alphanumerical character corresponding to the lenght of the serial number 
+040505 is the Parrot internal code to designate the Anafi USA model 
+AA to ZZ relate to the version of the drone 
+000001 to 999999 is the chronological increment
+
+========================================================================
+[RID000000073] Harris Aerial / Carrier H6
+号段: 18136H6E120 ~ 18136H6E999
+Projected production run
+
+========================================================================
+[RID000000074] Harris Aerial / Carrier H8E
+号段: 18136H8E025 ~ 18136H8E500
+Projected potential production range
+
+========================================================================
+[RID000000077] Vision Aerial / SwitchBlade-Elite
+号段: 1788520100 ~ 1788529999
+The 1788XXXXXX is our manufacturer code, the XXXX5XXXXX is the length of our serial number, the XXXXX2NNNN is the serial number of the mark 2 series SwitchBlade-Elite
+
+========================================================================
+[RID000000083] Drone Volt / Hercules 20
+号段: 1801BDV221200000 ~ 1801BDV501200000
+1. ANSI MFR number : 1801
+2. Lengh of SN : B (11 characters)
+3. Company name : DV
+4. Production year and month YYMM
+5. SN broadcast module : 5 digits
+
+========================================================================
+[RID000000087] Leica Geosystems AG / BLK2FLY
+号段: 172073000000 ~ 172074000000
+The serialnumber is a CTA2063 type serial number (EASA).
+
+Composition:
+[1720][7][XXXXXXX]
+1720: indicates Leica as manufacturer
+7: A 7 digit serialnumber follows
+XXXXXXX: BLK2FLY Serialnumber. Started with 3000000 and allocated until 4000000
+
+========================================================================
+[RID000000088] BlueMark / db121
+号段: 1787F05BM22010000000 ~ 1787F05BM50130000000
+It consists of: 
+1. the MRF code: 1787 
+2. length of SN: 15 char (F) 
+3. the db121 model (05) 
+4. BM (company name) 
+5. 2201: the production year and month YYMM 
+6. 7 digits: SN broadcast module
+
+========================================================================
+[RID000000089] BlueMark / db121pcb
+号段: 1787F06BM22010000000 ~ 1787F06BM50130000000
+It consists of: 
+1. the MRF code: 1787 
+2. length of SN: 15 char (F) 
+3. the db121pcb model (06) 
+4. BM (company name) 
+5. 2201: the production year and month YYMM 
+6. 7 digits: SN broadcast module
+
+========================================================================
+[RID000000097] Skydio / X2E SDR21V1
+号段: 1668BE10JA000000 ~ 1668BE10JA00ZZZZ
+This serial numbers associated with Skydio X2E follow the ANSI/CTA-2063-A standard. 
+The Skydio manufacturer’s number is 1668 and serial length is set by Skydio to be 11 characters long. The ANSI prefix is then always 1668B. The remaining 11 characters of the serial are described in the attached document.
+
+========================================================================
+[RID000000098] Skydio / X2E SDR21V2
+号段: 1668BE10JA000000 ~ 1668BE10JA00ZZZZ
+This serial numbers associated with Skydio X2E follow the ANSI/CTA-2063-A standard. 
+The Skydio manufacturer’s number is 1668 and serial length is set by Skydio to be 11 characters long. The ANSI prefix is then always 1668B. The remaining 11 characters of the serial are described in the attached document.
+
+========================================================================
+[RID000000099] Skydio / 2+ SDR35V1
+号段: 1668BS20FB000000 ~ 1668BS20JB00ZZZZ
+This serial numbers associated with Skydio 2+ follow the ANSI/CTA-2063-A standard. 
+The Skydio manufacturer’s number is 1668 and serial length is set by Skydio to be 11 characters long. The ANSI prefix is then always 1668B. The remaining 11 characters of the serial are described in the attached document.
+
+========================================================================
+[RID000000100] Skydio / 2+ SDR35V2
+号段: 1668BS20FB000000 ~ 1668BS20JB00ZZZZ
+This serial numbers associated with Skydio 2+ follow the ANSI/CTA-2063-A standard. 
+The Skydio manufacturer’s number is 1668 and serial length is set by Skydio to be 11 characters long. The ANSI prefix is then always 1668B. The remaining 11 characters of the serial are described in the attached document.
+
+========================================================================
+[RID000000113] Vision Aerial / Vector
+号段: 1788520100 ~ 1788529999
+This is the serial number series for our Mark 2 product.  1788 is our FAA manufacturing number, and the next number (5) is the number of digits in the Mark 2 identifier.
+
+========================================================================
+[RID000000118] Hylio / AG-210
+号段: 17906080201 ~ 17906080250
+Serial number consists of:
+1. MRF code: 1790
+2. length of sn code: 6
+3. Hylio VIN: 6 digit numeric
+
+Numbers count up by one on the Hylio VIN spanning the specified range
+
+========================================================================
+[RID000000119] Hylio / AG-216
+号段: 17906090201 ~ 17906090250
+Serial number consists of:
+1. MRF code: 1790
+2. length of sn code: 6
+3. Hylio VIN: 6 digit numeric
+
+Numbers count up by one on the Hylio VIN spanning the specified range
+
+========================================================================
+[RID000000120] Hylio / AG-230
+号段: 17906100201 ~ 17906100250
+Serial number consists of:
+1. MRF code: 1790
+2. length of sn code: 6
+3. Hylio VIN: 6 digit numeric
+
+Numbers count up by one on the Hylio VIN spanning the specified range
+
+========================================================================
+[RID000000121] Hylio / AG-272
+号段: 17906070201 ~ 17906070250
+Serial number consists of:
+1. MRF code: 1790
+2. length of sn code: 6
+3. Hylio VIN: 6 digit numeric
+
+Numbers count up by one on the Hylio VIN spanning the specified range
+
+========================================================================
+[RID000000123] Watts Innovations / PRISM Sky
+号段: 1785C000000006000 ~ 1785C000000007999
+In compliance with ANSI/CTA-2063-A in accordance with § 89.505, the vehicle serial number is using Watts Innovations registered manufacturing code (1785), followed by a single character indicating the length of the serial number (C), followed by the device serial number itself (example: 00000000xxxx). PRISM Sky will display the vehicle serial number on a label on its front left arm socket. The label will be in English and legible, prominent, and permanently affixed to both the unmanned aircraft and its packaging.
+
+Total of 1999 serial numbers.
+
+========================================================================
+[RID000000125] Coretronic Intelligent Robotics Corporation / SIRAS
+号段: 1836FF1E010000000000 ~ 1836FF1E01FFFFFFFFFF
+1. CiRC MFR code: 1836
+2. Length code: F (stands for 15 charactors)
+3. MFG serial number:
+    - "F1E01" is SIRAS featured code
+    - "FFFFFFFFFF" is serial number, in which “F” stands for free character 0 to 9 or A to Z
+
+========================================================================
+[RID000000126] Ascent AeroSystems / Spirit
+号段: 1812FSPRTAAA000000AA ~ 1812FSPRTZZZ999999ZZ
+[1812FSPRT] = HEADER - ALWAYS THE SAME
+[AAA-ZZZ] = MODEL BUILD TYPE OR CONFIGURATION (SKIPPING L & O)
+[000000-999999] = UNIQUE INCREMENTING SERIAL NUMBER
+[AA-ZZ] = MODEL SUBSET (SKIPPING L & O)
+
+IN PRACTICE - 
+
+OUR FIRST MODEL NUMBER OUT THE DOOR - 1812FSPRTAAA000001AA
+
+MODEL CHANGE LATER HAVING A DIFFERENT FLIR CAMERA AS A STANDARD ATTACHMENT AND A DIFFERENT RADIO SYSTEM - 1812FSPRTACB000001AB
+
+THIS ALOWS ASCENTAEROSYSTEMS TO BE ABLE TO PROVIDE A DETAILED DESCRIPTION OF VEHICLE CAPABILITIES AND LOADOUT THROUGH THE SERIAL NUMBER TO THE FAA
+THROUGH A STANDARDIZED MEANS
+
+========================================================================
+[RID000000132] uAvionix / pingRID
+号段: 1792C000000000000 ~ 1792C000000FFFFFF
+Individually serialized based on ICAO assigned manufacturer code (1792)
+
+========================================================================
+[RID000000138] Microdrones / EasyOne
+号段: 1644FMD4E1VA00000001 ~ 1644FMD4E1VA00009999
+The serial number range is made of the following components:
+1) 1644 is Microdrones' ICAO manufacturer code
+2) F is the length of the following alphanumeric number
+3) MD4E1VA is the abbreviated model name: md4-EasyOne Version A
+4) the last 8 digits refer to number of the manufactured products
+
+========================================================================
+[RID000000151] Autel Robotics / EVO Max
+号段: 1748FEV3HMA823010001 ~ 1748FEV3HMA933539999
+The number always begins with 1748F. EV3EMA means Model EVO Max . A serial number is typically 1748FEV3EMAPYYWWNNNN. P: Code of the production plant; YYWW: Year and Week; NNNN: the particular product produced in that week.
+
+========================================================================
+[RID000000160] Ascent AeroSystems / NX30
+号段: 1812FNX30AAA000000AA ~ 1812FNX30ZZZ999999AA
+NX30: Vehicle Model
+AAA - ZZZ: Vehicle Revision
+000000 - 999999: Incremented serial number
+AA: Peripheral Revision
+
+========================================================================
+[RID000000162] XAG / P100
+号段: 1863FPEG821800000000 ~ 1863FPEG8218999ZZZZZ
+It consists of: 
+1. The MRF code: 1863
+2. Length of SN: 15 char (F)
+3. Company name (PEG)
+4. The XAG Drone Model: P100 is (8218)
+5. Production year's last digits and number of weeks (310 is 2023's 10th week)
+6. 5 chars: SN of drone
+
+========================================================================
+[RID000000163] XAG / P100 Pro
+号段: 1863FPEG821900000000 ~ 1863FPEG8219999ZZZZZ
+It consists of: 
+1. The MRF code: 1863
+2. Length of SN: 15 char (F)
+3. Company name (PEG)
+4. The XAG Drone Model: P100 Pro is (8219)
+5. Production year's last digits and number of weeks (310 is 2023's 10th week)
+6. 5 chars: SN of drone
+
+========================================================================
+[RID000000168] Event38 Unmanned Systems / E400
+号段: 180774000001 ~ 180774009999
+The serial number range consists of:
+1. the manufacturers code: 1807
+2. length of serial number: 7 characters (7)
+3. the model of the aircraft: 400
+4. 4 digits: number of the aircraft manufactured
+
+========================================================================
+[RID000000175] BlueMark / db122fpv
+号段: 1787F07BM23010000000 ~ 1787F07BM50130000000
+It consists of: 
+
+1. the MRF code: 1787 
+2. length of SN: 15 char (F) 
+3. the db122fpv model (07) 
+4. BM (company name) 
+5. 2301: the production year and month YYMM 
+6. 7 digits: SN broadcast module
+
+========================================================================
+[RID000000181] Hoverfly Technologies / Sentry/Spectre
+号段: 1867F180010003500000 ~ 1867F180010005750000
+For the serial number we use the following break down. 4 digits to annotate our ICAO manufacturer code. 1 digit to annotate length code. 15 digits to annotate the manufacturer's serial number. The 15 digit manufacturer's serial number is broken down as follows. 4 digits for data YYMM format. 7 digit part number. 4 digit sequential identifier.
+
+========================================================================
+[RID000000192] DJI / Inspire 3
+号段: 1581F4Z4000000000000 ~ 1581F4Z4FFFFFFFFFFFF
+Full range of serial numbers for this model
+
+========================================================================
+[RID000000204] DJI / Mavic 3 Pro
+号段: 1581F67Q000000000000 ~ 1581F67QZZZZZZZZZZZZ
+Full range of serial numbers for this model
+
+========================================================================
+[RID000000205] DJI / Mavic 3 Pro Cine
+号段: 1581F6MK000000000000 ~ 1581F6MKZZZZZZZZZZZZ
+Full range of serial numbers for this model
+
+========================================================================
+[RID000000222] Event38 Unmanned Systems / E455
+号段: 180774550001 ~ 180774559999
+The serial number range consists of: 
+1. the manufacturers code: 1807 
+2. length of serial number: 7 characters (7) 
+3. the model of the aircraft: 455 
+4. 4 digits: number of the aircraft manufactured
+
+========================================================================
+[RID000000223] UAS / RC
+号段: 1774FREM101000000001 ~ 1774FREM101000075000
+The serial number range is compliant with the MOC requirements and specifies a range of 75,000 units.
+
+========================================================================
+[RID000000241] Camflite / Aurora
+号段: 1871C000000007000 ~ 1871C000000008999
+In compliance with ANSI/CTA-2063-A, in accordance with § 89.505, the vehicle serial number uses Camflite registered manufacturing code, followed by a single character indicating the length of the serial number, followed by the device serial number itself. Aurora will display the vehicle serial number on a label on its front left arm socket. The label will be in English, legible, prominent, and permanently affixed to the unmanned aircraft and its packaging.
+
+========================================================================
+[RID000000242] Camflite / Ascent
+号段: 1871C000000007000 ~ 1871C000000008999
+In compliance with ANSI/CTA-2063-A, in accordance with § 89.505, the vehicle serial number uses Camflite registered manufacturing code, followed by a single character indicating the length of the serial number, followed by the device serial number itself. Ascent will display the vehicle serial number on a label on its front left arm socket. The label will be in English, legible, prominent, and permanently affixed to the unmanned aircraft and its packaging.
+
+========================================================================
+[RID000000246] Hylio / AG-210
+号段: 17906080251 ~ 17906080400
+Serial number consists of:
+1. MRF code: 1790
+2. length of sn code: 6
+3. Hylio VIN: 6 digit numeric
+
+Numbers count up by one on the Hylio VIN spanning the specified range
+
+========================================================================
+[RID000000247] Hylio / AG-216
+号段: 17906090251 ~ 17906090400
+Serial number consists of:
+1. MRF code: 1790
+2. length of sn code: 6
+3. Hylio VIN: 6 digit numeric
+
+Numbers count up by one on the Hylio VIN spanning the specified range
+
+========================================================================
+[RID000000248] Hylio / AG-230
+号段: 17906100251 ~ 17906100400
+Serial number consists of:
+1. MRF code: 1790
+2. length of sn code: 6
+3. Hylio VIN: 6 digit numeric
+
+Numbers count up by one on the Hylio VIN spanning the specified range
+
+========================================================================
+[RID000000249] Hylio / AG-272
+号段: 17906070251 ~ 17906070400
+Serial number consists of:
+1. MRF code: 1790
+2. length of sn code: 6
+3. Hylio VIN: 6 digit numeric
+
+Numbers count up by one on the Hylio VIN spanning the specified range
+
+========================================================================
+[RID000000251] Ruko / F11GIM2
+号段: 1869DGIM2000000000 ~ 1869DGIM2999999999
+From 1869DGIM2000000000 to 1869DGIM2999999999
+
+========================================================================
+[RID000000252] Dronetag / DRI
+号段: 1596F330000000000000 ~ 1596F33FFFFFFFFFFFFF
+We generate this serial number range during manufacturing step and it is baked into the memory.
+
+========================================================================
+[RID000000253] SmartDrone / Discovery 2
+号段: 1866ASDD0000030 ~ 1866ASDD0005000
+It consists of: 
+
+1.  MFR Code - 1866
+2. Length Code - A, signifying 10 characters
+3. 10 Character MFR Serial Number
+
+========================================================================
+[RID000000256] DJI / M350 RTK
+号段: 1581F6GK000000000000 ~ 1581F6GKZZZZZZZZZZZZ
+Full range of serial numbers for this model
+
+========================================================================
+[RID000000257] Dronetag / BS
+号段: 1596F310000000000000 ~ 1596F31FFFFFFFFFFFFF
+Serial number is randomly generated from this range and baked inside the internal memory of Dronetag BS device.
+
+========================================================================
+[RID000000271] WISPR / Ranger Pro 1100
+号段: 1889ERP110001012100 ~ 1889ERP110012312599
+Ranger Pro 1100 base package is 1889ERP110001012100 and any variation of that package will have one of the serial numbers in the range specified.
+
+========================================================================
+[RID000000272] WISPR / Ranger Elite
+号段: 1889ERE000008012300 ~ 1889ERE000012313099
+Ranger Elite base package has the serial number of 1889ERE000008012300 and any variation of that package will have a serial number in the serial range provided.
+
+========================================================================
+[RID000000273] DJI / M30 Dock version
+号段: 1581F5BL000000000000 ~ 1581F5BLZZZZZZZZZZZZ
+Full range of serial numbers for this model
+
+========================================================================
+[RID000000274] DJI / M30T Dock version
+号段: 1581F5BM000000000000 ~ 1581F5BMZZZZZZZZZZZZ
+Full range of serial numbers for this model
+
+========================================================================
+[RID000000296] Sentera / PHX
+号段: 1798F113240000000001 ~ 1798F113240099999999
+1798 = Manufacturers Code
+
+F = 15 Characters
+
+1132400 = Aircraft Assembly Number
+
+Last 8 digits = Production Unit Number
+
+
+Current PHX aircraft are labeled with a 4 digit serial number. Existing PHX that are retrofitted with RID hardware will receive a new label with updated serial number displayed in CTA-2063-A format and other such required information for part 89 compliance. 
+
+For example an existing PHX with serial number 2052 will receive a  new label with an updated serial number of 1798F113240000002052 with the RID hardware upgrade kit. 
+
+Existing PHX inventory will be updated with RID hardware and new labels before being sold.
+
+========================================================================
+[RID000001097] Applied Aeronautics / Albatross
+号段: AA2300 ~ AA2499
+Aircraft to be manufactured between March 2023 and December 2024
+

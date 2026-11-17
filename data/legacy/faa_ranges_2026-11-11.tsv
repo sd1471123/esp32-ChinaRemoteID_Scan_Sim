@@ -1,0 +1,519 @@
+# FAA UAS DoC 记录快照（含序列号区间）
+# 数据源 https://uasdoc.faa.gov | 拉取 2026-11-11 | 516 条（RID 487 + OOP 29）
+# 字段: 编号	类型	厂商	型号	号段起点	号段终点	状态
+OOP000000046	oop	AgEagle (senseFly)	eBee X series	1587A0510003000	1587A0540005ZZZ	accepted
+OOP000000058	oop	AgEagle (senseFly)	eBee X series	1587A0510001TBT		accepted
+OOP000000059	oop	AgEagle (senseFly)	eBee X series	1587A051000075Y		accepted
+OOP000000066	oop	AgEagle (senseFly)	eBee X series	1587A05100022ZF		accepted
+OOP000000067	oop	AgEagle (senseFly)	eBee X series	1587A051000152S		accepted
+OOP000000068	oop	AgEagle (senseFly)	eBee X series	1587A540002APD		accepted
+OOP000000069	oop	AgEagle (senseFly)	eBee X series	1587A5400024GH		accepted
+OOP000000079	oop	AgEagle (senseFly)	eBee X series			accepted
+OOP000000080	oop	AgEagle (senseFly)	eBee X series			accepted
+OOP000000165	oop	Aerial Vehicle Safety Solutions (AVSS)	ASTM F3322 Compliant PRS for DJI Dock 2			accepted
+OOP000000166	oop	Aerial Vehicle Safety Solutions (AVSS)	ASTM F3322 Compliant PRS for DJI Dock 2			accepted
+OOP000000171	oop	Aerial Vehicle Safety Solutions (AVSS)	ASTM F3322 Compliant PRS for DJI Mavic 3 Thermal			accepted
+OOP000000172	oop	Aerial Vehicle Safety Solutions (AVSS)	ASTM F3322 Compliant PRS for DJI Mavic 3 Enterprise			accepted
+OOP000000176	oop	Aerial Vehicle Safety Solutions (AVSS)	ASTM F3322 Compliant PRS for Skydio X10			rescinded
+OOP000000178	oop	Aerial Vehicle Safety Solutions (AVSS)	ASTM F3322 Compliant PRS for DJI Mavic 3 Multispectral			rescinded
+OOP000000195	oop	Nova Sky Stories, LLC	Star Drone V3 / V3.1			accepted
+OOP000000196	oop	SBG	Modified DJI Mini			accepted
+OOP000000201	oop	AgEagle (SenseFly)	eBee X series			accepted
+OOP000000202	oop	CoStar	Modified Mini			accepted
+OOP000000214	oop	Aerial Vehicle Safety Solutions (AVSS)	ASTM F3322 Compliant PRS for DJI Matrice 4 Thermal			accepted
+OOP000000215	oop	Aerial Vehicle Safety Solutions (AVSS)	ASTM F3322 Compliant PRS for DJI Matrice 4 Enterprise			accepted
+OOP000000217	oop	AgEagle (SenseFly)	eBee X series			accepted
+OOP000000237	oop	Aerial Vehicle Safety Solutions (AVSS)	ASTM F3322 Compliant PRS for Brinc Responder			accepted
+OOP000000244	oop	Aerial Vehicle Safety Solutions (AVSS)	ASTM F3322 Compliant PRS for DJI M4TD Standalone			accepted
+OOP000000245	oop	Aerial Vehicle Safety Solutions (AVSS)	ASTM F3322 Compliant PRS for DJI M4D Standalone			accepted
+OOP000000246	oop	Aerial Vehicle Safety Solutions (AVSS)	ASTM F3322 Compliant PRS for DJI M4TD for Dock 3			accepted
+OOP000000247	oop	Aerial Vehicle Safety Solutions (AVSS)	ASTM F3322 Compliant PRS for DJI M4D for Dock 3			accepted
+OOP000000254	oop	Wingtra	WingtraRAY			accepted
+OOP000000259	oop	Skydio	X10 with Skydio Parachute for X10 (SR47APCH)			accepted
+RID000000001	rid	DJI	Mini 3 Pro	1581F4XF000000000000	1581F4XFFFFFFFFFFFFF	accepted
+RID000000003	rid	Microdrones	md4-1000	1644FMD4100000007004	1644FMD4100000007504	accepted
+RID000000004	rid	Microdrones	md4-3000	1644FMD4300000001234	1644FMD4300000001334	accepted
+RID000000006	rid	Wingtra	WingtraOne Gen II	174442423	174449999	accepted
+RID000000007	rid	DJI	Air 2S	1581F3YT000000000000	1581F3YTFFFFFFFFFFFF	accepted
+RID000000008	rid	DJI	AVATA	1581F4QW000000000000	1581F4QWFFFFFFFFFFFF	accepted
+RID000000009	rid	DJI	Mavic 3	1581F45T000000000000	1581F45TFFFFFFFFFFFF	accepted
+RID000000010	rid	DJI	Mavic 3 Cine	1581F4QZ000000000000	1581F4QZFFFFFFFFFFFF	accepted
+RID000000011	rid	DJI	M30	1581F4BN000000000000	1581F4BNFFFFFFFFFFFF	accepted
+RID000000012	rid	DJI	M30T	1581F5BK000000000000	1581F5BKFFFFFFFFFFFF	accepted
+RID000000016	rid	BlueMark	db100	1787F01BM22010000000	1787F01BM50130000000	accepted
+RID000000017	rid	Sony	ARS-S1	172872001839	172872009999	accepted
+RID000000019	rid	DJI	M3E	1581F5FH000000000000	1581F5FHFFFFFFFFFFFF	accepted
+RID000000020	rid	DJI	M3T	1581F5FJ000000000000	1581F5FJFFFFFFFFFFFF	accepted
+RID000000021	rid	DJI	M300 RTK	1581F1ZN000000000000	1581F1ZNFFFFFFFFFFFF	accepted
+RID000000025	rid	Dronetag	Mini	1596F350000000000000	1596F35FFFFFFFFFFFFF	accepted
+RID000000026	rid	EVO Lite	MDXM	1748CLTC822390001	1748CLTC825529999	accepted
+RID000000027	rid	EVO Lite+	MDXM2	1748CLTC822390001	1748CLTC825529999	accepted
+RID000000030	rid	Autel Robotics	EVO II	1748CHL7822390001	1748CHN2925529999	accepted
+RID000000031	rid	Zephyr Systems	Module 100	1795F01ZS22010000000	1795F01ZS50120000000	accepted
+RID000000032	rid	Autel Robotics	EVO Lite	1748CLTC822390001	1748CLTC925529999	accepted
+RID000000035	rid	Autel Robotics	EVO Lite+	1748CLTC822390001	1748CLTC925529999	accepted
+RID000000038	rid	DJI	Agras T30	1581F446000000000000	1581F446FFFFFFFFFFFF	accepted
+RID000000039	rid	DJI	Agras T40	1581F574000000000000	1581F574FFFFFFFFFFFF	accepted
+RID000000041	rid	DJI	Mavic 3 Classic	1581F67P000000000000	1581F67PFFFFFFFFFFFF	accepted
+RID000000045	rid	Dronetag	Beacon	1596A3400000000	1596A34FFFFFFFF	accepted
+RID000000046	rid	Autel Robotics	Dragonfish Lite	1748CJD2822390001	1748CJD2925529999	accepted
+RID000000047	rid	Autel Robotics	Dragonfish Pro	1748CJD3822390001	1748CJD3925529999	accepted
+RID000000048	rid	Autel Robotics	Dragonfish Standard	1748CJD1822390001	1748CJD1925529999	accepted
+RID000000049	rid	Zephyr Systems	OKO-250	1795F250ZS2201000000	1975F250ZS5012000000	accepted
+RID000000054	rid	Inspired Flight	IF1200A	1791554001	1791560000	accepted
+RID000000055	rid	Zephyr Systems	ARK-350	1795F350ZS2201000000	1795F350ZS5001000000	accepted
+RID000000056	rid	AgEagle (senseFly)	eBee X series	1587A0510003000	1587A0540005ZZZ	accepted
+RID000000057	rid	DJI	M3M	1581F5FK000000000000	1581F5FKFFFFFFFFFFFF	accepted
+RID000000058	rid	BlueMark	db120	1787F04BM22010000000	1787F04BM50130000000	accepted
+RID000000062	rid	DJI	Mini 3	1581F5YH000000000000	1581F5YHFFFFFFFFFFFF	accepted
+RID000000063	rid	Drone Defence	AeroPing	1796F001000000000000	1796F001FFFFFFFFFFFF	accepted
+RID000000067	rid	PARROT	ANAFI Ai	1588E040452AA000001	1588E040452ZZ999999	accepted
+RID000000068	rid	PARROT	ANAFI USA	1588E040505AA000001	1588E040505ZZ999999	accepted
+RID000000073	rid	Harris Aerial	Carrier H6	18136H6E120	18136H6E999	accepted
+RID000000074	rid	Harris Aerial	Carrier H8E	18136H8E025	18136H8E500	accepted
+RID000000077	rid	Vision Aerial	SwitchBlade-Elite	1788520100	1788529999	accepted
+RID000000083	rid	Drone Volt	Hercules 20	1801BDV221200000	1801BDV501200000	accepted
+RID000000087	rid	Leica Geosystems AG	BLK2FLY	172073000000	172074000000	accepted
+RID000000088	rid	BlueMark	db121	1787F05BM22010000000	1787F05BM50130000000	accepted
+RID000000089	rid	BlueMark	db121pcb	1787F06BM22010000000	1787F06BM50130000000	accepted
+RID000000097	rid	Skydio	X2E SDR21V1	1668BE10JA000000	1668BE10JA00ZZZZ	accepted
+RID000000098	rid	Skydio	X2E SDR21V2	1668BE10JA000000	1668BE10JA00ZZZZ	accepted
+RID000000099	rid	Skydio	2+ SDR35V1	1668BS20FB000000	1668BS20JB00ZZZZ	accepted
+RID000000100	rid	Skydio	2+ SDR35V2	1668BS20FB000000	1668BS20JB00ZZZZ	accepted
+RID000000113	rid	Vision Aerial	Vector	1788520100	1788529999	accepted
+RID000000118	rid	Hylio	AG-210	17906080201	17906080250	accepted
+RID000000119	rid	Hylio	AG-216	17906090201	17906090250	accepted
+RID000000120	rid	Hylio	AG-230	17906100201	17906100250	accepted
+RID000000121	rid	Hylio	AG-272	17906070201	17906070250	accepted
+RID000000123	rid	Watts Innovations	PRISM Sky	1785C000000006000	1785C000000007999	accepted
+RID000000125	rid	Coretronic Intelligent Robotics Corporation	SIRAS	1836FF1E010000000000	1836FF1E01FFFFFFFFFF	accepted
+RID000000126	rid	Ascent AeroSystems	Spirit	1812FSPRTAAA000000AA	1812FSPRTZZZ999999ZZ	accepted
+RID000000132	rid	uAvionix	pingRID	1792C000000000000	1792C000000FFFFFF	accepted
+RID000000138	rid	Microdrones	EasyOne	1644FMD4E1VA00000001	1644FMD4E1VA00009999	accepted
+RID000000150	rid	Percepto AirMax	Percepto AirMax OGI	1701ASPR1431121		accepted
+RID000000151	rid	Autel Robotics	EVO Max	1748FEV3HMA823010001	1748FEV3HMA933539999	accepted
+RID000000160	rid	Ascent AeroSystems	NX30	1812FNX30AAA000000AA	1812FNX30ZZZ999999AA	accepted
+RID000000162	rid	XAG	P100	1863FPEG821800000000	1863FPEG8218999ZZZZZ	accepted
+RID000000163	rid	XAG	P100 Pro	1863FPEG821900000000	1863FPEG8219999ZZZZZ	accepted
+RID000000168	rid	Event38 Unmanned Systems	E400	180774000001	180774009999	accepted
+RID000000175	rid	BlueMark	db122fpv	1787F07BM23010000000	1787F07BM50130000000	accepted
+RID000000181	rid	Hoverfly Technologies	Sentry/Spectre	1867F180010003500000	1867F180010005750000	accepted
+RID000000191	rid	Teledyne FLIR	SkyRanger/SkyRaider R70/R80D	1767CSRH801191425		accepted
+RID000000192	rid	DJI	Inspire 3	1581F4Z4000000000000	1581F4Z4FFFFFFFFFFFF	accepted
+RID000000196	rid	AgEagle (senseFly)	eBee X series	1587A05100022ZF		accepted
+RID000000197	rid	AgEagle (senseFly)	eBee X series	1587A051000152S		accepted
+RID000000198	rid	AgEagle (senseFly)	eBee X series	1587A051000152S		accepted
+RID000000204	rid	DJI	Mavic 3 Pro	1581F67Q000000000000	1581F67QZZZZZZZZZZZZ	accepted
+RID000000205	rid	DJI	Mavic 3 Pro Cine	1581F6MK000000000000	1581F6MKZZZZZZZZZZZZ	accepted
+RID000000212	rid	Percepto AirMax	Percepto AirMax OGI	1701DGAS00100123PR		accepted
+RID000000222	rid	Event38 Unmanned Systems	E455	180774550001	180774559999	accepted
+RID000000223	rid	UAS	RC	1774FREM101000000001	1774FREM101000075000	accepted
+RID000000241	rid	Camflite	Aurora	1871C000000007000	1871C000000008999	accepted
+RID000000242	rid	Camflite	Ascent	1871C000000007000	1871C000000008999	accepted
+RID000000246	rid	Hylio	AG-210	17906080251	17906080400	accepted
+RID000000247	rid	Hylio	AG-216	17906090251	17906090400	accepted
+RID000000248	rid	Hylio	AG-230	17906100251	17906100400	accepted
+RID000000249	rid	Hylio	AG-272	17906070251	17906070400	accepted
+RID000000251	rid	Ruko	F11GIM2	1869DGIM2000000000	1869DGIM2999999999	accepted
+RID000000252	rid	Dronetag	DRI	1596F330000000000000	1596F33FFFFFFFFFFFFF	accepted
+RID000000253	rid	SmartDrone	Discovery 2	1866ASDD0000030	1866ASDD0005000	accepted
+RID000000256	rid	DJI	M350 RTK	1581F6GK000000000000	1581F6GKZZZZZZZZZZZZ	accepted
+RID000000257	rid	Dronetag	BS	1596F310000000000000	1596F31FFFFFFFFFFFFF	accepted
+RID000000271	rid	WISPR	Ranger Pro 1100	1889ERP110001012100	1889ERP110012312599	accepted
+RID000000272	rid	WISPR	Ranger Elite	1889ERE000008012300	1889ERE000012313099	accepted
+RID000000273	rid	DJI	M30 Dock version	1581F5BL000000000000	1581F5BLZZZZZZZZZZZZ	accepted
+RID000000274	rid	DJI	M30T Dock version	1581F5BM000000000000	1581F5BMZZZZZZZZZZZZ	accepted
+RID000000281	rid	AgEagle (senseFly)	eBee X series			accepted
+RID000000282	rid	Workhorse Aero	WA4-100			accepted
+RID000000283	rid	Draganfly Innovations	Commander3 XL			accepted
+RID000000285	rid	Ruko	U11S			accepted
+RID000000286	rid	Ruko	U11PRO			accepted
+RID000000287	rid	Ruko	F11			accepted
+RID000000288	rid	Ruko	F11PRO			accepted
+RID000000290	rid	Holy Stone	HSRID01			accepted
+RID000000296	rid	Sentera	PHX	1798F113240000000001	1798F113240099999999	accepted
+RID000000299	rid	ELIOS 3 UAV	107000			accepted
+RID000000300	rid	Skydio	2 SDRC2V1			accepted
+RID000000309	rid	idME	Pro			accepted
+RID000000312	rid	AgEagle (senseFly)	eBee X series			accepted
+RID000000313	rid	AgEagle (senseFly)	eBee X series			accepted
+RID000000314	rid	AgEagle (senseFly)	eBee X series			accepted
+RID000000315	rid	AgEagle (senseFly)	eBee X series			accepted
+RID000000316	rid	AgEagle (senseFly)	eBee X series			accepted
+RID000000317	rid	Pierce Aerospace	B1			accepted
+RID000000320	rid	Autel Robotics	EVO Nano			accepted
+RID000000321	rid	AgEagle (senseFly)	eBee X series			accepted
+RID000000327	rid	Holy Stone	HS600			accepted
+RID000000328	rid	Watts Innovations	PRISM Lite			accepted
+RID000000331	rid	Aurelia	X4			accepted
+RID000000337	rid	Matternet	M2 Block 2			accepted
+RID000000338	rid	Censys Technologies	Sentaero 5			accepted
+RID000000343	rid	Commaris	SEEKER			accepted
+RID000000351	rid	Aurelia	X6 Standard			accepted
+RID000000352	rid	Aurelia	X6 MAX			accepted
+RID000000353	rid	Aurelia	X6 Pro			accepted
+RID000000354	rid	Aurelia	X6 Pro V2			accepted
+RID000000355	rid	Aurelia	X8 Standard			accepted
+RID000000356	rid	Cider Copter	H10			accepted
+RID000000357	rid	Aurelia	X8 MAX			accepted
+RID000000358	rid	Aurelia	Tarot 650			accepted
+RID000000363	rid	Elsight Ltd.	HNF4W			accepted
+RID000000365	rid	Elsight Ltd.	HNF4W			accepted
+RID000000367	rid	Elsight Ltd.	HNF4W			accepted
+RID000000368	rid	Elsight Ltd.	HNF4W			accepted
+RID000000370	rid	Elsight Ltd.	HNF4W			accepted
+RID000000373	rid	Percepto AirMax	Percepto AirMax OGI, Percepto Airmax			accepted
+RID000000376	rid	Percepto AirMax	Percepto AirMax			accepted
+RID000000378	rid	Amazon Prime Air	MK27-2			accepted
+RID000000379	rid	SJRC	F22s 4K PRO			accepted
+RID000000394	rid	SJRC	F11s 4K PRO			accepted
+RID000000397	rid	Zipline	Sparrow			accepted
+RID000000399	rid	Percepto AirMax	Percepto AirMax OGI			accepted
+RID000000402	rid	Holy Stone	HS720R			accepted
+RID000000405	rid	DIY-D LLC	DIY-D ESP32-C3-MINI-1			accepted
+RID000000411	rid	Holy Stone	HS720G			accepted
+RID000000413	rid	SJRC	F7 4K PRO			accepted
+RID000000414	rid	SJRC	F11 4K PRO			accepted
+RID000000418	rid	Bwine	F7GB2			accepted
+RID000000420	rid	Flightwave	Edge 130			accepted
+RID000000421	rid	Skyfront	Perimeter 8			accepted
+RID000000422	rid	SJRC	F5s Pro+			accepted
+RID000000423	rid	Autel Robotics	EVO Lite			accepted
+RID000000428	rid	Arcsky	X55			accepted
+RID000000438	rid	Bwine	F7GB2			accepted
+RID000000447	rid	Veeniix	V11			accepted
+RID000000448	rid	Percepto AirMax	Percepto AirMax			accepted
+RID000000454	rid	Teal Drones	Teal 2			accepted
+RID000000458	rid	Holy Stone	HS700E			accepted
+RID000000459	rid	XM2 Labs	XTD-120			accepted
+RID000000461	rid	Spektrum	SPMA9500 SkyID			accepted
+RID000000462	rid	Holy Stone	HS720E			accepted
+RID000000469	rid	Aero Systems West	Heavy Lift Multirotor			accepted
+RID000000472	rid	Holy Stone	HS720			accepted
+RID000000473	rid	SJRC	F5s PRO			accepted
+RID000000482	rid	Percepto AirMax	Percepto AirMax			accepted
+RID000000488	rid	Wing Aviation LLC	Hummingbird v2			accepted
+RID000000491	rid	Flytrex	FTX-M600P			accepted
+RID000000492	rid	SJRC	F22 4K PRO			accepted
+RID000000498	rid	Percepto AirMax	Percepto AirMax			accepted
+RID000000506	rid	Ruko	R111			accepted
+RID000000521	rid	Ruko	F11GIM			accepted
+RID000000524	rid	EXO	X7 Ranger Plus			accepted
+RID000000525	rid	PrecisionVision	PV40X			accepted
+RID000000535	rid	EXO	Blackhawk 3 PRO			accepted
+RID000000540	rid	Quantum-Systems	Trinity R14			accepted
+RID000000546	rid	Fotokite	Sigma			accepted
+RID000000547	rid	Quantum-Systems	Trinity R10			accepted
+RID000000558	rid	Sony	ARS-S1			accepted
+RID000000569	rid	ShenZhen C-Fly Intelligent Technology Co.,Ltd	DF-BLE-A			accepted
+RID000000570	rid	Lucid Bots	Sherpa			accepted
+RID000000571	rid	C100	Block 1C			accepted
+RID000000581	rid	Tucok	012S			accepted
+RID000000583	rid	Drone-Clone Xperts	LIMITLESS 4S			accepted
+RID000000584	rid	Tucok	193MAX2S			accepted
+RID000000586	rid	Percepto AirMax	Percepto AirMax			accepted
+RID000000587	rid	Percepto AirMax	Percepto AirMax OGI			accepted
+RID000000594	rid	TRIPLEFINE	TF-15EX			accepted
+RID000000595	rid	TRIPLEFINE	TF35 PRO			accepted
+RID000000597	rid	Quantum-Systems	Trinity R8			accepted
+RID000000598	rid	Quantum-Systems	Trinity R7			accepted
+RID000000599	rid	Quantum-Systems	Trinity R6			accepted
+RID000000600	rid	Voliro	Voliro T			accepted
+RID000000601	rid	Percepto AirMax	OGI			accepted
+RID000000609	rid	Tucok	T70			accepted
+RID000000611	rid	XiL	193E			accepted
+RID000000619	rid	Aero Systems West	Intermediate Lift Multirotor			accepted
+RID000000626	rid	Ruko	U11GIM2			accepted
+RID000000628	rid	Ruko	U11GIM2			accepted
+RID000000632	rid	Aurelia	Believer			accepted
+RID000000633	rid	Aurelia	Skywalker			accepted
+RID000000634	rid	Aurelia	Talon GT			accepted
+RID000000645	rid	Zing Drone Solutions	Z-RID			accepted
+RID000000653	rid	Percepto AirMax	Percepto AirMax OGI			accepted
+RID000000654	rid	Percepto AirMax	Percepto AirMax			accepted
+RID000000655	rid	Percepto AirMax	Percepto AirMax OGI			accepted
+RID000000660	rid	Explorer	1.3			accepted
+RID000000667	rid	Commaris	SEEKER			accepted
+RID000000675	rid	Drone-Clone Xperts	RAZOR X			accepted
+RID000000678	rid	Broadcast	Module			accepted
+RID000000679	rid	Phoenix UAS	mRID			accepted
+RID000000683	rid	Ruko	F11PRO 2			accepted
+RID000000686	rid	Ruko	U11PRO 2			accepted
+RID000000691	rid	BRINC	LEMUR 2			accepted
+RID000000694	rid	Swoop Aero	Kite			accepted
+RID000000701	rid	SmartDrone	Discovery 3			accepted
+RID000000702	rid	SKYFISH	M4			accepted
+RID000000703	rid	SKYFISH	M6			accepted
+RID000000710	rid	Atom UAV	FLATMUAVW			accepted
+RID000000711	rid	Atom UAV (OEM)	FLATMUAOW			accepted
+RID000000713	rid	DJI	Mini 4 Pro			accepted
+RID000000714	rid	DJI	Air 3			accepted
+RID000000715	rid	Drone-Clone Xperts	LIMITLESS 5			accepted
+RID000000722	rid	EXO	Mini Pro+			accepted
+RID000000738	rid	MicroFlight Inc	DB130 UAS Beacon			accepted
+RID000000744	rid	Field	Explorer E30			accepted
+RID000000749	rid	Skydio	X10E SR47P			accepted
+RID000000750	rid	Skydio	X10E SR47P			accepted
+RID000000752	rid	DJI	Phantom 4 RTK			accepted
+RID000000753	rid	DJI	Mavic 2 Enterprise Advanced			accepted
+RID000000754	rid	DJI	Mavic Air 2 (MA2UE1N)			accepted
+RID000000755	rid	DJI	Mavic Air 2 (MA2UE3W)			accepted
+RID000000756	rid	DJI	FPV			accepted
+RID000000757	rid	DJI	Mavic 2 Pro			accepted
+RID000000758	rid	DJI	Mavic 2 Zoom			accepted
+RID000000759	rid	DJI	Phantom 4 Pro V2.0			accepted
+RID000000760	rid	DJI	FlyCart 30			accepted
+RID000000769	rid	Ascent AeroSystems Inc	K257B-Spirit			accepted
+RID000000795	rid	Avidrone	210TL			accepted
+RID000000797	rid	Field	Urban Explorer			accepted
+RID000000815	rid	Autel Robotics	EVO Lite			accepted
+RID000000818	rid	Autel Robotics	EVO Nano			accepted
+RID000000819	rid	Autel Robotics	EVO Nano			accepted
+RID000000820	rid	Meteodrone	MM-670			accepted
+RID000000827	rid	Ruko	R111			accepted
+RID000000828	rid	Ruko	R111			accepted
+RID000000913	rid	Camflite	CRD1			accepted
+RID000000997	rid	Percepto AirMax	Percepto AirMax			accepted
+RID000000999	rid	Percepto AirMax	Percepto AirMax OGI			accepted
+RID000001008	rid	Ruko	R111			accepted
+RID000001023	rid	Zing Drone Solutions	Z-RID Lite			accepted
+RID000001030	rid	FACEGLE	E99			accepted
+RID000001035	rid	Anzu Robotics	Raptor			accepted
+RID000001036	rid	Anzu Robotics	Raptor T			accepted
+RID000001038	rid	Autel Robotics	EVO Nano			accepted
+RID000001039	rid	Autel Robotics	EVO Lite			accepted
+RID000001050	rid	Autel Robotics	EVO Lite			accepted
+RID000001065	rid	Percepto AirMax	Percepto AirMax			accepted
+RID000001066	rid	Percepto AirMax	Percepto AirMax OGI			accepted
+RID000001086	rid	Autel Robotics	EVO Lite			accepted
+RID000001087	rid	Autel Robotics	EVO II			accepted
+RID000001097	rid	Applied Aeronautics	Albatross	AA2300	AA2499	accepted
+RID000001112	rid	Microdrones	EasyOne NDAA			accepted
+RID000001121	rid	Dronetag	Beacon gen.2			accepted
+RID000001124	rid	Fotokite	Sigma			accepted
+RID000001125	rid	Potensic	RID-916			accepted
+RID000001127	rid	Pyka	Pelican			accepted
+RID000001128	rid	Avidrone	F4			accepted
+RID000001136	rid	DJI	M30T (EU&KR)			accepted
+RID000001140	rid	SPECTA	AIR			accepted
+RID000001141	rid	Zing Drone Solutions	Z-RID Lite V2			accepted
+RID000001142	rid	LISHI	X38			accepted
+RID000001144	rid	Pyka	Pelican Cargo			accepted
+RID000001150	rid	Holy Stone	HS920			accepted
+RID000001151	rid	SJRC	BTM001			accepted
+RID000001157	rid	Percepto	AirMax			accepted
+RID000001158	rid	Percepto	AirMax			accepted
+RID000001159	rid	Percepto	AirMax OGI			accepted
+RID000001160	rid	Percepto	AirMax OGI			accepted
+RID000001161	rid	Watts Innovations	PRISM			accepted
+RID000001163	rid	DJI	Agras T10			accepted
+RID000001165	rid	Percepto	AirMax			accepted
+RID000001166	rid	DJI	M3D			accepted
+RID000001167	rid	DJI	M3TD			accepted
+RID000001169	rid	Percepto	AirMax			accepted
+RID000001170	rid	Percepto	AirMax			accepted
+RID000001171	rid	Percepto	AirMax OGI			accepted
+RID000001172	rid	Percepto	AirMax OGI			accepted
+RID000001175	rid	Holy Stone	HS600D			accepted
+RID000001179	rid	Draganfly Innovations	Commander 2			accepted
+RID000001181	rid	DJI	Agras T20P			accepted
+RID000001183	rid	Cinnamon Drones	RID Broadcast Module			accepted
+RID000001189	rid	Percepto	AirMax			accepted
+RID000001190	rid	Percepto	AirMax OGI			accepted
+RID000001201	rid	Percepto	AirMax			accepted
+RID000001218	rid	RigiTech	Eiger			accepted
+RID000001225	rid	Freefly Systems	Remote ID Upgrade Kit (Alta X)			accepted
+RID000001240	rid	Freefly Systems	Astro			accepted
+RID000001242	rid	Freefly Systems	Alta X			accepted
+RID000001258	rid	ACSL	SOTEN			accepted
+RID000001281	rid	Holy Stone	HSRID02			accepted
+RID000001293	rid	Triad Drones	Echo			accepted
+RID000001300	rid	Censys Technologies	Sentaero 5			accepted
+RID000001314	rid	Quadcopter	S400E			accepted
+RID000001321	rid	SwellPro	A-RID			accepted
+RID000001332	rid	Autel Robotics	Autel Alpha			accepted
+RID000001343	rid	FIMI X8 SE 2022 Drone	FMWRJ03A8			accepted
+RID000001376	rid	DJI	Avata 2			accepted
+RID000001411	rid	Flytrex	SKY II			accepted
+RID000001456	rid	WISPR	SkyScout Pro			accepted
+RID000001457	rid	WISPR	SkyScout			accepted
+RID000001459	rid	Wing Aviation LLC	Hummingbird			accepted
+RID000001464	rid	Lumenier	RID			accepted
+RID000001501	rid	SwellPro	FD2			accepted
+RID000001511	rid	Inspired Flight	IF800			accepted
+RID000001563	rid	Commaris	SEEKER			accepted
+RID000001564	rid	SJRC	F22 S2 PRO+			accepted
+RID000001575	rid	FrSky	FrID			accepted
+RID000001594	rid	DJI	Agras T50 & T25			accepted
+RID000001611	rid	Holyton	HT60			accepted
+RID000001612	rid	Holyton	HT70			accepted
+RID000001622	rid	SHANGHENG	AE86 Pro Max			accepted
+RID000001633	rid	SkySpecs	Foresight V1			accepted
+RID000001634	rid	Airobotics	Optimus 1-EX			accepted
+RID000001690	rid	Veeniix	V11PRO			accepted
+RID000001696	rid	Ruko	F11GIM3			accepted
+RID000001709	rid	Ruko	F11PRO 3			accepted
+RID000001710	rid	SJRC	F22 S3 PRO			accepted
+RID000001711	rid	Bwine	F7GIM2			accepted
+RID000001730	rid	blueflite	461			accepted
+RID000001735	rid	Watts Innovations	AERO Sky			accepted
+RID000001753	rid	Bwine	B112			accepted
+RID000001757	rid	BlueMark	db152fpv			accepted
+RID000001758	rid	BlueMark	db153fpv			accepted
+RID000001762	rid	SwellPro	FD3			accepted
+RID000001806	rid	Broadcast Module	EabloPilot Tag			accepted
+RID000001807	rid	Sunflower Labs	Beehive 01			accepted
+RID000001810	rid	SkySpecs	Foresight V2			accepted
+RID000001826	rid	Global Drone	GD98			accepted
+RID000001843	rid	Amazon Prime Air	MK30			accepted
+RID000001861	rid	SJRC	F11s 4K PRO+			accepted
+RID000001864	rid	Hylio	AG-210			accepted
+RID000001865	rid	Hylio	AG-216			accepted
+RID000001866	rid	Hylio	AG-230			accepted
+RID000001867	rid	Hylio	AG-272			accepted
+RID000001887	rid	Veeniix	V113			accepted
+RID000001894	rid	Black Swift Technologies	S1			accepted
+RID000001895	rid	Black Swift Technologies	S2			accepted
+RID000001896	rid	Black Swift Technologies	S3			accepted
+RID000001915	rid	Gleesfun	G115			accepted
+RID000001918	rid	A2Z	Longtail			accepted
+RID000001934	rid	FIMI X8 Tele Drone	FMWRJ04A1			accepted
+RID000001939	rid	Ruko	R111S			accepted
+RID000001948	rid	Veeniix	V113S			accepted
+RID000001949	rid	Gleesfun	G115S			accepted
+RID000001950	rid	Bwine	B112S			accepted
+RID000001955	rid	Light Quadcopter UAV	GDU-S200			accepted
+RID000001962	rid	BlueMark	db150			accepted
+RID000001969	rid	Autel Robotics	EVO II V3			accepted
+RID000001995	rid	NewBeeDrone	BeeID			accepted
+RID000001999	rid	Bwine	F7GIM			accepted
+RID000002000	rid	Veeniix	V11Air			accepted
+RID000002012	rid	SJRC	F11 S2 PRO			accepted
+RID000002013	rid	SJRC	F11 S3 PRO			accepted
+RID000002037	rid	Aeroo	Aeroo Pro			accepted
+RID000002046	rid	DJI	Air 3S			accepted
+RID000002084	rid	BlueMark	db154			accepted
+RID000002099	rid	Global Drone	GD98MAX			accepted
+RID000002100	rid	Gleesfun	G11PRO			accepted
+RID000002105	rid	SKYFISH	OSPREY			accepted
+RID000002107	rid	Ruko	U11PRO2			accepted
+RID000002128	rid	Zipline	P2 Zip			accepted
+RID000002133	rid	XiL	019			accepted
+RID000002140	rid	Gleesfun	G11PRO2			accepted
+RID000002169	rid	Wing Aviation LLC	Hummingbird			accepted
+RID000002190	rid	BRINC	RESPONDER			accepted
+RID000002197	rid	XPECE	ONE			accepted
+RID000002198	rid	DJI	Matrice 4E			accepted
+RID000002199	rid	DJI	Matrice 4T			accepted
+RID000002205	rid	Aerostar Dynamics	Scout			accepted
+RID000002208	rid	Black Swift Technologies	E2			accepted
+RID000002214	rid	Aerostar Dynamics	Pro			accepted
+RID000002217	rid	BlueMark	db151pcb			accepted
+RID000002218	rid	BlueMark	db151			accepted
+RID000002220	rid	Aerostar Dynamics	U5501			accepted
+RID000002231	rid	Hylio	HYL-150			accepted
+RID000002235	rid	TopXGun	3WWDZ-50B			accepted
+RID000002237	rid	Potensic	ATOM 2			accepted
+RID000002240	rid	XAG	P150			accepted
+RID000002245	rid	Censys Technologies	Sentaero 5			accepted
+RID000002246	rid	DJI	Matrice 4D			accepted
+RID000002247	rid	DJI	Matrice 4TD			accepted
+RID000002268	rid	Light Quadcopter UAV	S220			accepted
+RID000002269	rid	Light Quadcopter UAV	S220 Pro			accepted
+RID000002272	rid	DMR Technologies	Field Ranger X50			accepted
+RID000002329	rid	Holy Stone	HSRID03			accepted
+RID000002344	rid	Autel Robotics	MDX-1			accepted
+RID000002345	rid	Pyka	Pelican Cargo			accepted
+RID000002346	rid	Aurora Flight Sciences	SKIRON-X B003			accepted
+RID000002359	rid	Blackswift Technologies	S0 VTOL			accepted
+RID000002365	rid	DeltaQuad	Evo			accepted
+RID000002367	rid	TopXGun	3WWDZ-U60B			accepted
+RID000002375	rid	DJI	Mavic 4 Pro (64 GB)			accepted
+RID000002376	rid	DJI	Mavic 4 Pro (512 GB)			accepted
+RID000002381	rid	Holy Stone	HS790			accepted
+RID000002395	rid	DMR Technologies	D313			accepted
+RID000002412	rid	Heilongjiang Huida Technology Co., Ltd	3WWDZ-U70A			accepted
+RID000002429	rid	Autel Robotics	EVO Nano+			accepted
+RID000002437	rid	Holyton	HT65			accepted
+RID000002448	rid	Camflite	Aurora SE			accepted
+RID000002465	rid	DMR Technologies	D517			accepted
+RID000002486	rid	DJI	Matrice 400			accepted
+RID000002509	rid	Contixo Inc.	F33			accepted
+RID000002525	rid	CHCNAV	X500 Rotor UAV			accepted
+RID000002530	rid	Camflite	CRD1-SE			accepted
+RID000002534	rid	ABZ Innovation	L30			accepted
+RID000002537	rid	Dunlevy Consulting	Angel 1			accepted
+RID000002557	rid	Caelone 01	AUDAFV			accepted
+RID000002558	rid	Draganfly	Apex			accepted
+RID000002565	rid	Censys Technologies	Sentaero 6			accepted
+RID000002566	rid	Telegrid LLC	DE-2020			accepted
+RID000002569	rid	Exedy Drones	AYRE CX			accepted
+RID000002572	rid	PrecisionVision 100X	PV100X			accepted
+RID000002574	rid	Talos Drones	Talos T60x			accepted
+RID000002576	rid	DJI	Agras T100			accepted
+RID000002577	rid	Vesper UAS	Vesper UAS			accepted
+RID000002579	rid	DJI	Agras T70P			accepted
+RID000002581	rid	DJI	Mini 5 Pro			accepted
+RID000002584	rid	DJI	M3TA			accepted
+RID000002587	rid	DJI	Agras T25P			accepted
+RID000002588	rid	XAG	P60			accepted
+RID000002590	rid	Wingtra	WingtraRAY			accepted
+RID000002593	rid	ZERO ZERO ROBOTICS	ZZ-H-1-003			accepted
+RID000002594	rid	ZERO ZERO ROBOTICS	ZZ-H-1-004			accepted
+RID000002596	rid	Bwine	F7GB3			accepted
+RID000002597	rid	WISPR	SkyScout 2+			accepted
+RID000002599	rid	SkySpecs	Foresight V2-C			accepted
+RID000002601	rid	Tofect	T60A			accepted
+RID000002602	rid	XAG	P150 Max			accepted
+RID000002603	rid	Aerobits	idME+			accepted
+RID000002604	rid	Aerobits	idME			accepted
+RID000002607	rid	Rainmaker	Elijah			accepted
+RID000002613	rid	Dunlevy Consulting	Angel 2			accepted
+RID000002615	rid	ABZ Innovation	L10			accepted
+RID000002616	rid	ABZ Innovation	C10			accepted
+RID000002617	rid	Sustainable Skylines	AERO Sky			accepted
+RID000002620	rid	DJI	FlyCart 100			accepted
+RID000002621	rid	Antigravity	A1(DE001)			accepted
+RID000002622	rid	Nokia	P591013			accepted
+RID000002624	rid	Aerostar Dynamics	Scout V2			accepted
+RID000002625	rid	Blackbird	Block 4/5			accepted
+RID000002629	rid	Wingcopter	198			accepted
+RID000002630	rid	Ceres Air LLC	C31			accepted
+RID000002645	rid	Ceres Air LLC	C6			accepted
+RID000002646	rid	WISPR	SkyScout E			accepted
+RID000002648	rid	Arcsky	Xplorer			accepted
+RID000002650	rid	DJI	DJI Avata 360 (DVN3NT)			accepted
+RID000002651	rid	DJI	Avata 360 (DVN3XT)			accepted
+RID000002653	rid	SubUAS LLC	NV8			accepted
+RID000002659	rid	Freefly Systems	Alta X Gen2			accepted
+RID000002663	rid	PARROT	PARROT ANAFI UKR GOV			accepted
+RID000002664	rid	SkySpecs	Foresight V2-E			accepted
+RID000002665	rid	Flyby Robotics	F-11			accepted
+RID000002666	rid	Aero Systems West	RID Broadcast Module			accepted
+RID000002668	rid	SmartDrone	Magellan			accepted
+RID000002670	rid	Skydio	R10 SDR5PC			accepted
+RID000002673	rid	Autel Robotics	EVO Max			accepted
+RID000002674	rid	Amor Fati Industries (dba Seneca)	Argo-3			accepted
+RID000002676	rid	Terra Drone Corporation	Model M1			accepted
+RID000002678	rid	ABZ Innovation	L50			accepted
+RID000002680	rid	Hylio, Inc.	ARES BLUE			accepted
+RID000002683	rid	Avol	10			accepted
+RID000002688	rid	Hylio	PEGASUS HYL-30			accepted
+RID000002689	rid	Hylio	PHOTON HYL-10			accepted
+RID000002690	rid	Hylio	ATLAS HYL-300			accepted
+RID000002694	rid	Aurelia	X8 PRO			accepted
+RID000002695	rid	Vision Aerial	Vulcan S			accepted
+RID000002696	rid	Angel Aerial Systems	Trio Scout			accepted
+RID000002698	rid	Trace UAS	Trace UAS			accepted
+RID000002705	rid	Harris Aerial	Carrier H6HL			accepted
+RID000002707	rid	Matternet	M2			accepted
+RID000002725	rid	Voltair	Faraday-1			accepted
+RID000002731	rid	Manna Drone Delivery	3.8.3			accepted
+RID000002734	rid	Hylio	ATLAS Blue			accepted
+RID000002735	rid	Hylio	PEGASUS Blue			accepted
+RID000002736	rid	Hylio	PHOTON Blue			accepted
+RID000002739	rid	FlyingBasket	FB4			accepted
+RID000002743	rid	Birdstop	Fealty			accepted
+RID000002744	rid	DefendEye	Overwatch DE400100			accepted
+RID000002746	rid	Meteomatics	NanoID			accepted
+RID000002747	rid	Javelina Propeller Laboratory	Quiver			accepted
