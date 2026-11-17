@@ -39,12 +39,13 @@ CONFIG_MBEDTLS_DYNAMIC_BUFFER=y
 
 # ---- lwIP socket 池 ----
 # 关键：esp_http_server 每个实例除了 max_open_sockets 个客户端槽，还要额外占 3 个
-# socket（TCP 监听 + 收/发 UDP 控制口），见 httpd_main.c 的 sanity check。
-# 本项目同时跑 80（HTTP）和 443（HTTPS）两个实例，默认 10 个根本不够：
-#   6+3(HTTP) + 4+3(HTTPS) = 16，再加蓝牙桥接的 http 客户端 1 个、DHCP 服务 1 个，
-#   合计 18。池子只有 10 时固定超支，表现为「网页时好时坏 / https 下参数全空 /
-#   接口 socket hang up」，且失败位置随机（谁抢不到槽谁死）。
-CONFIG_LWIP_MAX_SOCKETS=20
+# socket（TCP 监听 + 收/发控制口），见 httpd_main.c 的 sanity check。
+# 本项目同时跑 80（HTTP）和 443（HTTPS）两个实例，默认 10 个根本不够。
+# 现在的分配（槽位见 crid_web.c：S3 HTTPS 6 / C5 HTTPS 4，HTTP 均为 2）：
+#   2+3(HTTP) + 6+3(HTTPS) + 蓝牙桥接 1 + DHCP/DNS 2 + SNTP 1 = 18，池子取 24 留 6 条余量。
+# 池子只有 20 时实测会打到 ENFILE：日志为 httpd_accept_conn: error in accept (23)，
+# 紧接着 httpd_server: error accepting new connection——新连接直接被拒，第二台设备打不开。
+CONFIG_LWIP_MAX_SOCKETS=24
 
 # ---- lwIP TCP：让「手机断开热点」留下的死连接尽快释放 ----
 # 现象：手机开着网页把 Wi-Fi 关掉再连回来，页面一直转圈、超时，等一两分钟才恢复。

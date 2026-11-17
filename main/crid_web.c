@@ -3197,9 +3197,9 @@ const char *crid_web_cert_pem(void) {
  * 记下每个被 accept 的连接「什么时刻进来的」，用来区分「重连之前留下的死连接」与
  * 「重连之后刚建立的新连接」。没有这个时间戳就只能一刀切全关，会误杀用户重连后
  * 刚发出的第一个请求。
- * 容量 10 足够：两台服务器最多 3+2 个并发槽，留足余量防 fd 复用错位。
+ * 容量 16 足够：两台服务器最多 6+2 个并发槽，留足余量防 fd 复用错位。
  */
-#define WEB_SESS_SLOTS 10
+#define WEB_SESS_SLOTS 16
 static struct { int fd; int64_t ms; } s_sess_tab[WEB_SESS_SLOTS];
 
 static int64_t web_now_ms(void) {
@@ -3269,7 +3269,7 @@ static void ssl_sess_close(httpd_handle_t hd, int sockfd) {
  * 现象：手机连上热点打开网页，把 Wi-Fi 关掉再连回来，页面就一直转圈、超时打不开，
  * 而且是「再也」打不开，不会自己好。机制（对着 httpd_main.c 的主循环看）：
  *   设备侧收不到对方离开的通知，旧会话既不产生可读事件，也不会自己超时；
- *   3 个客户端槽一旦被这些死会话占满，httpd 就不再监听 listen_fd（只有
+ *   客户端槽一旦被这些死会话占满，httpd 就不再监听 listen_fd（只有
  *   httpd_is_sess_available() 为真时才把 listen_fd 放进 select），
  *   新连接根本不 accept → backlog 挤满 → lwIP 丢 SYN → 客户端一路重传到超时。
  * 同时 lwIP 的 TIME_WAIT 也占着 active PCB 配额（默认 16 条），所以此前把 MSL
@@ -3283,7 +3283,7 @@ static httpd_handle_t s_srv_https = NULL;
 
 static int web_purge_one(httpd_handle_t hd) {
     if (hd == NULL) return 0;
-    int fds[12];
+    int fds[16];
     size_t n = sizeof(fds) / sizeof(fds[0]);   // 入参=容量，出参=实际条数
     if (httpd_get_client_list(hd, &n, fds) != ESP_OK) return 0;
     int closed = 0;
@@ -3301,7 +3301,7 @@ static int web_purge_one(httpd_handle_t hd) {
  */
 static int web_purge_before(httpd_handle_t hd, int64_t before_ms) {
     if (hd == NULL) return 0;
-    int fds[12];
+    int fds[16];
     size_t n = sizeof(fds) / sizeof(fds[0]);
     if (httpd_get_client_list(hd, &n, fds) != ESP_OK) return 0;
     int closed = 0;
@@ -3349,28 +3349,36 @@ static void web_wifi_event(void *arg, esp_event_base_t base, int32_t id, void *d
  *   select(maxfd + 1, &read_set, NULL, NULL, NULL)      // 超时 = 无限等
  *   并且只有 httpd_is_sess_available() 为真时才会把 listen_fd 放进 read_set。
  * 也就是说：客户端消失后，它留下的会话既不会产生可读事件（select 永远不返回它），
- * 也不会自己超时释放；只要 3 个槽被这样的死会话占满，httpd 连 listen_fd 都不再监听，
+ * 也不会自己超时释放；只要槽位被这样的死会话占满，httpd 连 listen_fd 都不再监听，
  * 新连接一律不接受 → backlog 挤满 → lwIP 丢 SYN → 手机侧 ERR_CONNECTION_TIMED_OUT，
- * 而且永远不会自愈（这正是「断开 Wi-Fi 再连就再也打不开」的机制）。
+ * 而且不会自愈（这正是「断开 Wi-Fi 再连就再也打不开」的机制）。
  *
  * 所以必须有外力主动回收，两条判据互为补充：
- *   1) 新客户端接入 → 关掉它接入之前建立的会话（st 主路径，延迟 800ms 避开新请求）
+ *   1) 新客户端接入 → 关掉「建立超过 WEB_STALE_MS」的老会话
  *   2) AP 上一个客户端都没有 → 全关（事件可能读不到已归零的 sta 列表，靠轮询兜底）
+ *
+ * 判据 1 曾经是「关掉接入之前建立的全部会话」，那会在同时用两台设备时误杀另一台
+ * 正在进行的 OTA（一次上传十几秒，接入事件正好落在中间）。现在槽位扩到 6，
+ * 不再需要用一刀切来换空位，改成只按年龄判定：正常请求都在 3 秒内结束，
+ * 活过 10 秒的会话基本只剩死连接和长传输，前者该关，后者极少与接入撞车。
  */
+#define WEB_STALE_MS 10000
+
 static void web_guard_task(void *arg) {
     (void)arg;
     for (;;) {
         vTaskDelay(pdMS_TO_TICKS(500));
         int64_t now = web_now_ms();
 
-        // 判据 1：新客户端接入后的延迟清理（只碰「接入之前」建立的会话）
+        // 判据 1：新客户端接入后，清掉已经挂了很久的老会话
         int64_t pb = s_purge_before_ms;
         if (pb > 0 && now - pb >= 800) {
             s_purge_before_ms = 0;
-            int oa = web_purge_before(s_srv_http,  pb);
-            int ob = web_purge_before(s_srv_https, pb);
+            int64_t cutoff = now - WEB_STALE_MS;
+            int oa = web_purge_before(s_srv_http,  cutoff);
+            int ob = web_purge_before(s_srv_https, cutoff);
             if (oa + ob > 0) {
-                ESP_LOGW(TAG, "新客户端接入，清掉旧会话 http=%d https=%d（heap=%u）",
+                ESP_LOGW(TAG, "新客户端接入，清掉超龄会话 http=%d https=%d（heap=%u）",
                          oa, ob, (unsigned)esp_get_free_heap_size());
             }
         }
@@ -3402,18 +3410,25 @@ static httpd_handle_t start_https_server(void) {
     // 不能开 lru_purge：槽位不够时它会掐掉「最久未使用」的连接，而被掐的往往正是
     // 正在发 /api/config 的那条，页面拿不到配置就会参数全空。宁可让新连接在
     // backlog 里排队等槽位释放（keep_alive 默认关，响应完即关闭，等不了几毫秒）。
+    // 不能开 lru_purge：它会掐掉「最久没完成请求」的会话，而 OTA 上传是一个长达
+    // 十几秒的未完成请求，lru 计数全程不刷新，正好排在队首——一次误杀就等于升级失败。
+    // 代价是槽位满时 httpd 不再监听 listen_fd（见 httpd_main.c 主循环），所以槽位数
+    // 必须真的够用，见下面的分配。
     ssl_cfg.httpd.lru_purge_enable = false;
     ssl_cfg.httpd.stack_size       = 10240;   // TLS 握手比明文更吃栈
-    // 槽位预算（CONFIG_LWIP_MAX_SOCKETS=20，每个 httpd 实例另有 3 个内部 socket）：
-    //   HTTP 6+3=9、HTTPS 2+3=5、蓝牙桥接客户端 1、DHCP 1 → 16，留 4 个余量。
-    // 真正的瓶颈不是 socket 而是内存，槽位数就是内存上界。C5 空闲堆约 70KB，
-    // 单条 TLS 会话峰值约 16KB。开启 MBEDTLS_DYNAMIC_BUFFER 后收发缓冲用完即还，
-    // 常驻开销比「静态 4KB 收 + 4KB 发」低得多，实测（6 路并发 x 6 轮 = 36 个请求）
-    // 开机以来最低可用堆仍有 37.7KB，比不开动态缓冲时的 9KB 宽裕得多。
-    // 浏览器对同一 origin 会开 6 条连接，只给 2 个槽会让其余请求长时间排队，
-    // 表现为「页面加载慢、个别接口偶发失败」。3 个槽预计把最低水位压到约 22KB，
-    // 仍高于 mbedtls 分配失败的门槛，是并发与安全的折中点。
-    ssl_cfg.httpd.max_open_sockets = 3;
+    // ---- 客户端槽位分配 ----
+    // 槽位不再是"省内存"的旋钮，而是"能不能同时服务两台设备"的硬门槛：
+    // 浏览器对同一 origin 会开 6 条连接，一台设备打满就把 3 个槽占尽，第二台设备
+    // （手机）一到就没有空槽 → httpd 停止 accept → 表现为「电脑能开、手机一直转圈」。
+    //   S3：空闲堆约 200KB，单条 TLS 会话峰值约 16KB，给 6 个槽（与浏览器连接数对齐）
+    //   C5：跑起 AP+BLE 后空闲堆只有约 70KB，给 4 个（再多会在 4 路并发时 OOM 拖垮 Wi-Fi）
+    // 每个 httpd 实例另占 3 个内部 socket：HTTP 2+3=5、HTTPS 6+3=9，加蓝牙桥接 1、
+    // DHCP/DNS 2、SNTP 1 → 18，CONFIG_LWIP_MAX_SOCKETS 相应提到 24（见 sdkconfig.defaults）。
+#if defined(CONFIG_IDF_TARGET_ESP32C5)
+    ssl_cfg.httpd.max_open_sockets = 4;
+#else
+    ssl_cfg.httpd.max_open_sockets = 6;
+#endif
     // 死连接尽快让出槽位：客户端拔网后设备侧收不到 RST，只能等超时。
     // 默认 5s 偏保守，改 3s——正常请求都是毫秒级完成，不会误杀。
     ssl_cfg.httpd.recv_wait_timeout = 3;
@@ -3422,12 +3437,12 @@ static httpd_handle_t start_https_server(void) {
     ssl_cfg.port_secure            = 443;
     // 握手必须尽快失败：httpd 任务是一个个串行握手的，客户端已经消失时，一个卡住的
     // 握手会把整个服务器挡住——期间新连接只能堆在 backlog 里，堆满就开始丢 SYN，
-    // 手机侧就是 ERR_CONNECTION_TIMED_OUT。默认 8s 太长（3 个槽全卡 = 24s 毫无响应），
+    // 手机侧就是 ERR_CONNECTION_TIMED_OUT。默认 8s 太长（槽位全卡 = 数十秒毫无响应），
     // 局域网内真实握手在 100~300ms 内完成，1.5s 足够宽松。
     ssl_cfg.tls_handshake_timeout_ms = 1500;
-    // 重连瞬间浏览器会并发开 6 条，槽位只有 3 个，其余必须能在 backlog 里等。
+    // 重连瞬间浏览器会并发开 6 条，槽位已被前面占满，其余必须能在 backlog 里等。
     // 默认 5 太小，一轮并发就填满，调大后多扛几条能明显减少「第一次打不开」。
-    ssl_cfg.httpd.backlog_conn = 8;
+    ssl_cfg.httpd.backlog_conn = 12;
 
     httpd_handle_t srv = NULL;
     esp_err_t ret = httpd_ssl_start(&srv, &ssl_cfg);
@@ -3462,8 +3477,9 @@ esp_err_t crid_web_start(cn_crid_config_t *config) {
         // crid_ble.c 的桥接客户端访问 http://<AP_IP>/api/…，若这里全部跳转，
         // 它会拿到 302 并当成失败（手机端表现为「设备返回非 200」）。
         http_cfg.max_uri_handlers = sizeof(uris) / sizeof(uris[0]) + 2;
-        // 蓝牙桥接一次一条连接，再加一条给浏览器的明文请求就够；其余 socket 留给 HTTPS
-        http_cfg.max_open_sockets = 3;
+        // 蓝牙桥接一次一条连接；明文只剩「浏览器访问 http:// 拿到 302」这一种用途，
+        // 一跳就走到 https，2 个槽足够，其余 socket 全留给 HTTPS。
+        http_cfg.max_open_sockets = 2;
         http_cfg.stack_size = 4096;
     } else {
         // 降级路径：跟以前一样，全部 handler 挂到 80 端口
