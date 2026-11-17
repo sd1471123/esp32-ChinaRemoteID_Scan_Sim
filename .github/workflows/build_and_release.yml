@@ -38,11 +38,44 @@ jobs:
       run: |
         # ESP-IDF CI 容器以 root 写出 build/，runner 用户无权限，先改属主
         sudo chown -R $(id -u):$(id -g) build
-        # 按芯片分目录收集，两个 target 的 bin 同名，绝不能混放
-        mkdir -p dist/remoteid_scanner_${{ matrix.target }}
-        cp build/*.bin build/*.elf dist/remoteid_scanner_${{ matrix.target }}/ 2>/dev/null || true
-        cp -r build/bootloader build/partition_table dist/remoteid_scanner_${{ matrix.target }}/
-        cd dist && zip -r ../esp32-ChinaRemoteID_Scan_Sim-${{ matrix.target }}.zip . && cd ..
+        # 收集到 runner 的临时目录，不要用仓库里的 dist/：
+        # dist/ 存放已发布的预编译镜像（remoteid_scanner_s3_vX.bin / _c5_vX.bin，
+        # 两芯片同时存在），在 dist/ 里 zip -r . 会连另一个芯片的固件一起打包，
+        # 导致每个包白带约 3MB。这里改成干净的空目录，只放本 target 的产物。
+        PKG="$RUNNER_TEMP/pkg"
+        rm -rf "$PKG"
+        mkdir -p "$PKG/remoteid_scanner_${{ matrix.target }}"
+        cp build/*.bin build/*.elf "$PKG/remoteid_scanner_${{ matrix.target }}/" 2>/dev/null || true
+        cp -r build/bootloader build/partition_table "$PKG/remoteid_scanner_${{ matrix.target }}/"
+        ls -lR "$PKG"
+        ( cd "$PKG" && zip -r "$GITHUB_WORKSPACE/esp32-ChinaRemoteID_Scan_Sim-${{ matrix.target }}.zip" . )
+
+    # 兜底断言：包里只能有本芯片的东西。以前 dist/ 被整体打包，
+    # S3 的 zip 里混进了 remoteid_scanner_c5_v2.0.2.bin，属于静默污染，必须挡住。
+    - name: Verify package contents (${{ matrix.target }})
+      run: |
+        Z="esp32-ChinaRemoteID_Scan_Sim-${{ matrix.target }}.zip"
+        # 先把清单落盘再校验：Actions 的 bash 带 -o pipefail，
+        # 直接 unzip | grep -q 会因 grep 提前退出产生 SIGPIPE(141)，让检查被静默跳过。
+        LIST="$RUNNER_TEMP/zip_names.txt"
+        unzip -Z1 "$Z" > "$LIST"
+        cat "$LIST"
+        TOP=$(cut -d/ -f1 "$LIST" | grep -v '^$' | sort -u)
+        if [ "$TOP" != "remoteid_scanner_${{ matrix.target }}" ]; then
+          echo "::error::包内顶层条目应为 remoteid_scanner_${{ matrix.target }}，实际为: $TOP"
+          exit 1
+        fi
+        if grep -qE '_(c5|s3)_v[0-9]' "$LIST"; then
+          echo "::error::包内混入了另一个芯片的预编译镜像"
+          exit 1
+        fi
+        if [ "${{ matrix.target }}" = "esp32s3" ] && grep -qi 'esp32c5' "$LIST"; then
+          echo "::error::S3 包内出现 esp32c5 产物"; exit 1
+        fi
+        if [ "${{ matrix.target }}" = "esp32c5" ] && grep -qi 'esp32s3' "$LIST"; then
+          echo "::error::C5 包内出现 esp32s3 产物"; exit 1
+        fi
+        echo "包内容校验通过：仅含 $TOP"
 
     - name: Upload Build Artifacts
       uses: actions/upload-artifact@v4
@@ -147,8 +180,9 @@ jobs:
           > App 顶部右侧的「检查更新」按钮会自动读本仓库 Release，发现版本号更高就提示下载安装；
           > 首次安装需允许「安装未知应用」。固件需 v2.0.1 起才支持 App 的写操作（老固件只能读）。
 
-          每个 zip 内含：`remoteid_scanner/`（固件 + bootloader + 分区表）、
-          `remoteid_scanner.bin`、`remoteid_scanner.elf`。
+          每个 zip **只含本芯片的产物**，子目录为 `remoteid_scanner_esp32s3/` 或
+          `remoteid_scanner_esp32c5/`，内含 `remoteid_scanner.bin`、`remoteid_scanner.elf`、
+          `bootloader/`、`partition_table/`、`ota_data_initial.bin`。
 
           ## 烧录（ESP-IDF / esptool 环境）
 
