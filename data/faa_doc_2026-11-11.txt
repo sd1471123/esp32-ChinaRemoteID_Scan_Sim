@@ -1,0 +1,1290 @@
+==============================================================================
+  FAA UAS DOC 全量机型库（516 条声明 / 全部厂商）
+  数据源: https://uasdoc.faa.gov | 拉取日期: 2026-11-11
+  前缀 = 可匹配的 Remote ID 序列号前缀（RANGE按区间、列表按公共前缀提取）
+==============================================================================
+
+
+========== A2Z ==========
+  Longtail
+    匹配前缀: 1596F3348945804F6041, A2ZD46
+
+========== ABZ Innovation ==========
+  C10
+    匹配前缀: 1759FABZ
+  L10
+    匹配前缀: 1759FABZ
+  L30
+    匹配前缀: 1759FABZ
+  L50
+    匹配前缀: 1759FABZL5
+
+========== ACSL ==========
+  SOTEN
+    匹配前缀: 1634FS0TEN2112A
+
+========== Aerial Vehicle Safety Solutions (AVSS) ==========
+  ASTM F3322 Compliant PRS for Brinc Responder [Brinc Responder with AVSS Parachute Recovery System (PRS-RESPONDER)]
+    匹配前缀: PBCX05002564
+  ASTM F3322 Compliant PRS for DJI Dock 2 [DJI Matrice 3D (M3D) with AVSS Parachute Recovery System (PRS-M3DT)]
+  ASTM F3322 Compliant PRS for DJI Dock 2 [DJI Matrice 3TD (M3TD) with AVSS Parachute Recovery System (PRS-M3DT)]
+  ASTM F3322 Compliant PRS for DJI M4D Standalone [DJI Matrice 4D (M4D) with AVSS Parachute Recovery System (PRS-M4DT)]
+  ASTM F3322 Compliant PRS for DJI M4D for Dock 3 [DJI Matrice 4D (M4D) for Dock 3 with AVSS Parachute Recovery System (PRS-M4DT)]
+  ASTM F3322 Compliant PRS for DJI M4TD Standalone [DJI Matrice 4TD (M4TD) with AVSS Parachute Recovery System (PRS-M4DT)]
+  ASTM F3322 Compliant PRS for DJI M4TD for Dock 3 [DJI Matrice 4TD (M4TD) for Dock 3 with AVSS Parachute Recovery System (PRS-M4DT)]
+  ASTM F3322 Compliant PRS for DJI Matrice 4 Enterprise [DJI Matrice 4 Enterprise (M4E) with AVSS Parachute Recovery System (PRS-M4S)]
+  ASTM F3322 Compliant PRS for DJI Matrice 4 Thermal [DJI Matrice 4 Thermal (M4T) with AVSS Parachute Recovery System (PRS-M4S)]
+  ASTM F3322 Compliant PRS for DJI Mavic 3 Enterprise [DJI Mavic 3 Enterprise (M3E) with AVSS Parachute Recovery System (PRS-M3E)]
+    匹配前缀: 00930X
+  ASTM F3322 Compliant PRS for DJI Mavic 3 Multispectral [DJI Mavic 3 Multispectral (M3M) with AVSS Parachute Recovery System (PRS-M3E)]
+    匹配前缀: 00930X029
+  ASTM F3322 Compliant PRS for DJI Mavic 3 Thermal [DJI Mavic 3 Thermal (M3T) with AVSS Parachute Recovery System (PRS-M3E)]
+    匹配前缀: 00930X
+  ASTM F3322 Compliant PRS for Skydio X10 [Skydio X10 with AVSS Parachute Recovery System (PRS-X10)]
+    匹配前缀: 00710X
+
+========== Aero Systems West ==========
+  Heavy Lift Multirotor
+    匹配前缀: 1620A1
+  Intermediate Lift Multirotor
+    匹配前缀: 1620A11024
+  RID Broadcast Module
+    匹配前缀: 1620B2022603
+
+========== Aerobits ==========
+  idME
+  idME+
+
+========== Aeroo ==========
+  Aeroo Pro
+    匹配前缀: 20499AP
+
+========== Aerostar Dynamics ==========
+  Pro
+    匹配前缀: 2061FADPR00100000001
+  Scout
+    匹配前缀: 2061FADSCT0100000001
+  Scout V2
+    匹配前缀: 2061FADSCT0200000001
+  U5501
+    匹配前缀: 2061FU55010000000001
+
+========== AgEagle (SenseFly) ==========
+  eBee X series
+    匹配前缀: 1587A05100021A2
+  eBee X series [eBee X]
+    匹配前缀: 1587A05100018Q
+
+========== AgEagle (senseFly) ==========
+  eBee X series [eBee X, eBee GEO and eBee TAC]
+    匹配前缀: 1587A0510003
+  eBee X series [eBee X, eBee GEO and eBee TAC]
+    匹配前缀: 1587A0510001TBT
+  eBee X series [eBee X, eBee GEO and eBee TAC]
+    匹配前缀: 1587A051000075Y
+  eBee X series [eBee X, eBee GEO and eBee TAC]
+    匹配前缀: 1587A05100022ZF
+  eBee X series [eBee X, eBee GEO and eBee TAC]
+    匹配前缀: 1587A051000152S
+  eBee X series [eBee X, eBee GEO and eBee TAC]
+    匹配前缀: 1587A540002APD
+  eBee X series [eBee X, eBee GEO and eBee TAC]
+    匹配前缀: 1587A5400024GH
+  eBee X series
+    匹配前缀: 1587A0570003
+  eBee X series
+    匹配前缀: 1587A057
+  eBee X series
+    匹配前缀: 1587A051, 1587A0510003, 1587A0570003
+  eBee X series
+    匹配前缀: 1587A05100022ZF
+  eBee X series
+    匹配前缀: 1587A051000152S
+  eBee X series
+    匹配前缀: 1587A051000152S
+  eBee X series
+    匹配前缀: 1587A0540002
+  eBee X series
+    匹配前缀: 1587A0570003
+  eBee X series
+    匹配前缀: 1587A0570003
+  eBee X series
+    匹配前缀: 1587A0570003
+  eBee X series
+    匹配前缀: 1587A0570003
+  eBee X series
+    匹配前缀: 1587A0570003
+  eBee X series
+    匹配前缀: 1587A0570004H
+
+========== Airobotics ==========
+  Optimus 1-EX
+
+========== Amazon Prime Air ==========
+  MK27-2
+    匹配前缀: 17868SN0007
+  MK30
+    匹配前缀: 178650100E
+
+========== Amor Fati Industries (dba Seneca) ==========
+  Argo-3
+    匹配前缀: 21877ARG
+
+========== Angel Aerial Systems ==========
+  Trio Scout
+    匹配前缀: 21327A000001
+
+========== Antigravity ==========
+  A1(DE001)
+    匹配前缀: 2137FDE1
+
+========== Anzu Robotics ==========
+  Raptor
+    匹配前缀: 1907F7USE23B8001
+  Raptor T
+    匹配前缀: 1907F7UEE23B8001
+
+========== Applied Aeronautics ==========
+  Albatross
+
+========== Arcsky ==========
+  X55
+    匹配前缀: 1924A01
+  Xplorer
+    匹配前缀: 1924A02
+
+========== Ascent AeroSystems ==========
+  NX30
+    匹配前缀: 1812FNX30AAA000000AA
+  Spirit
+    匹配前缀: 1812FSPRTAAA000000AA
+
+========== Ascent AeroSystems Inc ==========
+  K257B-Spirit
+    匹配前缀: 1812FSPRTAAA
+
+========== Atom UAV ==========
+  FLATMUAVW
+    匹配前缀: 1710FFLATMUAVW
+
+========== Atom UAV (OEM) ==========
+  FLATMUAOW
+    匹配前缀: 1710FFLATMUAOW0099
+
+========== Aurelia ==========
+  Believer
+    匹配前缀: 19069B09014
+  Skywalker
+    匹配前缀: 19069B07014
+  Talon GT
+    匹配前缀: 19069B08014
+  Tarot 650
+    匹配前缀: 19069B00014
+  X4
+    匹配前缀: 19069B01014
+  X6 MAX
+    匹配前缀: 19069B04014
+  X6 Pro
+    匹配前缀: 19069B03014
+  X6 Pro V2
+    匹配前缀: 19069B10014
+  X6 Standard
+    匹配前缀: 19069B020239
+  X8 MAX
+    匹配前缀: 19069B06
+  X8 PRO
+    匹配前缀: 19069B11014
+  X8 Standard
+    匹配前缀: 19069B05014
+
+========== Aurora Flight Sciences ==========
+  SKIRON-X B003
+    匹配前缀: 2046DSKRXB00300001
+
+========== Autel Robotics ==========
+  Autel Alpha
+    匹配前缀: 1748FEV4ALP9
+  Dragonfish Lite
+    匹配前缀: 1748CJD2822390001, 1748FDF2JD2924
+  Dragonfish Pro
+    匹配前缀: 1748FDF3JD3924
+  Dragonfish Standard
+  EVO II
+    匹配前缀: 1748CHL7822390001
+  EVO II
+    匹配前缀: 1748CH
+  EVO II V3
+    匹配前缀: 1748CHL7823
+  EVO Lite
+    匹配前缀: 1748CLTC822390001
+  EVO Lite
+    匹配前缀: 1748CLTG921491
+  EVO Lite
+    匹配前缀: 1748CLT09222856
+  EVO Lite
+    匹配前缀: 1748CLT09214
+  EVO Lite
+    匹配前缀: 1748CLT
+  EVO Lite
+    匹配前缀: 1748CLT092, 1748FEC2LTC
+  EVO Lite+
+    匹配前缀: 1748CLTC822390001
+  EVO Max
+    匹配前缀: 1748FEV3HMA111468
+  EVO Max
+    匹配前缀: 1748FEV3HMB925
+  EVO Nano
+    匹配前缀: 1748CNA
+  EVO Nano
+    匹配前缀: 1748CNA0922023
+  EVO Nano
+    匹配前缀: 1748CNA09221118
+  EVO Nano
+    匹配前缀: 1748CNA0910012
+  EVO Nano+
+    匹配前缀: 1748CNAC823
+  MDX-1
+    匹配前缀: 1748FEV3HM, 1748FEV3HMM
+
+========== Avidrone ==========
+  210TL
+    匹配前缀: 1787F03BM23
+  F4
+    匹配前缀: 1787F03BM2401001164
+
+========== Avol ==========
+  10
+
+========== BRINC ==========
+  LEMUR 2
+    匹配前缀: 1914CL2D2339
+  RESPONDER
+    匹配前缀: 1914CR1D2601
+
+========== Birdstop ==========
+  Fealty
+    匹配前缀: 2196B000000004
+
+========== Black Swift Technologies ==========
+  E2
+    匹配前缀: 20686E2
+  S1
+    匹配前缀: 20686S1
+  S2
+    匹配前缀: 20686S2
+  S3
+    匹配前缀: 20686S3
+
+========== Blackbird ==========
+  Block 4/5
+    匹配前缀: 19958NSD19
+
+========== Blackswift Technologies ==========
+  S0 VTOL
+    匹配前缀: 20686S01
+
+========== BlueMark ==========
+  db100
+    匹配前缀: 1787F01BM2201
+  db120
+    匹配前缀: 1787F04BM2201
+  db121
+    匹配前缀: 1787F05BM2201
+  db121pcb
+    匹配前缀: 1787F06BM2201
+  db122fpv
+    匹配前缀: 1787F07BM2301
+  db150
+    匹配前缀: 1787F0EBM2406
+  db151
+    匹配前缀: 1787F14BM241
+  db151pcb
+    匹配前缀: 1787F12BM241
+  db152fpv
+    匹配前缀: 1787F0CBM2406
+  db153fpv
+    匹配前缀: 1787F0DBM2406
+  db154
+    匹配前缀: 1787F11BM2411
+
+========== Broadcast ==========
+  Module
+    匹配前缀: 1935C4831B7
+
+========== Broadcast Module ==========
+  EabloPilot Tag
+    匹配前缀: 2051FEABPT0000000001
+
+========== Bwine ==========
+  B112
+  B112S
+  F7GB2
+    匹配前缀: 1875BF7GB2
+  F7GB2
+    匹配前缀: 1875BF7GB2
+  F7GB3
+    匹配前缀: 1875CF7GB30000001
+  F7GIM
+    匹配前缀: 1875BF7GM0000001
+  F7GIM2
+    匹配前缀: 1875CF7GM20000001
+
+========== C100 ==========
+  Block 1C
+    匹配前缀: 19346C115
+
+========== CHCNAV ==========
+  X500 Rotor UAV
+    匹配前缀: 2078F
+
+========== Caelone 01 ==========
+  AUDAFV
+    匹配前缀: 2126F000000000000001
+
+========== Camflite ==========
+  Ascent
+    匹配前缀: 1871C000000007, 1871CASC000001, 1871CASNT10001, 1871CASNT10007, 1871CAUR000004, 1872CASNT00001
+  Aurora
+    匹配前缀: 1871C000000007
+  Aurora SE
+    匹配前缀: 1871C000000005, 1871CAURSE0002
+  CRD1
+    匹配前缀: 1871C000000002
+  CRD1-SE
+    匹配前缀: 1871C000000001, 1871C000000006, 1871CCARD10006, 1871CCRD1SE001, 1871CCRDSE1001
+
+========== Censys Technologies ==========
+  Sentaero 5
+  Sentaero 5
+  Sentaero 5
+  Sentaero 6
+
+========== Ceres Air LLC ==========
+  C31
+  C6
+
+========== Cider Copter ==========
+  H10
+
+========== Cinnamon Drones ==========
+  RID Broadcast Module
+    匹配前缀: 2009A
+
+========== CoStar ==========
+  Modified Mini [4 Pro]
+    匹配前缀: 1581F6Z9A2
+
+========== Commaris ==========
+  SEEKER
+    匹配前缀: 1787F03BM23030002222
+  SEEKER
+    匹配前缀: 1787F03BM23030002225
+  SEEKER
+    匹配前缀: 1787F03BM23070003218
+
+========== Contixo Inc. ==========
+  F33
+    匹配前缀: 2146BF33
+
+========== Coretronic Intelligent Robotics Corporation ==========
+  SIRAS
+    匹配前缀: 1836FF1E01
+
+========== DIY-D LLC ==========
+  DIY-D ESP32-C3-MINI-1
+    匹配前缀: 1925C
+
+========== DJI ==========
+  AVATA
+    匹配前缀: 1581F4QW
+  Agras T10
+    匹配前缀: 1581F446
+  Agras T100
+    匹配前缀: 1581F8ZL
+  Agras T20P
+    匹配前缀: 1581F574
+  Agras T25P
+    匹配前缀: 1581F836
+  Agras T30
+    匹配前缀: 1581F446
+  Agras T40
+    匹配前缀: 1581F574
+  Agras T50 & T25
+    匹配前缀: 1581F6BU
+  Agras T70P
+    匹配前缀: 1581F8ZX
+  Air 2S
+    匹配前缀: 1581F3YT
+  Air 3
+    匹配前缀: 1581F6N8
+  Air 3S
+    匹配前缀: 1581F895
+  Avata 2
+    匹配前缀: 1581F6W8
+  Avata 360 (DVN3XT)
+    匹配前缀: 1581FA8J
+  DJI Avata 360 (DVN3NT)
+    匹配前缀: 1581FBLK
+  FPV
+    匹配前缀: 1581F37Q
+  FlyCart 100
+    匹配前缀: 1581FAN4
+  FlyCart 30
+    匹配前缀: 1581F7C6
+  Inspire 3
+    匹配前缀: 1581F4Z4
+  M30
+    匹配前缀: 1581F4BN
+  M30 Dock version
+    匹配前缀: 1581F5BL
+  M300 RTK
+    匹配前缀: 1581F1ZN
+  M30T
+    匹配前缀: 1581F5BK
+  M30T (EU&KR)
+    匹配前缀: 1581F62H
+  M30T Dock version
+    匹配前缀: 1581F5BM
+  M350 RTK
+    匹配前缀: 1581F6GK
+  M3D
+    匹配前缀: 1581F6QA
+  M3E
+    匹配前缀: 1581F5FH
+  M3M
+    匹配前缀: 1581F5FK
+  M3T
+    匹配前缀: 1581F5FJ
+  M3TA
+    匹配前缀: 1581FBEX
+  M3TD
+    匹配前缀: 1581F6Q8
+  Matrice 400
+    匹配前缀: 1581F8DB
+  Matrice 4D
+    匹配前缀: 1581F8HH
+  Matrice 4E
+    匹配前缀: 1581F7FV
+  Matrice 4T
+    匹配前缀: 1581F7K3
+  Matrice 4TD
+    匹配前缀: 1581F8HG
+  Mavic 2 Enterprise Advanced
+    匹配前缀: 1581F4GC
+  Mavic 2 Pro
+    匹配前缀: 1581F163
+  Mavic 2 Zoom
+    匹配前缀: 1581F0M6
+  Mavic 3
+    匹配前缀: 1581F45T
+  Mavic 3 Cine
+    匹配前缀: 1581F4QZ
+  Mavic 3 Classic
+    匹配前缀: 1581F67P
+  Mavic 3 Pro
+    匹配前缀: 1581F67Q
+  Mavic 3 Pro Cine
+    匹配前缀: 1581F6MK
+  Mavic 4 Pro (512 GB)
+    匹配前缀: 1581F986
+  Mavic 4 Pro (64 GB)
+    匹配前缀: 1581F8LQ
+  Mavic Air 2 (MA2UE1N)
+    匹配前缀: 1581F1WN
+  Mavic Air 2 (MA2UE3W)
+    匹配前缀: 1581F3N3
+  Mini 3
+    匹配前缀: 1581F5YH
+  Mini 3 Pro
+    匹配前缀: 1581F4XF, 1581F6L5
+  Mini 4 Pro
+    匹配前缀: 1581F6Z9
+  Mini 5 Pro
+    匹配前缀: 1581F9DE
+  Phantom 4 Pro V2.0
+    匹配前缀: 1581F11V
+  Phantom 4 RTK
+    匹配前缀: 1581F0UY
+
+========== DMR Technologies ==========
+  D313
+    匹配前缀: 2110F313000000000001
+  D517
+    匹配前缀: 2110FD51700000000001
+  Field Ranger X50
+    匹配前缀: 2110AX502400001
+
+========== DefendEye ==========
+  Overwatch DE400100
+    匹配前缀: 2205F
+
+========== DeltaQuad ==========
+  Evo
+    匹配前缀: 1862CE1G12
+
+========== Draganfly ==========
+  Apex
+
+========== Draganfly Innovations ==========
+  Commander 2
+  Commander3 XL
+
+========== Drone Defence ==========
+  AeroPing
+    匹配前缀: 1796F001
+
+========== Drone Volt ==========
+  Hercules 20
+    匹配前缀: 1801BDV2212
+
+========== Drone-Clone Xperts ==========
+  LIMITLESS 4S
+    匹配前缀: 1894BL4SDCX
+  LIMITLESS 5
+    匹配前缀: 1894AL5DCX999
+  RAZOR X
+    匹配前缀: 1894DRAZRXDCX
+
+========== Dronetag ==========
+  BS
+    匹配前缀: 1596F31
+  Beacon
+    匹配前缀: 1596A34
+  Beacon gen.2
+    匹配前缀: 1596A3
+  DRI
+    匹配前缀: 1596F33
+  Mini
+    匹配前缀: 1596F35
+
+========== Dunlevy Consulting ==========
+  Angel 1
+    匹配前缀: 21239ESA1
+  Angel 2
+    匹配前缀: 21239ESA2
+
+========== ELIOS 3 UAV ==========
+  107000
+    匹配前缀: 1826EE3
+
+========== EVO Lite ==========
+  MDXM
+    匹配前缀: 1748CLTC822390001
+
+========== EVO Lite+ ==========
+  MDXM2
+    匹配前缀: 1748CLTC822390001
+
+========== EXO ==========
+  Blackhawk 3 PRO
+    匹配前缀: 1895FBC
+  Mini Pro+
+    匹配前缀: 1895FBF
+  X7 Ranger Plus
+    匹配前缀: 1895BX7R
+
+========== Elsight Ltd. ==========
+  HNF4W
+    匹配前缀: 19027N
+  HNF4W
+    匹配前缀: 19027N
+  HNF4W
+    匹配前缀: 19027N
+  HNF4W
+    匹配前缀: 19027N
+  HNF4W
+    匹配前缀: 19027N
+
+========== Event38 Unmanned Systems ==========
+  E400
+  E455
+
+========== Exedy Drones ==========
+  AYRE CX
+    匹配前缀: 2125FD110EX250400001
+
+========== Explorer ==========
+  1.3
+    匹配前缀: 18165E12
+
+========== FACEGLE ==========
+  E99
+    匹配前缀: 1990AE99
+
+========== FIMI X8 SE 2022 Drone ==========
+  FMWRJ03A8
+    匹配前缀: 1971F3A8511300000001, 1971F3A8511310000001
+
+========== FIMI X8 Tele Drone ==========
+  FMWRJ04A1
+    匹配前缀: 1971F4A1911300000001
+
+========== Field ==========
+  Explorer E30
+    匹配前缀: 18167E301
+  Urban Explorer
+    匹配前缀: 18167UEX1
+
+========== Flightwave ==========
+  Edge 130
+
+========== Flyby Robotics ==========
+  F-11
+    匹配前缀: 2105F0001
+
+========== FlyingBasket ==========
+  FB4
+    匹配前缀: 2014FB4
+
+========== Flytrex ==========
+  FTX-M600P
+    匹配前缀: 1886FFTXM600P0001
+  SKY II
+    匹配前缀: 1886BSKY20002
+
+========== Fotokite ==========
+  Sigma
+    匹配前缀: 1898B002000G
+  Sigma
+    匹配前缀: 1898B003000G
+
+========== FrSky ==========
+  FrID
+    匹配前缀: 1973FR1M2K2300000001
+
+========== Freefly Systems ==========
+  Alta X
+  Alta X Gen2
+  Astro
+  Remote ID Upgrade Kit (Alta X)
+
+========== Gleesfun ==========
+  G115
+  G115S
+  G11PRO
+    匹配前缀: 2055BG11P0000001
+  G11PRO2
+    匹配前缀: 2055CG11P20000001
+
+========== Global Drone ==========
+  GD98
+    匹配前缀: 2054AGD98
+  GD98MAX
+    匹配前缀: 2054DGD98MAX
+
+========== Harris Aerial ==========
+  Carrier H6
+    匹配前缀: 18136H6E, 18136H6E12
+  Carrier H6HL
+    匹配前缀: 18137H6HL052
+  Carrier H8E
+    匹配前缀: 18136H8E025
+
+========== Heilongjiang Huida Technology Co., Ltd ==========
+  3WWDZ-U70A
+
+========== Holy Stone ==========
+  HS600
+    匹配前缀: 1865AHS6
+  HS600D
+    匹配前缀: 1865CHS600D
+  HS700E
+    匹配前缀: 1865C000003
+  HS720
+    匹配前缀: 1865C
+  HS720E
+    匹配前缀: 1865C000001
+  HS720G
+    匹配前缀: 1865CHS720G
+  HS720R
+    匹配前缀: 1865C000002
+  HS790
+    匹配前缀: 1865F113
+  HS920
+    匹配前缀: 1865CHS92
+  HSRID01
+    匹配前缀: 18656A
+  HSRID02
+    匹配前缀: 1865CBM02
+  HSRID03
+    匹配前缀: 1865F10X
+
+========== Holyton ==========
+  HT60
+    匹配前缀: 2003AHT60000001
+  HT65
+    匹配前缀: 2003F1
+  HT70
+    匹配前缀: 2003AHT70000001
+
+========== Hoverfly Technologies ==========
+  Sentry/Spectre
+    匹配前缀: 1867F1800100035
+
+========== Hylio ==========
+  AG-210
+  AG-210
+  AG-210
+  AG-216
+  AG-216
+  AG-216
+  AG-230
+  AG-230
+  AG-230
+  AG-272
+  AG-272
+  AG-272
+  ATLAS Blue
+  ATLAS HYL-300
+  HYL-150
+  PEGASUS Blue
+  PEGASUS HYL-30
+  PHOTON Blue
+  PHOTON HYL-10
+
+========== Hylio, Inc. ==========
+  ARES BLUE
+
+========== Inspired Flight ==========
+  IF1200A
+  IF800
+
+========== Javelina Propeller Laboratory ==========
+  Quiver
+
+========== LISHI ==========
+  X38
+    匹配前缀: 1943EX38HK220000001
+
+========== Leica Geosystems AG ==========
+  BLK2FLY
+
+========== Light Quadcopter UAV ==========
+  GDU-S200
+    匹配前缀: 1968FS20S20000000001
+  S220
+    匹配前缀: 1968FS22S22000000001, 1968FS22S221
+  S220 Pro
+    匹配前缀: 1968FS22220000000001, 1968FS22220P00000001
+
+========== Lucid Bots ==========
+  Sherpa
+    匹配前缀: 1877ESHP23C1CD013
+
+========== Lumenier ==========
+  RID
+    匹配前缀: 1972C
+
+========== Manna Drone Delivery ==========
+  3.8.3
+    匹配前缀: 2218C038301
+
+========== Matternet ==========
+  M2
+    匹配前缀: 18106M2201
+  M2 Block 2
+    匹配前缀: 18106M22
+
+========== Meteodrone ==========
+  MM-670
+    匹配前缀: 1901EMD02568608
+
+========== Meteomatics ==========
+  NanoID
+    匹配前缀: 19016E4FAAA
+
+========== MicroFlight Inc ==========
+  DB130 UAS Beacon
+    匹配前缀: 19089MF01
+
+========== Microdrones ==========
+  EasyOne
+    匹配前缀: 1644FMD4E1VA00000001
+  EasyOne NDAA
+    匹配前缀: 1644FMD4E1VA00010001
+  md4-1000
+    匹配前缀: 1644FMD4100000007004
+  md4-3000
+    匹配前缀: 1644FMD4300000001234
+
+========== NewBeeDrone ==========
+  BeeID
+    匹配前缀: 2071F
+
+========== Nokia ==========
+  P591013
+    匹配前缀: 1984BL12
+
+========== Nova Sky Stories, LLC ==========
+  Star Drone V3 / V3.1
+    匹配前缀: SS310FG099
+
+========== PARROT ==========
+  ANAFI Ai
+    匹配前缀: 1588E040452AA000001
+  ANAFI USA
+    匹配前缀: 1588E040505AA000001
+  PARROT ANAFI UKR GOV
+    匹配前缀: 1588E040465AA000001
+
+========== Percepto ==========
+  AirMax
+    匹配前缀: 1701DSPR00000000PR
+  AirMax
+    匹配前缀: 1701DSPR00000000FL
+  AirMax
+    匹配前缀: 1701DS
+  AirMax
+    匹配前缀: 1701DSPR00000000PR
+  AirMax
+    匹配前缀: 1701DSPR00000000FL
+  AirMax
+    匹配前缀: 1701ASPR
+  AirMax
+    匹配前缀: 1701ASPR1
+  AirMax OGI
+    匹配前缀: 1701DGAS00000000PR
+  AirMax OGI
+    匹配前缀: 1701DGAS00000000FL
+  AirMax OGI
+    匹配前缀: 1701DGAS00000000PR
+  AirMax OGI
+    匹配前缀: 1701DGAS00000000FL
+  AirMax OGI
+    匹配前缀: 1701AGAS
+
+========== Percepto AirMax ==========
+  OGI
+    匹配前缀: 1701DGAS00120623PR
+  Percepto AirMax
+    匹配前缀: 1701DSPR00841120PR
+  Percepto AirMax
+    匹配前缀: 1701DSPR00800620PR
+  Percepto AirMax
+    匹配前缀: 1701DSPR01640223PR
+  Percepto AirMax
+    匹配前缀: 1701DSPR01441221FL
+  Percepto AirMax
+  Percepto AirMax
+    匹配前缀: 1701DSPR01
+  Percepto AirMax
+  Percepto AirMax
+    匹配前缀: 1701DSPR
+  Percepto AirMax OGI
+    匹配前缀: 1701ASPR1431121
+  Percepto AirMax OGI
+    匹配前缀: 1701DGAS00100123PR
+  Percepto AirMax OGI
+    匹配前缀: 1701DGAS00080123PR
+  Percepto AirMax OGI
+  Percepto AirMax OGI
+    匹配前缀: 1701DGAS
+  Percepto AirMax OGI
+    匹配前缀: 1701ASPR1421121
+  Percepto AirMax OGI
+    匹配前缀: 1701DGAS00150623PR
+  Percepto AirMax OGI
+    匹配前缀: 1701DGAS001
+  Percepto AirMax OGI, Percepto Airmax
+    匹配前缀: 1701D
+
+========== Phoenix UAS ==========
+  mRID
+    匹配前缀: 1961FA
+
+========== Pierce Aerospace ==========
+  B1
+    匹配前缀: 1893FB1
+
+========== Potensic ==========
+  ATOM 2
+    匹配前缀: 1910F, 1910F14
+  RID-916
+    匹配前缀: 1910F916
+
+========== PrecisionVision ==========
+  PV40X
+
+========== PrecisionVision 100X ==========
+  PV100X
+
+========== Pyka ==========
+  Pelican
+    匹配前缀: 16056PS
+  Pelican Cargo
+    匹配前缀: 17056PS
+  Pelican Cargo
+    匹配前缀: 16056PC
+
+========== Quadcopter ==========
+  S400E
+    匹配前缀: 1968FS40GDE24A100001, 1968FS40S40000000001
+
+========== Quantum-Systems ==========
+  Trinity R10
+    匹配前缀: 1656DTYR10MBD
+  Trinity R14
+    匹配前缀: 1656DTYR14MBD
+  Trinity R6
+    匹配前缀: 1656DTYR06MBD
+  Trinity R7
+    匹配前缀: 1656DTYR07MBD
+  Trinity R8
+    匹配前缀: 1656DTYR08MBD
+
+========== Rainmaker ==========
+  Elijah
+    匹配前缀: 2160BV2EL015RA1N
+
+========== RigiTech ==========
+  Eiger
+    匹配前缀: 16988ER02
+
+========== Ruko ==========
+  F11
+    匹配前缀: 18699F11
+  F11GIM
+    匹配前缀: 1869BF11GM
+  F11GIM2
+    匹配前缀: 1869CF11GM2, 1869DGIM2
+  F11GIM3
+    匹配前缀: 1869CF11GM3000001
+  F11PRO
+    匹配前缀: 1869AF11P
+  F11PRO 2
+    匹配前缀: 1869BF11P2
+  F11PRO 3
+    匹配前缀: 1869CF11P30000001
+  R111
+    匹配前缀: 1869AR111
+  R111
+  R111
+  R111
+  R111S
+  U11GIM2
+    匹配前缀: 1869CU11GM2
+  U11GIM2
+    匹配前缀: 1869CU11GM2
+  U11PRO
+    匹配前缀: 1869AU11P
+  U11PRO 2
+    匹配前缀: 1869BU11P2
+  U11PRO2
+    匹配前缀: 1869CU11PR2000001
+  U11S
+    匹配前缀: 1869AU11S
+
+========== SBG ==========
+  Modified DJI Mini [3, 3Pro, 4Pro]
+    匹配前缀: 1581F
+
+========== SHANGHENG ==========
+  AE86 Pro Max
+    匹配前缀: 2021CAE86PM067
+
+========== SJRC ==========
+  BTM001
+    匹配前缀: 18929BTA0886
+  F11 4K PRO
+    匹配前缀: 1892AF11
+  F11 S2 PRO
+    匹配前缀: 1892CF11S2P
+  F11 S3 PRO
+    匹配前缀: 1892CF11S3P
+  F11s 4K PRO
+    匹配前缀: 1892CF11S237
+  F11s 4K PRO+
+    匹配前缀: 1892CF11S1P
+  F22 4K PRO
+    匹配前缀: 1892CF22A238
+  F22 S2 PRO+
+    匹配前缀: 1892CF22BS38965
+  F22 S3 PRO
+    匹配前缀: 1892CF22DS38404
+  F22s 4K PRO
+    匹配前缀: 1892CF22B237
+  F5s PRO
+    匹配前缀: 1892CF5SA
+  F5s Pro+
+    匹配前缀: 1892CF5SP
+  F7 4K PRO
+    匹配前缀: 1892BF7A238
+
+========== SKYFISH ==========
+  M4
+    匹配前缀: 1949A0000M499
+  M6
+    匹配前缀: 1949A0000M6
+  OSPREY
+    匹配前缀: 1949A0SPREY
+
+========== SPECTA ==========
+  AIR
+    匹配前缀: 1939F83Z
+
+========== Sentera ==========
+  PHX
+    匹配前缀: 1798F11324
+
+========== ShenZhen C-Fly Intelligent Technology Co.,Ltd ==========
+  DF-BLE-A
+    匹配前缀: 1904C
+
+========== SkySpecs ==========
+  Foresight V1
+    匹配前缀: 1969BFS, 1969BFS000000054
+  Foresight V2
+    匹配前缀: 1969BFS2
+  Foresight V2-C
+    匹配前缀: 1969BFS3
+  Foresight V2-E
+    匹配前缀: 1969BFS4
+
+========== Skydio ==========
+  2 SDRC2V1
+    匹配前缀: 1668F
+  2+ SDR35V1
+    匹配前缀: 1668BS20FB
+  2+ SDR35V2
+    匹配前缀: 1668BS20FB
+  R10 SDR5PC
+    匹配前缀: 1668BR70CA00UZ
+  X10 with Skydio Parachute for X10 (SR47APCH)
+    匹配前缀: X10PCH
+  X10E SR47P
+    匹配前缀: 1668BR40EA
+  X10E SR47P
+    匹配前缀: 1668BR40EA
+  X2E SDR21V1
+    匹配前缀: 1668BE10JA
+  X2E SDR21V2
+    匹配前缀: 1668BE10JA
+
+========== Skyfront ==========
+  Perimeter 8
+    匹配前缀: 1926FP82306LRS1N1
+
+========== SmartDrone ==========
+  Discovery 2
+    匹配前缀: 1866ASDD000003
+  Discovery 3
+    匹配前缀: 1866ASD3
+  Magellan
+
+========== Sony ==========
+  ARS-S1
+  ARS-S1
+
+========== Spektrum ==========
+  SPMA9500 SkyID
+    匹配前缀: 1849E074B839
+
+========== SubUAS LLC ==========
+  NV8
+    匹配前缀: 2183F
+
+========== Sunflower Labs ==========
+  Beehive 01
+    匹配前缀: 1595B11A20400001
+
+========== Sustainable Skylines ==========
+  AERO Sky
+
+========== SwellPro ==========
+  A-RID
+    匹配前缀: 1930FARD
+  FD2
+    匹配前缀: 1930FD02
+  FD3
+    匹配前缀: 1930FD03
+
+========== Swoop Aero ==========
+  Kite
+
+========== TRIPLEFINE ==========
+  TF-15EX
+    匹配前缀: 1922DTF15EX
+  TF35 PRO
+    匹配前缀: 1922BTF35
+
+========== Talos Drones ==========
+  Talos T60x
+    匹配前缀: 2104F7EZ
+
+========== Teal Drones ==========
+  Teal 2
+    匹配前缀: 1839FTD502932332
+
+========== Teledyne FLIR ==========
+  SkyRanger/SkyRaider R70/R80D
+    匹配前缀: 1767CSRH
+
+========== Telegrid LLC ==========
+  DE-2020
+
+========== Terra Drone Corporation ==========
+  Model M1
+
+========== Tofect ==========
+  T60A
+    匹配前缀: 2161F105
+
+========== TopXGun ==========
+  3WWDZ-50B
+    匹配前缀: 2111FP602523B2390001
+  3WWDZ-U60B
+    匹配前缀: 2111FP702524B24C0001
+
+========== Trace UAS ==========
+  Trace UAS
+    匹配前缀: 2108F
+
+========== Triad Drones ==========
+  Echo
+    匹配前缀: 19338TD2
+
+========== Tucok ==========
+  012S
+    匹配前缀: 1900A12S0022
+  193MAX2S
+    匹配前缀: 1900CMAX2S
+  T70
+    匹配前缀: 1900AT7
+
+========== UAS ==========
+  RC
+    匹配前缀: 1774FREM101000000001
+
+========== Veeniix ==========
+  V11
+    匹配前缀: 18729V11
+  V113
+  V113S
+  V11Air
+    匹配前缀: 1872CV11AR0000001
+  V11PRO
+    匹配前缀: 1872BV11P0000001
+
+========== Vesper UAS ==========
+  Vesper UAS
+    匹配前缀: 2108F
+
+========== Vision Aerial ==========
+  SwitchBlade-Elite
+  Vector
+  Vulcan S
+    匹配前缀: 17887S000001
+
+========== Voliro ==========
+  Voliro T
+    匹配前缀: 1840A000001
+
+========== Voltair ==========
+  Faraday-1
+    匹配前缀: 21998AB26
+
+========== WISPR ==========
+  Ranger Elite
+    匹配前缀: 1889ERE0000080123
+  Ranger Pro 1100
+    匹配前缀: 1889ERP1100010121
+  SkyScout
+    匹配前缀: 1889ESP2000000079, 1889ESS000004012401
+  SkyScout 2+
+    匹配前缀: 1889ESPP
+  SkyScout E
+    匹配前缀: 1889ESS
+  SkyScout Pro
+    匹配前缀: 1889ESP, 1889ESP000004012401
+
+========== Watts Innovations ==========
+  AERO Sky
+    匹配前缀: 1785C000000001
+  PRISM
+    匹配前缀: 1785C000000001
+  PRISM Lite
+    匹配前缀: 1785C000000002
+  PRISM Sky
+    匹配前缀: 1785C000000006
+
+========== Wing Aviation LLC ==========
+  Hummingbird
+    匹配前缀: 16335B0183, 16335H0001, 16335H0201, 16635B0183
+  Hummingbird
+    匹配前缀: 16335F0401, 16335F7001
+  Hummingbird v2
+    匹配前缀: 16335A3
+
+========== Wingcopter ==========
+  198
+    匹配前缀: 1607B0198X0001
+
+========== Wingtra ==========
+  WingtraOne Gen II
+  WingtraRAY
+  WingtraRAY
+
+========== Workhorse Aero ==========
+  WA4-100
+
+========== XAG ==========
+  P100
+    匹配前缀: 1863FPEG8218
+  P100 Pro
+    匹配前缀: 1863FPEG8219
+  P150
+    匹配前缀: 1863FPEG8223
+  P150 Max
+    匹配前缀: 1863F251
+  P60
+    匹配前缀: 1863F242
+
+========== XM2 Labs ==========
+  XTD-120
+    匹配前缀: 1928FXTD0000000002
+
+========== XPECE ==========
+  ONE
+    匹配前缀: 2098EMD241V01
+
+========== XiL ==========
+  019
+    匹配前缀: 1860A01900408
+  193E
+    匹配前缀: 1860B193E
+
+========== ZERO ZERO ROBOTICS ==========
+  ZZ-H-1-003
+    匹配前缀: 2095FH05
+  ZZ-H-1-004
+    匹配前缀: 2095FH04
+
+========== Zephyr Systems ==========
+  ARK-350
+    匹配前缀: 1795F350ZS2201
+  Module 100
+    匹配前缀: 1795F01ZS2201
+  OKO-250
+    匹配前缀: 1795F250ZS2201
+
+========== Zing Drone Solutions ==========
+  Z-RID
+    匹配前缀: 18919ZNG
+  Z-RID Lite
+    匹配前缀: 18918ZL
+  Z-RID Lite V2
+    匹配前缀: 18918ZLL
+
+========== Zipline ==========
+  P2 Zip
+  Sparrow
+
+========== blueflite ==========
+  461
+
+========== idME ==========
+  Pro
+
+========== uAvionix ==========
+  pingRID
+    匹配前缀: 1792C

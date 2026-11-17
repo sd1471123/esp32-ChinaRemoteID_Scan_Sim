@@ -932,7 +932,7 @@ GB 42590-2023 附录 A.1.3.1.3 允许 **5725–5829 MHz**，对应 Wi-Fi 信道 
 | [luolitao/esp32-crid](https://github.com/luolitao/esp32-crid) | **本项目的上游基础**。原始的 RID 广播/接收思路、工程骨架与 Wi-Fi 射频层实现均源自该项目，本仓库在其基础上做了 softAP 广播重构、双国标支持与统一收发固件等大量修改 |
 | [OpenDroneID](https://github.com/opendroneid/opendroneid)（`components/opendroneid/`） | **Remote ID 消息编解码核心库**。ASTM / GB 42590 打包报文的编码与解析均基于该官方库，沿用其原许可证（Apache-2.0） |
 | [sxjack/uav_electronic_ids](https://github.com/sxjack/uav_electronic_ids) | OpenDroneID 官方 ESP32 参考实现。本项目 softAP + vendor IE 广播方案与其保持一致（`esp_wifi_set_vendor_ie()` 挂载 Beacon/Probe Response） |
-| [TechExplorer-X/DroneScanner](https://github.com/TechExplorer-X/DroneScanner) | **大疆机型 RID 序列号前缀数据来源**。「大疆机型伪装预设」的机型前缀对照表（`1581F` 厂商前缀 + 第 6~8 位型号码）取自该项目的社区实测机型库，仅用于测试研究 |
+| [FAA UAS Declaration of Compliance](https://uasdoc.faa.gov) | **机型预设的唯一数据源**。「机型预设（伪装）」只收录该清单已登记的前缀/型号，未登记机型不猜前缀。快照 `data/faa_doc_2026-11-11.txt`，逐条判定与维护流程见 [`docs/model_db.md`](docs/model_db.md)，表由 `tools/models_faa.py` 生成并校验 |
 | [Leaflet](https://leafletjs.com/)（v1.9.4） | 发射/接收两端网页地图渲染框架（CDN 引入，未修改分发） |
 | [OpenStreetMap](https://www.openstreetmap.org/) | 地图瓦片图源（WGS-84，与 RID 广播坐标系一致，无 GCJ-02 偏移） |
 | [ESP-IDF](https://github.com/espressif/esp-idf)（v6.x） | Espressif 官方物联网开发框架，本项目构建于其上 |

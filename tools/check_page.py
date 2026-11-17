@@ -293,6 +293,18 @@ checks = {
     "密码:保存后提示用新密码重连": "热点密码已修改，请用新密码重新连接" in html,
     "密码:随配置一起上报": "'ap_password'" in html and "d.ap_password" in html,
     "密码:OTA说明改为需连热点": "热点默认开启 WPA2 口令" in html,
+    # 机型预设：只允许 FAA 已登记条目，前缀必须来自 data/faa_doc_*.txt
+    "机型:表名改为 MDL": ("const MDL=[" in html and "MDL.forEach" in html
+                      and "const DJI=[" not in html),
+    "机型:五个分组齐全": all(("'%s'" % g) in html for g in
+                       ("消费级", "穿越机", "行业级", "植保", "物流", "其他厂商")),
+    "机型:写出官方来源": "FAA UAS Declaration of Compliance" in html,
+    "机型:未登记型号不提供预设": "未登记型号不提供预设" in html,
+    "机型:不含编造前缀": not any(p in html for p in (
+        "18179000", "18179001", "1758X000", "1587A000", "1778S000",
+        "1567A000", "1688W000", "1701A000", "SDR21V1", "SR47PCV", "PF723000")),
+    "机型:模板语法正确": "['1581F6Q8','Matrice 3TD']" in html
+                    and "['1581F6QA','Matrice 3D']" in html,
 }
 for k, v in checks.items():
     print(("OK   " if v else "FAIL ") + k)

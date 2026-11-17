@@ -55,6 +55,14 @@ if (-not $py) {
   exit 3
 }
 
+# 机型预设表只允许来自 FAA 快照：表一旦与 data/faa_doc_*.txt 漂移就在编译前拦住，
+# 避免「编造前缀」重新混进固件。生成/修复见 tools/models_faa.py --write。
+& $py (Join-Path $PSScriptRoot 'models_faa.py') --check
+if ($LASTEXITCODE -ne 0) {
+  Write-Host "`n*** 机型表与 data/faa_doc_*.txt 不一致，先跑 python tools/models_faa.py --write ***" -ForegroundColor Red
+  exit 3
+}
+
 # 火绒 HIPS 会在上一个进程刚写完 page_gz.h 时短暂持有句柄，
 # 此时 gen_gzpage.py 覆盖写会抛 PermissionError(13)。重试几次即可，不必让整次构建失败。
 $gzOk = $false

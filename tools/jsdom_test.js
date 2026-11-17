@@ -563,6 +563,20 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
   console.log('  卡片展开:', ld.getElementById('lgbody').style.display === '',
     '| 标签', ld.getElementById('lgtog').textContent);
 
+  // 机型预设：只收录 FAA 已登记条目；选型后应生成 20 位序列号并回填名称/类别
+  console.log('  --- 机型预设 ---');
+  const mdlGroups = [...ld.querySelectorAll('#ddlist .dd-group')].map((e) => e.textContent);
+  console.log('  下拉分组:', mdlGroups.join('/'), '(expect 6)');
+  const mdlItems = [...ld.querySelectorAll('#ddlist .dd-item')];
+  console.log('  型号条目:', mdlItems.length);
+  const mk3 = mdlItems.find((e) => e.textContent === 'Mavic 3');
+  mk3.click();
+  await new Promise((r) => setTimeout(r, 30));
+  const genId = ld.getElementById('uas_id').value;
+  console.log('  序列号 20 位且前缀官方:', genId.length === 20 && genId.slice(0, 8) === '1581F45T', genId.slice(0, 8));
+  console.log('  回填机型名与类别:', ld.getElementById('drone_name').value === 'Mavic 3'
+    && ld.getElementById('ua_type').value === '2');
+
   console.log('=== 运行后错误 ===');
   console.log(w._pageErrors.length ? w._pageErrors : '(none)');
   console.log('DONE');

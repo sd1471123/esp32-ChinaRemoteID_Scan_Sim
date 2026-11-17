@@ -1,0 +1,136 @@
+==============================================================
+   DJI / Autel / Parrot / Skydio 等 Remote ID 机型库
+   来源: FAA UAS Declaration of Compliance (uasdoc.faa.gov)
+   同步: 固件 models.cpp 
+   更新日期: 2026-11-11
+==============================================================
+
+【消费级】共 40 条
+--------------------------------------------------------------
+  11223344    Anafi
+  1581F0M6    Mavic 2 Zoom
+  1581F11V    Phantom 4 Pro V2.0
+  1581F163    Mavic 2 Pro
+  1581F1WN    Mavic Air 2
+  1581F3N3    Mavic Air 2
+  1581F3YT    Air 2S
+  1581F45T    Mavic 3
+  1581F4QZ    Mavic 3 Cine
+  1581F4XF    Mini 3 Pro
+  1581F5YH    Mini 3
+  1581F67P    Mavic 3 Classic
+  1581F67Q    Mavic 3 Pro
+  1581F6CD    Mini 2 SE
+  1581F6L5    Mini 3 Pro
+  1581F6MK    Mavic 3 Pro Cine
+  1581F6N8    Air 3
+  1581F6Z9    Mini 4 Pro
+  1581F895    Air 3S
+  1581F8LQ    Mavic 4 Pro (64GB)
+  1581F8PJ    Mini 4K
+  1581F986    Mavic 4 Pro (512GB)
+  1581F9DE    Mini 5 Pro
+  1581FANL    Mini 5 Pro (4G)
+  1581FB34    Lito X1
+  1581FBV5    Lito 1
+  1748CHL2    EVO II
+  1748CHL7    EVO II
+  1748CLT0    EVO Lite
+  1748CLTC    EVO Lite+
+  1748CLTG    EVO Lite
+  1748CNA0    EVO Nano
+  1748CNAG    EVO Nano
+  1748FEV2    EVO II V3
+  1778S000    SplashDrone 4
+  44332211    Anafi USA
+  P208904    Skydio 2 / 2+
+  PF723000    Rolling Spider
+  PF727078    Mambo FLY
+  YUNQ4KPUS    Q500 4K Typhoon
+
+【穿越机/FPV】共 8 条
+--------------------------------------------------------------
+  1581F37Q    FPV
+  1581F4QW    Avata
+  1581F6W8    Avata 2
+  1581F7V2    Flip
+  1581F87L    Neo
+  1581FA6Q    Neo 2
+  1581FA8J    Avata 360 (DVN3XT)
+  1581FBLK    Avata 360 (DVN3NT)
+
+【行业级】共 36 条
+--------------------------------------------------------------
+  1581F0UY    Phantom 4 RTK
+  1581F1ZN    Matrice 300 RTK
+  1581F4BN    经纬M30
+  1581F4GC    Mavic 2 Ent. Advanced
+  1581F4Z4    Inspire 3
+  1581F5BK    Matrice 30T
+  1581F5BL    Matrice 30 (机场版)
+  1581F5BM    Matrice 30T (机场版)
+  1581F5FH    Mavic 3E
+  1581F5FJ    Mavic 3T
+  1581F5FK    Mavic 3M
+  1581F62H    Matrice 30T
+  1581F6GK    Matrice 350 RTK
+  1581F6Q8    Matrice 3TD
+  1581F6QA    Matrice 3D
+  1581F7FV    Matrice 4E
+  1581F7K3    Matrice 4T
+  1581F8DB    Matrice 400
+  1581F8HG    Matrice 4TD
+  1581F8HH    Matrice 4D
+  1581FBEX    Matrice 3TA
+  1588E040    Anafi AI
+  1701A000    Percepto Max
+  1701A001    Percepto Sparrow
+  1701A002    Percepto Air
+  1748CJD1    Dragonfish Standard
+  1748CJD2    Dragonfish Lite
+  1748CJD3    Dragonfish Pro
+  1748FEV3    EVO Max / MDX-1
+  1748FEV4    Autel Alpha
+  SDR21V1    Skydio X2E
+  SDR35V1    Skydio X2
+  SR47PCV    Skydio X10
+  YUNH5ETWET    H520 Hexacopter
+  YUNH920202EU    Tornado H920
+  YUNTYH3EU    Typhoon H3
+
+【植保农业】共 11 条
+--------------------------------------------------------------
+  1581F446    Agras T10 / T30
+  1581F574    Agras T20P / T40
+  1581F6BU    Agras T50
+  1581F836    Agras T25P
+  1581F8ZL    Agras T100
+  1581F8ZX    Agras T70P
+  1581FAE3    Agras T70S
+  1758X000    P150 Max
+  1758X001    P100 Pro
+  1758X002    P100
+  1758X003    V40
+
+【物流级】共 2 条
+--------------------------------------------------------------
+  1581F7C6    FlyCart 30
+  1581FAN4    FlyCart 100
+
+【电影级】共 3 条
+--------------------------------------------------------------
+  18179000    Alta X
+  18179001    Alta X Gen2
+  18179002    Alta 8
+
+【测绘级】共 8 条
+--------------------------------------------------------------
+  1567A000    md4-1000
+  1567A001    md4-3000
+  1587A000    eBee X
+  1587A001    eBee TAC
+  1587A002    eBee Geo
+  1587A003    eBee RTK
+  1688W000    WingtraOne Gen II
+  1688W001    WingtraOne GEN I
+
