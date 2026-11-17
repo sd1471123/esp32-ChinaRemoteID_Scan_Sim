@@ -29,6 +29,8 @@ SERIAL = os.path.join(ROOT, "data", "faa_serial_2026-11-17.tsv")
 DRAFT = os.path.join(ROOT, "data", "models_draft_2026-11-11.txt")
 SRC = os.path.join(ROOT, "main", "crid_web.c")
 DOC = os.path.join(ROOT, "docs", "model_db.md")
+INDEX = os.path.join(ROOT, "data", "faa_prefix_index_%s.tsv" % "2026-11-17")
+REVIEW = os.path.join(ROOT, "data", "models_reviewed_%s.tsv" % "2026-11-17")
 SNAPSHOT_DATE = "2026-11-17"
 MIN_PREFIX = 5
 
@@ -448,6 +450,8 @@ def main():
     ap.add_argument("--check", action="store_true")
     ap.add_argument("--doc", action="store_true")
     ap.add_argument("--suggest", action="store_true")
+    ap.add_argument("--index", action="store_true")
+    ap.add_argument("--review", action="store_true")
     args = ap.parse_args()
 
     recs = parse_serial()
@@ -488,10 +492,62 @@ def main():
         else:
             print("机型表已漂移，请运行 --write")
             return 1
+    if args.review:
+        write_review(recs)
+        print("已生成 %s" % REVIEW)
+    if args.index:
+        write_index(recs)
+        print("已生成 %s" % INDEX)
     if args.doc:
         write_doc(recs)
         print("已生成 %s" % DOC)
     return 0
+
+
+# ---------------------------------------------------------------- 核对版机型库
+def write_review(recs):
+    """草稿库逐条核对结果（可机读），判定同 docs/model_db.md 第四节。"""
+    rows = draft_report(recs)
+    out = ["# 机型库核对版（草稿库 vs FAA 官方序列号）",
+           "# 源 data/models_draft_2026-11-11.txt | 共 %d 条" % len(rows),
+           "# 判定：已核实 = 前缀与官方一致；前缀可截短 = 是官方号段的前段；",
+           "#       前缀需修正 = 官方有该型号但前缀对不上；官方无登记 = 官方清单查无此型号",
+           "# 字段: 分类\t草稿前缀\t草稿型号\t判定\t官方前缀\t官方型号"]
+    for r in rows:
+        out.append("\t".join([r["sec"], r["px"], r["name"], r["verdict"],
+                              r["off"].replace("—", ""), r["official"].replace("—", "")]))
+    io.open(REVIEW, "w", encoding="utf-8", newline="\n").write("\n".join(out) + "\n")
+    return len(rows)
+
+
+# ---------------------------------------------------------------- 前缀索引
+def write_index(recs):
+    """输出全量前缀索引：去重、按长度分层、一对多展开。"""
+    seen = {}
+    for tn, r in recs.items():
+        for p, k in derive(r["items"]) + range_starts(r["items"]):
+            key = (p, r["make"], r["model"])
+            if key in seen:
+                continue
+            seen[key] = (k, tn)
+    rows = []
+    for (p, make, model), (k, tn) in seen.items():
+        n = len(p)
+        tier = "精确" if n >= 12 else ("可用" if n >= 8 else "慎用")
+        rows.append((tier, n, p, k, make, model, tn))
+    rows.sort(key=lambda x: ({"精确": 0, "可用": 1, "慎用": 2}[x[0]], -x[1], x[4], x[5]))
+    cnt = collections.Counter()
+    for r in rows:
+        cnt[(r[2], r[5])] += 1
+    multi = {p for (p, _) in cnt if cnt[(p, _)] > 1}
+    out = ["# FAA 机型前缀索引（由官方序列号推导）",
+           "# 数据源 data/faa_serial_%s.tsv | 共 %d 条" % (SNAPSHOT_DATE, len(rows)),
+           "# 分层：精确 = 前缀 >=12 位；可用 = 8~11 位；慎用 = 5~7 位（会大面积误命中）",
+           "# 字段: 分层\t前缀长度\t前缀\t推导方式\t厂商\t型号\t声明编号"]
+    for tier, n, p, k, make, model, tn in rows:
+        out.append("\t".join([tier, str(n), p, k, make, model, tn]))
+    io.open(INDEX, "w", encoding="utf-8", newline="\n").write("\n".join(out) + "\n")
+    return len(rows)
 
 
 # ---------------------------------------------------------------- 文档
@@ -652,6 +708,8 @@ def write_doc(recs):
     A("python tools/models_faa.py --suggest   # 看官方给某厂商推导出的前缀（可加厂商名过滤）")
     A("python tools/models_faa.py --write     # 改完 CURATED 后同步进 crid_web.c")
     A("python tools/models_faa.py --doc       # 重新生成本文档")
+    A("python tools/models_faa.py --review    # 草稿库核对结果 -> data/models_reviewed_*.tsv")
+    A("python tools/models_faa.py --index     # 全量前缀索引 -> data/faa_prefix_index_*.tsv")
     A("```")
     A("")
     A("换快照时：重新抓一遍序列号写入 `data/faa_serial_YYYY-MM-DD.tsv`，改脚本里的 `SERIAL`/`SNAPSHOT_DATE`，")

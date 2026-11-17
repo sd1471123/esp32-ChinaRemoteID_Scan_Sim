@@ -249,6 +249,8 @@ python tools/models_faa.py --check     # 回归：表是否与快照一致
 python tools/models_faa.py --suggest   # 看官方给某厂商推导出的前缀（可加厂商名过滤）
 python tools/models_faa.py --write     # 改完 CURATED 后同步进 crid_web.c
 python tools/models_faa.py --doc       # 重新生成本文档
+python tools/models_faa.py --review    # 草稿库核对结果 -> data/models_reviewed_*.tsv
+python tools/models_faa.py --index     # 全量前缀索引 -> data/faa_prefix_index_*.tsv
 ```
 
 换快照时：重新抓一遍序列号写入 `data/faa_serial_YYYY-MM-DD.tsv`，改脚本里的 `SERIAL`/`SNAPSHOT_DATE`，
