@@ -27,11 +27,20 @@ CONFIG_ESP_COEX_SW_COEXIST_ENABLE=y
 # 浏览器只在安全上下文（https / localhost）里暴露 navigator.bluetooth，
 # 所以网页要能通过 https://192.168.4.1 打开。证书是自签的，见 main/certs/。
 CONFIG_ESP_HTTPS_SERVER_ENABLE=y
-# TLS 收发缓冲 16KB -> 4KB/2KB：C5 跑起 Wi-Fi AP + BLE 后空闲堆只有 70KB，
-# 一条 TLS 会话的峰值约 19~30KB，实测 4 条并发就会 OOM 并把 Wi-Fi 一起拖垮。
-#   IN=4096 收（客户端请求，不能太小，浏览器不协商 max_fragment_length 时会发 16KB 记录）
-#   OUT=2048 发（响应用，mbedtls 会自动分片，页面 gzip 31KB 拆成 16 个记录照样能发）
-CONFIG_MBEDTLS_SSL_IN_CONTENT_LEN=4096
+# TLS 收发缓冲。这里踩过最大的一个坑，务必看完再改：
+#   浏览器和 OpenSSL 在握手时不协商 max_fragment_length，默认按 **16384 字节**切 TLS 记录。
+#   IN_CONTENT_LEN 若小于 16KB，设备收到 16KB 记录会判为记录溢出，直接把连接打断；
+#   而客户端此时还以为在正常发送（数据堆在内核发送缓冲里），表现为：
+#     · 网页「固件升级」进度条走到 60%~62%（约 800KB）后纹丝不动，页面永远显示上传中
+#     · 用裸 socket 分块发送时，恰好卡在发送缓冲被灌满的位置（64KB 块约 655KB，8KB 块约 819KB）
+#     · 唯一能过的是 **4096 字节**分块——正好等于原来的 IN_CONTENT_LEN，因为记录没超限
+#   这条线索把「内存不足」「flash 锁竞争」「会话被回收」全部排除：卡住期间 /api/status
+#   正常响应 0.86s，heap 44~52KB、最大连续块 26KB，ridlog 日志本来就是关的，设备也没重启。
+# 取值：IN=16384（等于客户端默认记录上限，必须够）；
+#   OUT 保持 2048——设备发出的响应用不着大记录，页面 gzip 31KB 会被拆成十几个小记录照发不误。
+# 代价：每条 TLS 连接的收缓冲上限从 4KB 变 16KB。配下面的 DYNAMIC_BUFFER 后，空闲会话把缓冲
+#   还给堆，只有并发活跃时才真占，S3 6 条并发峰值约 96KB（实测基线 heap 91KB，OTA 单连接够用）。
+CONFIG_MBEDTLS_SSL_IN_CONTENT_LEN=16384
 CONFIG_MBEDTLS_SSL_OUT_CONTENT_LEN=2048
 # 动态收发缓冲：不用时把缓冲还给堆，会话空闲期间只留 mbedTLS 上下文。
 # 这是给 C5 这种小内存 + 并发 TLS 场景最关键的一项，能把最低水位从 9KB 抬回 20KB 以上。
@@ -59,22 +68,20 @@ CONFIG_LWIP_MAX_SOCKETS=24
 CONFIG_LWIP_TCP_MSL=8000
 CONFIG_LWIP_MAX_ACTIVE_TCP=24
 
-# ---- lwIP TCP 接收窗口：必须大于一个 TLS 记录（16KB），否则大块上传会死锁 ----
-# 现象：网页「固件升级」进度条走到 60%~62%（约 800KB）就不动，页面一直显示
-#       「正在上传，请勿关闭页面…」，既不报错也不前进，最后整机 Web 服务不可用
-#       （ping 通、TCP 能连上，但握手立刻被关闭），必须重启设备才恢复。
-# 实测（.tmp/stalltest.py，同一台 S3、同一镜像，只改发送块大小）：
-#       4096 B 块 -> 1,399,792 B 全部发完，13 秒通过
-#       8192 B 块 -> 停在 819,200 B，之后再无进展
-#      65536 B 块 -> 停在 851,968 B，之后再无进展
-#   停住时 Wi-Fi 一直在线（netsh 显示 connected），设备对新连接仍能正常响应 50 秒，
-#   只有那条上传连接零推进——是接收方不再读取，不是链路断了。
-# 机制：mbedTLS 必须收齐一个完整记录才能解密返回数据，而 TCP 窗口只有 5760 字节，
-#   装不下 8KB/16KB 的记录 → 应用永远等不到完整记录，不再调用 recv → 窗口一直是 0
-#   → 发送方永久阻塞。这就是经典的 TLS 接收窗口死锁。
-# 取值：窗口 20KB（> 16KB 最大记录，留一个多 MSS 余量）；
-#   RECVMBOX 6 -> 16，让 tcpip 线程能排队 16×1440≈23KB 的段，与窗口匹配；
-#   SND_BUF 5760 -> 16384，下线（页面 gzip 100KB、CSV 导出）也能跑满。
-CONFIG_LWIP_TCP_WND_DEFAULT=20480
+# ---- lwIP TCP 接收窗口：不能超过 pbuf 池容量 ----
+# 上一版把窗口从 5760 提到 20480，理由是「窗口必须大于一个 TLS 记录」——**这个判断是错的**，
+# 已通过线刷新固件实测推翻：新固件上 64KB 分块依旧卡死。真正的原因是 mbedTLS 的
+# IN_CONTENT_LEN=4096 小于客户端的 16KB 记录（见上面那段注释），与 TCP 窗口无关。
+#
+# 窗口该多大，取决于 lwIP 的静态 pbuf 池，而池子不在堆里、heap 数字看不出来：
+#   ESP-IDF 没有暴露 PBUF_POOL_SIZE 的 Kconfig，走 lwIP 默认 16 个，
+#   每个约 PBUF_POOL_BUFSIZE ≈ TCP_MSS(1440) + 头部 ≈ 1476 B，总共约 23.6KB。
+#   窗口设 20KB 就要求一个连接吃下 14 个 pbuf，池子直接被榨干，
+#   连窗口更新/重传都要抢 pbuf —— 突发大块上传时必然零窗口且难以恢复。
+# 取值 8192：约 6 个 pbuf，留 10 个余量给并发连接与重传；
+#   8KB 窗口配 8KB 记录绰绰有余（记录本来只有 16KB 上限，靠多次窗口滚动发送）。
+# RECVMBOX 16：让 tcpip 线程能排队 16×1440≈23KB 的段，够一个窗口的突发。
+# SND_BUF 16384：下线方向（页面 gzip 100KB、CSV 导出）跑得动。
+CONFIG_LWIP_TCP_WND_DEFAULT=8192
 CONFIG_LWIP_TCP_RECVMBOX_SIZE=16
 CONFIG_LWIP_TCP_SND_BUF_DEFAULT=16384
