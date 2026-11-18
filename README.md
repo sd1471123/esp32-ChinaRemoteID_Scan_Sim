@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="docs/logo.png" alt="CRID Scanner" width="112">
+</p>
+
 # ESP32-ChinaRemoteID_Scan_Sim
 
 ESP32 无人机 Remote ID **广播（模拟）/ 接收（扫描）一体固件**，单程序双模式，网页在线配置。
