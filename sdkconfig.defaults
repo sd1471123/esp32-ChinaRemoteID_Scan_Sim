@@ -58,3 +58,23 @@ CONFIG_LWIP_MAX_SOCKETS=24
 # 配套改动见 crid_web.c：客户端断开（只剩 0 个 station）时主动回收残留会话。
 CONFIG_LWIP_TCP_MSL=8000
 CONFIG_LWIP_MAX_ACTIVE_TCP=24
+
+# ---- lwIP TCP 接收窗口：必须大于一个 TLS 记录（16KB），否则大块上传会死锁 ----
+# 现象：网页「固件升级」进度条走到 60%~62%（约 800KB）就不动，页面一直显示
+#       「正在上传，请勿关闭页面…」，既不报错也不前进，最后整机 Web 服务不可用
+#       （ping 通、TCP 能连上，但握手立刻被关闭），必须重启设备才恢复。
+# 实测（.tmp/stalltest.py，同一台 S3、同一镜像，只改发送块大小）：
+#       4096 B 块 -> 1,399,792 B 全部发完，13 秒通过
+#       8192 B 块 -> 停在 819,200 B，之后再无进展
+#      65536 B 块 -> 停在 851,968 B，之后再无进展
+#   停住时 Wi-Fi 一直在线（netsh 显示 connected），设备对新连接仍能正常响应 50 秒，
+#   只有那条上传连接零推进——是接收方不再读取，不是链路断了。
+# 机制：mbedTLS 必须收齐一个完整记录才能解密返回数据，而 TCP 窗口只有 5760 字节，
+#   装不下 8KB/16KB 的记录 → 应用永远等不到完整记录，不再调用 recv → 窗口一直是 0
+#   → 发送方永久阻塞。这就是经典的 TLS 接收窗口死锁。
+# 取值：窗口 20KB（> 16KB 最大记录，留一个多 MSS 余量）；
+#   RECVMBOX 6 -> 16，让 tcpip 线程能排队 16×1440≈23KB 的段，与窗口匹配；
+#   SND_BUF 5760 -> 16384，下线（页面 gzip 100KB、CSV 导出）也能跑满。
+CONFIG_LWIP_TCP_WND_DEFAULT=20480
+CONFIG_LWIP_TCP_RECVMBOX_SIZE=16
+CONFIG_LWIP_TCP_SND_BUF_DEFAULT=16384
