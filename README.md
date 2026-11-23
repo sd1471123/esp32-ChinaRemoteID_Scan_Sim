@@ -161,8 +161,8 @@ idf.py -p COM3 flash monitor    # 烧录并打开串口监视器（Ctrl+] 退出
 
 | 芯片 | 文件 | 大小 | MD5 |
 |------|------|------|-----|
-| ESP32-S3 | `dist/remoteid_scanner_s3_v2.0.3.bin` | 1,391,968 B | `7c91bda534284b84237fed989de5f53e` |
-| ESP32-C5 | `dist/remoteid_scanner_c5_v2.0.3.bin` | 1,726,992 B | `56676235fa04f0f93866d804e0a4ea3d` |
+| ESP32-S3 | `dist/remoteid_scanner_s3_v2.0.3.bin` | 1,392,144 B | `be3909db41943d4072dd3e98a19b7b3e` |
+| ESP32-C5 | `dist/remoteid_scanner_c5_v2.0.3.bin` | 1,727,168 B | `439a8406be1867c2cb6e134246c0e1d5` |
 
 这两个文件**只含应用分区**，不能单独烧到空片——空片请用上面的 zip（或自己编）。
 它们只用于网页「固件升级」面板上传，见下一节。
