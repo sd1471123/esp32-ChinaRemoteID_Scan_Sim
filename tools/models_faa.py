@@ -468,13 +468,17 @@ _test_cache = None
 
 
 def test_only():
-    """草稿库里所有未通过 FAA 核对的条目，机型名前加 "-?-" 后进固件测试预设。"""
+    """草稿库里未通过 FAA 核对、且官方表里没有同名机型的条目，进固件测试预设。
+
+    同名时只保留官方条目：测试条目仅在官方完全没有这个型号时才出现。
+    """
     global _test_cache
     if _test_cache is not None:
         return _test_cache
+    official = {c[2] for c in CURATED}
     out = []
     for r in draft_report(parse_serial()):
-        if r["verdict"] == "已核实" or r["px"] in TEST_SKIP:
+        if r["verdict"] == "已核实" or r["px"] in TEST_SKIP or r["name"] in official:
             continue
         grp = TEST_GROUP.get(r["sec"], "其他厂商")
         out.append((grp, r["px"], r["name"], "", "未核实，仅接收端展示加标记"))
