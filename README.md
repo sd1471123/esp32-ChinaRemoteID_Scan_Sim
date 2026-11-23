@@ -160,8 +160,8 @@ idf.py -p COM3 flash monitor    # 烧录并打开串口监视器（Ctrl+] 退出
 
 | 芯片 | 文件 | 大小 | MD5 |
 |------|------|------|-----|
-| ESP32-S3 | `dist/remoteid_scanner_s3_v2.0.2.bin` | 1,389,792 B | `61af8d74df48989f1701228d6def823d` |
-| ESP32-C5 | `dist/remoteid_scanner_c5_v2.0.2.bin` | 1,724,800 B | `e2fe1314c12b135c235ac61da9c3f3fe` |
+| ESP32-S3 | `dist/remoteid_scanner_s3_v2.0.3.bin` | 1,389,840 B | `895caa32e968a124685fa7cdd600a473` |
+| ESP32-C5 | `dist/remoteid_scanner_c5_v2.0.3.bin` | 1,724,864 B | `2791df839634d4c69c10ae4bd2c7d0ce` |
 
 这两个文件**只含应用分区**，不能单独烧到空片——空片请用上面的 zip（或自己编）。
 它们只用于网页「固件升级」面板上传，见下一节。
@@ -211,8 +211,8 @@ esptool.py --chip esp32c5 --baud 460800 write_flash \
 > 再往后的版本网页升级才顺畅。详见版本历史里「网页 OTA 卡在 62%」一节。
 
 - **升级文件**：本仓库 `dist/` 下的单芯片应用镜像，或自己编译出的 `build*/remoteid_scanner.bin`：
-  `dist/remoteid_scanner_s3_v2.0.2.bin`（约 1.39 MB，S3）、
-  `dist/remoteid_scanner_c5_v2.0.2.bin`（约 1.72 MB，C5）。
+  `dist/remoteid_scanner_s3_v2.0.3.bin`（约 1.39 MB，S3）、
+  `dist/remoteid_scanner_c5_v2.0.3.bin`（约 1.72 MB，C5）。
   Release 的 zip 也能用，解压出 `remoteid_scanner.bin` 即可；**不要**选整个 zip 或合并固件。
   两个 OTA 槽各 2 MB，C5 镜像装入后余量约 18%；芯片型号不符会在 `esp_ota_end` 校验阶段被拒，
   不会写坏当前正在运行的固件。
