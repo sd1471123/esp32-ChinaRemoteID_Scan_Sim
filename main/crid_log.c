@@ -40,7 +40,6 @@ static const char *TAG = "CN_C-RID_LOG";
 #define PER_SEC     (SECTOR_SIZE / CRID_LOG_REC_SIZE)
 #define MAX_TARGETS 16
 #define QUEUE_LEN   24
-#define SEED_SCAN   512             // 上电重建目标表时回扫的条数
 
 typedef struct __attribute__((packed)) {
     uint32_t magic;
@@ -394,13 +393,16 @@ esp_err_t crid_log_init(void) {
         s_count = (uint32_t)(valid_secs - 1) * PER_SEC + (uint32_t)(slot >= PER_SEC ? PER_SEC : slot);
         if (s_count > capacity()) s_count = capacity();
         if (s_count) {
-            // 用最近若干条重建目标表（重启后网页仍有目标列表）
-            uint32_t n = s_count < SEED_SCAN ? s_count : SEED_SCAN;
-            uint32_t na = newest_abs();
-            for (uint32_t i = 0; i < n; i++) {
-                crid_log_rec_t r;
-                if (read_abs((na + capacity() - i) % capacity(), &r)) {
-                    target_update(&r, false);
+            // 全量回扫重建目标表：只扫最近 512 条会把大目标的条数截断成 512，
+            // 列表里就永远看不到真实值。从环形最旧的扇区 s_wsec 开始绕一圈，
+            // 处理顺序正好是旧 -> 新，最后落到最新一条，newest_tick / last_* 也就准确。
+            // 整圈 4 MB、逐扇区整块读，65536 条约 0.2~0.5 s。
+            for (uint16_t i = 0; i < s_secs; i++) {
+                uint16_t sec = (uint16_t)((s_wsec + i) % s_secs);
+                if (esp_partition_read(s_part, sec_off(sec), s_sbuf, SECTOR_SIZE) != ESP_OK) continue;
+                for (int k = 0; k < PER_SEC; k++) {
+                    crid_log_rec_t *r = (crid_log_rec_t *)(void *)(s_sbuf + (size_t)k * CRID_LOG_REC_SIZE);
+                    if (rec_live(r)) target_update(r, true);
                 }
             }
         }

@@ -74,7 +74,7 @@ typedef struct __attribute__((packed)) {
 typedef struct {
     uint8_t  mac[6];
     char     uid[15];
-    uint32_t count;         // 本次上电以来记录的条数
+    uint32_t count;         // 该目标的条数（上电时全量重建，之后实时累加）
     uint32_t oldest_unix;   // 最早一条的 Unix 秒（0=未对时）
     uint32_t newest_unix;   // 最新一条的 Unix 秒
     uint32_t newest_tick;   // 最新一条的上电毫秒
