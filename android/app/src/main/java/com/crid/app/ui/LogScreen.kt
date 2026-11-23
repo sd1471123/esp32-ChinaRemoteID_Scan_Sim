@@ -1,7 +1,10 @@
 package com.crid.app.ui
 
+import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
+import android.net.Uri
+import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -10,6 +13,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -300,6 +304,8 @@ private fun LogDetail(vm: AppViewModel, target: LogTarget, onBack: () -> Unit) {
     var idx by remember { mutableIntStateOf(0) }
     var playing by remember { mutableStateOf(false) }
     var rate by remember { mutableIntStateOf(1) }
+    val context = LocalContext.current
+    val name = ModelNames.display(target.uid).ifBlank { target.mac }
 
     LaunchedEffect(target.mac) {
         loading = true
@@ -363,7 +369,6 @@ private fun LogDetail(vm: AppViewModel, target: LogTarget, onBack: () -> Unit) {
                 )
             }
             Column(Modifier.weight(1f)) {
-                val name = ModelNames.display(target.uid).ifBlank { target.mac }
                 Text(
                     name,
                     fontSize = 14.sp,
@@ -407,24 +412,33 @@ private fun LogDetail(vm: AppViewModel, target: LogTarget, onBack: () -> Unit) {
                     .fillMaxWidth()
                     .padding(top = 6.dp),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
             ) {
-                Button(onClick = { playing = !playing }, modifier = Modifier.weight(1f)) {
-                    Text(if (playing) "暂停" else "播放", fontSize = 12.sp)
+                Button(
+                    onClick = { playing = !playing },
+                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
+                ) {
+                    Text(
+                        if (playing) "暂停" else "播放",
+                        fontSize = 12.sp,
+                        maxLines = 1,
+                        softWrap = false,
+                    )
                 }
                 OutlinedButton(
                     onClick = {
                         playing = false
                         idx = 0
                     },
-                    modifier = Modifier.weight(1f),
-                ) { Text("重置", fontSize = 12.sp) }
-                Text("速度", fontSize = 11.sp, color = CridGrey)
+                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
+                ) { Text("重置", fontSize = 12.sp, maxLines = 1, softWrap = false) }
+                Spacer(Modifier.weight(1f))
+                Text("速度", fontSize = 11.sp, color = CridGrey, maxLines = 1)
                 listOf(1, 2, 4).forEach { r ->
                     FilterChip(
                         selected = rate == r,
                         onClick = { rate = r },
-                        label = { Text("${r}x", fontSize = 11.sp) },
+                        label = { Text("${r}x", fontSize = 11.sp, maxLines = 1) },
                     )
                 }
             }
@@ -441,13 +455,20 @@ private fun LogDetail(vm: AppViewModel, target: LogTarget, onBack: () -> Unit) {
 
             val p = points.getOrNull(idx)
             if (p != null) {
-                Text(
-                    "${fmtPointTime(p)} · ${fmt6(p.lat)}, ${fmt6(p.lon)} · 高 ${fmt1(p.alt)}m · " +
-                        "${fmt1(p.spd_h)}m/s · ${fmt1(p.track)}° · ${p.rssi}dBm",
-                    fontSize = 11.sp,
-                    fontFamily = FontFamily.Monospace,
-                    color = CridGreen,
-                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        "${fmtPointTime(p)} · ${fmt6(p.lat)}, ${fmt6(p.lon)} · 高 ${fmt1(p.alt)}m · " +
+                            "${fmt1(p.spd_h)}m/s · ${fmt1(p.track)}° · ${p.rssi}dBm",
+                        fontSize = 11.sp,
+                        fontFamily = FontFamily.Monospace,
+                        color = CridGreen,
+                        modifier = Modifier.weight(1f),
+                    )
+                    TextButton(
+                        onClick = { openNavigation(context, p.lat, p.lon, name) },
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                    ) { Text("导航", fontSize = 11.sp, maxLines = 1, softWrap = false) }
+                }
             }
 
             val pathPage = idx / PER_PAGE
@@ -567,6 +588,23 @@ private fun fmtPointTime(p: LogPoint): String =
 private fun kbText(bytes: Long): String =
     if (bytes >= 1024 * 1024) String.format(java.util.Locale.US, "%.1fMB", bytes / 1048576.0)
     else "${bytes / 1024}KB"
+
+/** 调起地图/导航应用定位到该点；没有支持 geo: 的应用时退回高德网页（WGS84 坐标）。 */
+private fun openNavigation(context: Context, lat: Double, lon: Double, label: String) {
+    val name = Uri.encode(label)
+    try {
+        context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("geo:0,0?q=$lat,$lon($name)")))
+        return
+    } catch (_: ActivityNotFoundException) {
+    }
+    try {
+        val web = "https://uri.amap.com/marker?position=$lon,$lat&name=$name" +
+            "&coordinate=wgs84&callnative=1"
+        context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(web)))
+    } catch (_: Exception) {
+        Toast.makeText(context, "未找到可用的地图应用", Toast.LENGTH_SHORT).show()
+    }
+}
 
 private fun shareFile(context: Context, file: java.io.File) {
     try {
