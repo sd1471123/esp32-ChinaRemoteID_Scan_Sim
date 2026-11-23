@@ -57,6 +57,7 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.crid.app.data.LogInfo
 import com.crid.app.data.LogPoint
 import com.crid.app.data.LogTarget
+import com.crid.app.data.ModelNames
 import com.crid.app.data.UiState
 import com.crid.app.ui.theme.CridDark
 import com.crid.app.ui.theme.CridGreen
@@ -214,9 +215,11 @@ private fun LogList(vm: AppViewModel, state: UiState, onOpen: (LogTarget) -> Uni
         }
 
         items(info?.targets.orEmpty(), key = { it.mac }) { target ->
-            SectionCard(target.uid.ifBlank { target.mac }) {
+            val name = ModelNames.display(target.uid).ifBlank { target.mac }
+            SectionCard(name) {
                 Text(
-                    target.mac + " · " + target.count + " 条",
+                    (if (target.uid.isNotBlank() && name != target.uid) target.uid + " · " else "") +
+                        target.mac + " · " + target.count + " 条",
                     fontSize = 11.sp,
                     fontFamily = FontFamily.Monospace,
                     color = CridGrey,
@@ -360,15 +363,17 @@ private fun LogDetail(vm: AppViewModel, target: LogTarget, onBack: () -> Unit) {
                 )
             }
             Column(Modifier.weight(1f)) {
+                val name = ModelNames.display(target.uid).ifBlank { target.mac }
                 Text(
-                    target.uid.ifBlank { target.mac },
+                    name,
                     fontSize = 14.sp,
                     fontWeight = FontWeight.Bold,
                     color = CridDark,
                     maxLines = 1,
                 )
                 Text(
-                    "轨迹回放 · ${target.count} 条记录",
+                    (if (target.uid.isNotBlank() && name != target.uid) "序列号 " + target.uid + " · " else "") +
+                        "轨迹回放 · ${target.count} 条记录",
                     fontSize = 10.sp,
                     color = CridGrey,
                 )

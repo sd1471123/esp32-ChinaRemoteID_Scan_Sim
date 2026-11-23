@@ -31,6 +31,7 @@ SRC = os.path.join(ROOT, "main", "crid_web.c")
 DOC = os.path.join(ROOT, "docs", "model_db.md")
 INDEX = os.path.join(ROOT, "data", "faa_prefix_index_%s.tsv" % "2026-11-17")
 REVIEW = os.path.join(ROOT, "data", "models_reviewed_%s.tsv" % "2026-11-17")
+ANDROID = os.path.join(ROOT, "android", "app", "src", "main", "java", "com", "crid", "app", "data", "ModelNames.kt")
 SNAPSHOT_DATE = "2026-11-17"
 MIN_PREFIX = 5
 
@@ -295,6 +296,54 @@ def render_block():
     return "\n".join('"%s"' % l for l in render_lines())
 
 
+def model_items():
+    """返回 [(前缀, 机型名, 是否未核实)]，顺序与固件里的机型表一致。"""
+    extra = test_only()
+    bad = {(c[1], c[2]) for c in extra}
+    out, seen = [], set()
+    for grp in GROUP_ORDER:
+        for c in CURATED + extra:
+            if c[0] != grp:
+                continue
+            key = (c[1], c[2])
+            if key in seen:
+                continue
+            seen.add(key)
+            out.append((key[0], key[1], key in bad))
+    return out
+
+
+def write_android():
+    rows = model_items()
+    body = "".join(
+        '        "%s" to ("%s" to %s),\n' % (px, name.replace('"', '\\"'), "true" if bad else "false")
+        for px, name, bad in rows)
+    text = (
+        "// 由 tools/models_faa.py --android 生成，请勿手改。\n"
+        "package com.crid.app.data\n\n"
+        "object ModelNames {\n"
+        "    // 序列号前缀 -> (机型名, 是否未核实)\n"
+        "    private val MAP: Map<String, Pair<String, Boolean>> = mapOf(\n"
+        + body +
+        "    )\n\n"
+        "    private val KEYS = MAP.keys.sortedByDescending { it.length }\n\n"
+        "    fun of(uid: String): Pair<String, Boolean>? {\n"
+        "        val u = uid.trim().uppercase()\n"
+        "        if (u.isEmpty()) return null\n"
+        "        for (k in KEYS) if (u.startsWith(k)) return MAP[k]\n"
+        "        return null\n"
+        "    }\n\n"
+        "    /** 未核实机型带 -?- 前缀；查不到时原样返回序列号。 */\n"
+        "    fun display(uid: String): String {\n"
+        "        val m = of(uid) ?: return uid\n"
+        "        return (if (m.second) \"-?-\" else \"\") + m.first\n"
+        "    }\n"
+        "}\n"
+    )
+    io.open(ANDROID, "w", encoding="utf-8", newline="\n").write(text)
+    print("已生成 %s（%d 条）" % (ANDROID, len(rows)))
+
+
 def find_block(src):
     for marker in ('"const MDL=[', '"const DJI=['):
         if marker in src:
@@ -492,6 +541,7 @@ def main():
     ap.add_argument("--write", action="store_true")
     ap.add_argument("--check", action="store_true")
     ap.add_argument("--doc", action="store_true")
+    ap.add_argument("--android", action="store_true")
     ap.add_argument("--suggest", action="store_true")
     ap.add_argument("--index", action="store_true")
     ap.add_argument("--review", action="store_true")
@@ -544,6 +594,8 @@ def main():
     if args.doc:
         write_doc(recs)
         print("已生成 %s" % DOC)
+    if args.android:
+        write_android()
     return 0
 
 
