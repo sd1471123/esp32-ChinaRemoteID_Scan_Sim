@@ -2,7 +2,9 @@ package com.crid.app.ui
 
 import android.content.Context
 import android.content.Intent
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -16,11 +18,14 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Slider
@@ -37,6 +42,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
@@ -75,6 +81,8 @@ private const val MAX_PAGES = 10
 fun LogScreen(vm: AppViewModel, state: UiState) {
     var selected by remember { mutableStateOf<LogTarget?>(null) }
     if (selected != null) {
+        // 系统返回键 / 手势回到列表，而不是直接退出 App
+        BackHandler { selected = null }
         LogDetail(vm, selected!!) { selected = null }
     } else {
         LogList(vm, state) { selected = it }
@@ -323,16 +331,48 @@ private fun LogDetail(vm: AppViewModel, target: LogTarget, onBack: () -> Unit) {
             .fillMaxSize()
             .padding(12.dp),
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            TextButton(onClick = onBack) { Text("← 返回列表") }
-            Text(
-                target.uid.ifBlank { target.mac },
-                Modifier.weight(1f),
-                fontSize = 14.sp,
-                fontWeight = FontWeight.Bold,
-                color = CridDark,
-                maxLines = 1,
-            )
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .background(Color(0xFFF6F8FA), RoundedCornerShape(10.dp))
+                .padding(horizontal = 4.dp, vertical = 2.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Row(
+                Modifier
+                    .clip(RoundedCornerShape(8.dp))
+                    .clickable { onBack() }
+                    .padding(start = 8.dp, end = 10.dp, top = 6.dp, bottom = 6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(
+                    Icons.AutoMirrored.Filled.ArrowBack,
+                    contentDescription = "返回列表",
+                    tint = CridDark,
+                    modifier = Modifier.size(18.dp),
+                )
+                Text(
+                    "返回列表",
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = CridDark,
+                    modifier = Modifier.padding(start = 2.dp),
+                )
+            }
+            Column(Modifier.weight(1f)) {
+                Text(
+                    target.uid.ifBlank { target.mac },
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = CridDark,
+                    maxLines = 1,
+                )
+                Text(
+                    "轨迹回放 · ${target.count} 条记录",
+                    fontSize = 10.sp,
+                    color = CridGrey,
+                )
+            }
             if (loading) CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
         }
 
