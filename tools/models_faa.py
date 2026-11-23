@@ -255,6 +255,7 @@ def validate(recs):
 def render_tokens():
     toks = ["const MDL=["]
     extra = test_only()
+    bad = {(c[1], c[2]) for c in extra}
     for grp in GROUP_ORDER:
         items, seen = [], set()
         for c in CURATED + extra:
@@ -264,12 +265,12 @@ def render_tokens():
             if key in seen:
                 continue
             seen.add(key)
-            items.append(key)
+            items.append((key[0], key[1], key in bad))
         if not items:
             continue
         toks.append("['%s',[" % grp)
-        for i, (px, disp) in enumerate(items):
-            toks.append("['%s','%s']" % (px, disp))
+        for i, (px, disp, flag) in enumerate(items):
+            toks.append("['%s','%s'%s]" % (px, disp, ",1" if flag else ""))
             if i != len(items) - 1:
                 toks.append(",")
         toks.append("]],")
@@ -476,7 +477,7 @@ def test_only():
         if r["verdict"] == "已核实" or r["px"] in TEST_SKIP:
             continue
         grp = TEST_GROUP.get(r["sec"], "其他厂商")
-        out.append((grp, r["px"], TEST_PREFIX + r["name"], "", "未核实，仅自测"))
+        out.append((grp, r["px"], r["name"], "", "未核实，仅接收端展示加标记"))
     _test_cache = out
     return out
 
@@ -651,7 +652,7 @@ def write_doc(recs):
     A("")
     A("反过来，下面这些一律不算官方依据：官方没登记该型号、官方登记了型号但没有序列号、")
     A("把型号代号当序列号前缀（`SDR21V1`、`SR47PCV`）、「厂商码 + 000/001 递增」这类凭空构造。")
-    A("为了自测需要，这些条目仍以「机型名带 `-?-`」的形式收进固件测试预设（见第四、五节），但依然没有官方依据。")
+    A("为了自测需要，这些条目仍以测试预设的形式收进固件（接收端展示时加 `-?-`，见第四、五节），但依然没有官方依据。")
     A("")
     A("## 二、结果")
     A("")
@@ -661,7 +662,7 @@ def write_doc(recs):
     A("| ⚠️ 第三方草稿库中前缀需修正 | %d |" % cnt.get("前缀需修正", 0))
     A("| ⚠️ 第三方草稿库中前缀可截短使用 | %d |" % cnt.get("前缀可截短", 0))
     A("| ❌ 官方无该型号登记 | %d |" % cnt.get("官方无登记", 0))
-    A("| 🧪 未核实，机型名带 `-?-` 加入测试预设 | %d |" % len(test_only()))
+    A("| 🧪 未核实，接收端展示加 `-?-` | %d |" % len(test_only()))
     A("")
     A("草稿库共 %d 条：%d 条与官方完全一致，%d 条前缀需替换为官方值，%d 条前缀可截短，%d 条查无此型号。"
       % (len(rep), cnt.get("已核实", 0), cnt.get("前缀需修正", 0),
@@ -686,13 +687,13 @@ def write_doc(recs):
                 shown = "—"
             A("| `%s` | %s | %s | `%s` | %s |" % (px, disp, official, shown, note or ""))
         A("")
-    A("另有 %d 条没有官方依据的条目，已把机型名加上 `-?-` 后加入固件的测试预设，逐条见第四、五节。"
+    A("另有 %d 条没有官方依据的条目，已作为测试预设加入固件（接收端展示时加 `-?-`），逐条见第四、五节。"
       % len(test_only()))
     A("")
     A("## 四、第三方草稿库逐条核对")
     A("")
     A("`data/models_draft_2026-11-11.txt`（108 条）与官方序列号逐条比对。**「前缀需修正」的条目，"
-      "草稿里的前缀在官方数据里找不到任何出处**，用它会生成查无此机的序列号（现已把机型名加上 `-?-` 收进测试预设）。")
+      "草稿里的前缀在官方数据里找不到任何出处**，用它会生成查无此机的序列号（现已作为测试预设加入固件，接收端展示时加 `-?-`）。")
     A("")
     A("| 分类 | 草稿前缀 | 草稿型号 | 官方前缀 | 官方型号 | 判定 |")
     A("| --- | --- | --- | --- | --- | --- |")
@@ -702,14 +703,14 @@ def write_doc(recs):
         A("| %s | `%s` | %s | `%s` | %s | %s |"
           % (r["sec"], r["px"], r["name"], r["off"], r["official"], r["verdict"]))
     A("")
-    A("## 五、官方清单中不存在的型号（已加入测试预设，机型名带 `-?-`）")
+    A("## 五、官方清单中不存在的型号（已加入测试预设，接收端展示带 `-?-`）")
     A("")
-    A("这些条目没有官方序列号依据，只用于自测发射与接收链路。固件把它们收进测试预设，")
-    A("并在**机型名称前**加 `-?-`（例如 `-?-Mini 2 SE`），与已核实型号区分开；")
-    A("生成的 RID 序列号仍按草稿前缀（如 `1581F6CD`）走，**不代表该机型真实存在或已通过认证**。")
+    A("这些条目没有官方序列号依据，只用于自测发射与接收链路。固件把它们收进测试预设；")
+    A("**接收端展示时**若收到的序列号命中这些前缀，会在机型名前加 `-?-`（例如 `-?-Mini 2 SE`），")
+    A("发射端的机型名称输入框与预设下拉框保持原样，**不代表该机型真实存在或已通过认证**。")
     A("`11223344`、`44332211` 是肉眼可见的镜像编造号段，已剔除。")
     A("")
-    A("| 分类 | 草稿前缀 | 型号 | 固件中的型号名 | 说明 |")
+    A("| 分类 | 草稿前缀 | 型号 | 接收端展示 | 说明 |")
     A("| --- | --- | --- | --- | --- |")
     whys = {u[1]: u[3] for u in UNVERIFIED}
     for r in rep:
