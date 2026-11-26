@@ -38,10 +38,13 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun requestBlePermissions() {
+        // 定位权限和蓝牙权限一起要：蓝牙用于取数，定位用于给设备雷达页上报自身坐标
+        // （设备没有 GPS）。用户在系统弹窗里可以只给模糊定位，雷达仍能用，只是精度差些。
         val perms = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             arrayOf(
                 Manifest.permission.BLUETOOTH_SCAN,
                 Manifest.permission.BLUETOOTH_CONNECT,
+                Manifest.permission.ACCESS_FINE_LOCATION,
             )
         } else {
             arrayOf(Manifest.permission.ACCESS_FINE_LOCATION)

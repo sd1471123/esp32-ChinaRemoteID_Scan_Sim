@@ -1,6 +1,14 @@
 package com.crid.app.data
 
+import android.Manifest
+import android.annotation.SuppressLint
 import android.content.Context
+import android.content.pm.PackageManager
+import android.location.Location
+import android.location.LocationListener
+import android.location.LocationManager
+import android.os.Looper
+import androidx.core.content.ContextCompat
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -46,6 +54,21 @@ class DeviceRepository(context: Context) {
     private val app = context.applicationContext
     val ble = BleClient(app)
     private val http = HttpApi()
+
+    // ---- 雷达自身坐标：手机定位通过 GET /api/selfpos 上报给设备 ----
+    // 设备本身没有 GPS，TFT 雷达页要靠这里报上去的真实坐标才能按方位打点。
+    // 坐标只在内存里，不落盘；设备重启后等下一次上报即可。
+    private val locMgr = app.getSystemService(LocationManager::class.java)
+    @Volatile private var fixLat: Double? = null
+    @Volatile private var fixLon: Double? = null
+    @Volatile private var fixAcc: Float = 0f
+    @Volatile private var locOn = false
+    private var lastPosPush = 0L
+    private val locListener = LocationListener { loc: Location ->
+        fixLat = loc.latitude
+        fixLon = loc.longitude
+        fixAcc = if (loc.hasAccuracy()) loc.accuracy else 0f
+    }
     private val json = Json {
         ignoreUnknownKeys = true
         isLenient = true
@@ -91,12 +114,15 @@ class DeviceRepository(context: Context) {
 
     fun startPolling() {
         if (pollJob?.isActive == true) return
+        startLocation()
         pollJob = scope.launch {
             while (isActive) {
                 try {
                     pollOnce()
                     // 连接后自动授时：平时只做几次比较就返回，真正发请求由内部节流决定
                     autoSyncTime()
+                    // 雷达坐标：内部 4 秒节流，不会跟着 1 秒轮询刷蓝牙
+                    if (_state.value.channel != "none") reportSelfPos()
                 } catch (_: Exception) {
                 }
                 delay(1000)
@@ -107,6 +133,7 @@ class DeviceRepository(context: Context) {
     fun stopPolling() {
         pollJob?.cancel()
         pollJob = null
+        stopLocation()
     }
 
     private suspend fun pollOnce() {
@@ -484,6 +511,57 @@ class DeviceRepository(context: Context) {
     }
 
     fun clearMessage() = _state.update { it.copy(message = null) }
+
+    // ---------------- 手机定位（雷达自身坐标） ----------------
+
+    @SuppressLint("MissingPermission")
+    private fun startLocation() {
+        if (locOn) return
+        val mgr = locMgr ?: return
+        val fine = ContextCompat.checkSelfPermission(
+            app, Manifest.permission.ACCESS_FINE_LOCATION
+        ) == PackageManager.PERMISSION_GRANTED
+        val coarse = ContextCompat.checkSelfPermission(
+            app, Manifest.permission.ACCESS_COARSE_LOCATION
+        ) == PackageManager.PERMISSION_GRANTED
+        if (!fine && !coarse) return
+        val provider = when {
+            mgr.isProviderEnabled(LocationManager.GPS_PROVIDER) -> LocationManager.GPS_PROVIDER
+            mgr.isProviderEnabled(LocationManager.NETWORK_PROVIDER) -> LocationManager.NETWORK_PROVIDER
+            else -> return
+        }
+        try {
+            mgr.getLastKnownLocation(provider)?.let { locListener.onLocationChanged(it) }
+            mgr.requestLocationUpdates(provider, 2_000L, 0f, locListener, Looper.getMainLooper())
+            locOn = true
+        } catch (_: Exception) {
+            locOn = false
+        }
+    }
+
+    private fun stopLocation() {
+        if (!locOn) return
+        try {
+            locMgr?.removeUpdates(locListener)
+        } catch (_: Exception) {
+        }
+        locOn = false
+    }
+
+    /** 上报手机坐标；4 秒节流，失败静默（雷达页会显示 GPS 过期提示） */
+    private suspend fun reportSelfPos() {
+        if (!locOn) startLocation()   // 定位权限是异步授予的，这里顺带重试
+        val la = fixLat ?: return
+        val lo = fixLon ?: return
+        val now = System.currentTimeMillis()
+        if (now - lastPosPush < 4_000) return
+        lastPosPush = now
+        val path = String.format(
+            java.util.Locale.US,
+            "/api/selfpos?lat=%.6f&lon=%.6f&acc=%.0f", la, lo, fixAcc,
+        )
+        runCatching { fetchText(path, 5_000) }
+    }
 
     /** 轮询每秒一次，同样的错误只在内容变化或 5 秒后再次提示，避免刷屏。 */
     private fun pollError(e: Exception) {
