@@ -63,6 +63,7 @@ class DeviceRepository(context: Context) {
     @Volatile private var fixLon: Double? = null
     @Volatile private var fixAcc: Float = 0f
     @Volatile private var locOn = false
+    private var locWarn = ""     /* 定位权限/开关的提示去重：perm / off / 空 */
     private var lastPosPush = 0L
     private val locListener = LocationListener { loc: Location ->
         fixLat = loc.latitude
@@ -524,16 +525,39 @@ class DeviceRepository(context: Context) {
         val coarse = ContextCompat.checkSelfPermission(
             app, Manifest.permission.ACCESS_COARSE_LOCATION
         ) == PackageManager.PERMISSION_GRANTED
-        if (!fine && !coarse) return
-        val provider = when {
-            mgr.isProviderEnabled(LocationManager.GPS_PROVIDER) -> LocationManager.GPS_PROVIDER
-            mgr.isProviderEnabled(LocationManager.NETWORK_PROVIDER) -> LocationManager.NETWORK_PROVIDER
-            else -> return
+        if (!fine && !coarse) {
+            if (locWarn != "perm") {
+                locWarn = "perm"
+                message("未授予定位权限：雷达页需要手机定位，请在系统设置里允许位置权限")
+            }
+            return
+        }
+        // GPS 和网络定位都订阅：室内 GPS 开了但没有卫星，只靠 GPS 会一直拿不到坐标
+        val providers = buildList {
+            if (mgr.isProviderEnabled(LocationManager.GPS_PROVIDER)) {
+                add(LocationManager.GPS_PROVIDER)
+            }
+            if (mgr.isProviderEnabled(LocationManager.NETWORK_PROVIDER)) {
+                add(LocationManager.NETWORK_PROVIDER)
+            }
+        }
+        if (providers.isEmpty()) {
+            if (locWarn != "off") {
+                locWarn = "off"
+                message("手机定位服务未开启：请打开 GPS 或网络定位")
+            }
+            return
         }
         try {
-            mgr.getLastKnownLocation(provider)?.let { locListener.onLocationChanged(it) }
-            mgr.requestLocationUpdates(provider, 2_000L, 0f, locListener, Looper.getMainLooper())
+            // 先用两个 provider 里最新的已知位置兜底，再等实时更新
+            providers.mapNotNull { p ->
+                runCatching { mgr.getLastKnownLocation(p) }.getOrNull()
+            }.maxByOrNull { it.time }?.let { locListener.onLocationChanged(it) }
+            for (p in providers) {
+                mgr.requestLocationUpdates(p, 2_000L, 0f, locListener, Looper.getMainLooper())
+            }
             locOn = true
+            locWarn = ""
         } catch (_: Exception) {
             locOn = false
         }
